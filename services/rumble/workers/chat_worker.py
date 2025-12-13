@@ -2,7 +2,7 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from core.jobs import JobRegistry
 from services.rumble.chat_client import RumbleChatClient
@@ -34,7 +34,10 @@ class RumbleChatWorker:
         self.clip_rules = self._load_clip_rules()
 
         self.client: Optional[RumbleChatClient] = None
-        self._browser: Optional[RumbleBrowserClient] = None
+        self.browser: Optional[RumbleBrowserClient] = None
+
+        # Prevent overlapping !clip handling
+        self._lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # Setup
@@ -46,24 +49,25 @@ class RumbleChatWorker:
         except Exception:
             return {"enabled": False}
 
-    async def _ensure_browser_and_client(self):
+    async def _ensure_browser_and_client(self) -> None:
         """
         Ensure:
         - Persistent browser is running
         - Browser is navigated to the WATCH PAGE
         - Fresh cookies are harvested
         - REST client is ready for sending messages
+        - WebSocket chat feed is subscribed
         """
-        self._browser = RumbleBrowserClient.instance()
+        self.browser = RumbleBrowserClient.instance()
 
-        # Browser MUST navigate to watch page to attach chat WS
         watch_url = getattr(self.ctx, "rumble_watch_url", None)
         if not watch_url:
             raise RuntimeError("ctx.rumble_watch_url is required but missing")
 
-        await self._browser.start(watch_url=watch_url)
+        # Start browser and force navigation to watch page
+        await self.browser.start(watch_url=watch_url)
 
-        cookies = await self._browser.get_cookie_dict_for("rumble.com")
+        cookies = await self.browser.get_cookie_dict_for("rumble.com")
 
         required = ["u_s", "a_s", "cf_clearance"]
         missing = [k for k in required if k not in cookies]
@@ -76,8 +80,12 @@ class RumbleChatWorker:
 
         self.client = RumbleChatClient(cookies)
 
-        # Subscribe to browser WebSocket chat feed
-        self._browser.subscribe_chat(self._on_chat_message)
+        # Subscribe exactly once
+        self.browser.subscribe_chat(self._on_chat_message)
+
+        log.info(
+            f"[{self.ctx.creator_id}] Chat WebSocket subscribed successfully"
+        )
 
     # ------------------------------------------------------------------
     # Runtime
@@ -92,7 +100,7 @@ class RumbleChatWorker:
         try:
             await self._ensure_browser_and_client()
 
-            # Keep task alive forever; browser pushes messages via callback
+            # Keep task alive forever — messages arrive via WS callback
             while True:
                 await asyncio.sleep(3600)
 
@@ -106,75 +114,78 @@ class RumbleChatWorker:
     # WebSocket inbound messages
     # ------------------------------------------------------------------
 
-    def _on_chat_message(self, msg: dict):
+    def _on_chat_message(self, msg: Dict[str, Any]) -> None:
         """
-        Called directly from Playwright WebSocket listener.
-        MUST be sync-safe → offload async work.
+        Called synchronously from Playwright WebSocket listener.
+        MUST remain lightweight.
         """
         try:
             text = str(msg.get("text", "")).strip()
-            user = (msg.get("user") or {}).get("username", "unknown")
-
             if not text:
                 return
 
+            user = (msg.get("user") or {}).get("username", "unknown")
+
+            # Hand off to asyncio loop
             asyncio.create_task(self._handle_message(user, text))
 
         except Exception:
+            # Never let WS listener crash
             return
 
     # ------------------------------------------------------------------
     # Command handling
     # ------------------------------------------------------------------
 
-    async def _handle_message(self, user: str, text: str):
+    async def _handle_message(self, user: str, text: str) -> None:
         if not text.lower().startswith("!clip"):
             return
 
-        now = time.time()
-        cooldown = int(self.clip_rules.get("cooldown_seconds", 30))
+        async with self._lock:
+            now = time.time()
+            cooldown = int(self.clip_rules.get("cooldown_seconds", 30))
 
-        if now - self.last_clip_time < cooldown:
-            self.client.send_message(
-                self.channel_id,
-                "⏳ Cooldown active. Try again shortly."
-            )
-            return
-
-        length = int(self.clip_rules.get("default_length", 30))
-        parts = text.split()
-
-        if len(parts) > 1:
-            try:
-                length = int(parts[1])
-            except ValueError:
+            if now - self.last_clip_time < cooldown:
                 self.client.send_message(
                     self.channel_id,
-                    "❌ Invalid clip length."
+                    "⏳ Cooldown active. Try again shortly."
                 )
                 return
 
-        max_len = int(self.clip_rules.get("max_length", 90))
-        if length > max_len:
+            length = int(self.clip_rules.get("default_length", 30))
+            parts = text.split()
+
+            if len(parts) > 1:
+                try:
+                    length = int(parts[1])
+                except ValueError:
+                    self.client.send_message(
+                        self.channel_id,
+                        "❌ Invalid clip length."
+                    )
+                    return
+
+            max_len = int(self.clip_rules.get("max_length", 90))
+            if length > max_len:
+                self.client.send_message(
+                    self.channel_id,
+                    f"❌ Clip too long (max {max_len}s)."
+                )
+                return
+
+            self.last_clip_time = now
+
+            await self.jobs.dispatch(
+                job_type="clip",
+                ctx=self.ctx,
+                payload={
+                    "length": length,
+                    "requested_by": user,
+                    "platform": "rumble",
+                },
+            )
+
             self.client.send_message(
                 self.channel_id,
-                f"❌ Clip too long (max {max_len}s)."
+                f"🎬 Clip queued ({length}s)"
             )
-            return
-
-        self.last_clip_time = now
-
-        await self.jobs.dispatch(
-            job_type="clip",
-            ctx=self.ctx,
-            payload={
-                "length": length,
-                "requested_by": user,
-                "platform": "rumble",
-            },
-        )
-
-        self.client.send_message(
-            self.channel_id,
-            f"🎬 Clip queued ({length}s)"
-        )
