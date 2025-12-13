@@ -35,7 +35,11 @@ class RumbleLivestreamWorker:
             log.error(f"[{self.ctx.creator_id}] Missing RUMBLE_LIVESTREAM_KEY")
             return
 
-        data = await fetch_livestream_data(self.api_key)
+        data = await fetch_livestream_data(
+            api_key=self.api_key,
+            creator_id=self.ctx.creator_id
+        )
+
         livestream = data.get("livestream", {})
 
         is_live = bool(livestream.get("is_live"))
@@ -45,10 +49,7 @@ class RumbleLivestreamWorker:
         post_path = chat.get("post_path")
 
         if is_live and room_id and post_path:
-            if (
-                self.chat_task
-                and self.current_room_id == room_id
-            ):
+            if self.chat_task and self.current_room_id == room_id:
                 return
 
             await self._start_chat(room_id, post_path)
