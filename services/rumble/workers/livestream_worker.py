@@ -1,5 +1,4 @@
 import asyncio
-import os
 from typing import Optional
 
 from services.rumble.api.channel_page import fetch_channel_livestream_state
@@ -16,9 +15,6 @@ class RumbleLivestreamWorker:
         self.jobs = jobs
 
         self.channel_url = getattr(ctx, "rumble_channel_url", None)
-        self.cookie = os.getenv(
-            f"RUMBLE_BOT_SESSION_COOKIE_{ctx.creator_id.upper()}"
-        )
 
         self.chat_task: Optional[asyncio.Task] = None
         self.current_room_id: Optional[str] = None
@@ -28,21 +24,24 @@ class RumbleLivestreamWorker:
         log.info(f"[{self.ctx.creator_id}] Rumble livestream worker started")
 
         if not self.channel_url:
-            log.error(f"[{self.ctx.creator_id}] Missing rumble_channel_url in creator config")
+            log.error(
+                f"[{self.ctx.creator_id}] Missing rumble_channel_url in creator config"
+            )
             return
 
         while True:
             try:
                 await self._check_channel()
             except Exception as e:
-                log.error(f"[{self.ctx.creator_id}] Livestream worker error: {e}")
+                log.error(
+                    f"[{self.ctx.creator_id}] Livestream worker error: {e}"
+                )
 
             await asyncio.sleep(10)
 
     async def _check_channel(self):
         state = await fetch_channel_livestream_state(
-            channel_url=self.channel_url,
-            cookie=self.cookie
+            channel_url=self.channel_url
         )
 
         livestream = self._extract_livestream(state)
@@ -54,7 +53,9 @@ class RumbleLivestreamWorker:
         post_path = livestream.get("chatPostPath")
 
         if not room_id or not post_path:
-            log.error(f"[{self.ctx.creator_id}] Livestream detected but chat data missing")
+            log.error(
+                f"[{self.ctx.creator_id}] Livestream detected but chat data missing"
+            )
             return
 
         if self.chat_task and self.current_room_id == room_id:
@@ -65,11 +66,19 @@ class RumbleLivestreamWorker:
     def _extract_livestream(self, state: dict) -> Optional[dict]:
         """
         Walk the initial state tree to locate live stream data.
-        This will be refined once we see the real __INITIAL_STATE__ shape.
+        This will be refined once we inspect the real __INITIAL_STATE__ structure.
         """
         try:
-            channel = state.get("channel", {}) if isinstance(state, dict) else {}
-            livestreams = channel.get("livestreams", []) if isinstance(channel, dict) else []
+            if not isinstance(state, dict):
+                return None
+
+            channel = state.get("channel", {})
+            if not isinstance(channel, dict):
+                return None
+
+            livestreams = channel.get("livestreams", [])
+            if not isinstance(livestreams, list):
+                return None
 
             for item in livestreams:
                 if item.get("isLive"):
@@ -86,7 +95,9 @@ class RumbleLivestreamWorker:
     async def _start_chat(self, room_id: str, post_path: str):
         await self._stop_chat()
 
-        log.info(f"[{self.ctx.creator_id}] Live detected — starting chat bot")
+        log.info(
+            f"[{self.ctx.creator_id}] Live detected — starting chat bot"
+        )
 
         worker = RumbleChatWorker(
             ctx=self.ctx,
@@ -101,7 +112,9 @@ class RumbleLivestreamWorker:
 
     async def _stop_chat(self):
         if self.chat_task:
-            log.info(f"[{self.ctx.creator_id}] Stream offline — stopping chat bot")
+            log.info(
+                f"[{self.ctx.creator_id}] Stream offline — stopping chat bot"
+            )
             self.chat_task.cancel()
             self.chat_task = None
             self.current_room_id = None
