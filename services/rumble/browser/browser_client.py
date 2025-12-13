@@ -10,7 +10,8 @@ log = get_logger("rumble.browser")
 
 class RumbleBrowserClient:
     """
-    Singleton Playwright Chromium client for Cloudflare-safe page fetches.
+    Singleton Playwright Chromium client that can pass Cloudflare
+    and return the FINAL rendered HTML.
     """
 
     _instance: Optional["RumbleBrowserClient"] = None
@@ -34,7 +35,9 @@ class RumbleBrowserClient:
         log.info("Starting Playwright Chromium browser")
 
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(headless=True)
+        self._browser = await self._playwright.chromium.launch(
+            headless=True
+        )
 
         context = await self._browser.new_context(
             user_agent=(
@@ -53,14 +56,15 @@ class RumbleBrowserClient:
 
             log.debug(f"Browser fetching: {url}")
 
+            # Navigate and let Cloudflare do its thing
             await self._page.goto(
                 url,
-                wait_until="domcontentloaded",
-                timeout=30000
+                wait_until="load",
+                timeout=60000
             )
 
-            # Ensure scripts have executed
-            await self._page.wait_for_selector("script", timeout=10000)
+            # Give Cloudflare JS time to complete redirect (critical)
+            await asyncio.sleep(3)
 
             return await self._page.content()
 
