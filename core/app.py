@@ -8,6 +8,7 @@ from core.scheduler import Scheduler
 from core.jobs import JobRegistry
 from shared.logging.logger import get_logger
 from media.jobs.clip_job import ClipJob
+from services.rumble.browser.browser_client import RumbleBrowserClient
 
 
 log = get_logger("core.app")
@@ -40,14 +41,23 @@ async def main():
         await scheduler.start_creator(ctx)
 
     try:
-        # Long sleep keeps loop alive without busy waiting
+        # Keep the event loop alive without busy waiting
         while True:
             await asyncio.sleep(3600)
+
     except asyncio.CancelledError:
-        # Expected during shutdown
+        # Normal during shutdown
         pass
+
     finally:
+        log.info("Shutdown initiated")
+
+        # Stop scheduled workers first
         await scheduler.shutdown()
+
+        # Shutdown Playwright browser cleanly
+        await RumbleBrowserClient.instance().shutdown()
+
         log.info("StreamSuites stopped")
 
 
