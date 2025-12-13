@@ -1,1 +1,7 @@
-{}
+{
+  "enabled": true,
+  "default_length": 30,
+  "max_length": 90,
+  "min_length": 5,
+  "cooldown_seconds": 30
+}
