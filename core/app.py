@@ -10,11 +10,6 @@ from core.jobs import JobRegistry
 from shared.logging.logger import get_logger
 from media.jobs.clip_job import ClipJob
 
-# If your rumble browser client exists, keep this import.
-# If it doesn't exist in your project yet, comment it out.
-from services.rumble.browser.browser_client import RumbleBrowserClient
-
-
 log = get_logger("core.app")
 
 _GLOBAL_JOB_REGISTRY: JobRegistry | None = None
@@ -49,39 +44,31 @@ async def main(stop_event: asyncio.Event):
 
     log.info("Shutdown initiated")
 
-    # Shutdown in a strict order: workers -> browser -> final log
+    # Shutdown scheduler (this stops all workers)
     try:
         await scheduler.shutdown()
     except Exception as e:
         log.warning(f"Scheduler shutdown error ignored: {e}")
-
-    try:
-        # Ensure Playwright is torn down BEFORE loop closes.
-        await RumbleBrowserClient.instance().shutdown()
-    except Exception as e:
-        log.warning(f"Browser shutdown error ignored: {e}")
 
     log.info("StreamSuites stopped")
 
 
 def _install_signal_handlers(loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event):
     """
-    Windows-safe Ctrl+C handler:
-    - signal.signal() works on Windows
-    - we set an asyncio.Event so main() can unwind cleanly
+    Windows-safe Ctrl+C handler.
+    Uses signal.signal + asyncio.Event to unwind cleanly.
     """
     def _handler(signum, frame):
         try:
             loop.call_soon_threadsafe(stop_event.set)
         except Exception:
-            # Worst case: just set it directly
             stop_event.set()
 
     try:
         signal.signal(signal.SIGINT, _handler)
         signal.signal(signal.SIGTERM, _handler)
     except Exception:
-        # If signals are restricted, we still have KeyboardInterrupt fallback
+        # Signal handling can be restricted on some platforms
         pass
 
 
@@ -96,22 +83,24 @@ def run():
     try:
         loop.run_until_complete(main(stop_event))
     except KeyboardInterrupt:
-        # If SIGINT didn't route through signal handlers for some reason:
-        log.info("KeyboardInterrupt received (fallback) — shutdown initiated")
+        # Fallback if signal handlers didn't fire
+        log.info("KeyboardInterrupt received — shutdown initiated")
         try:
             stop_event.set()
             loop.run_until_complete(asyncio.sleep(0))
         except Exception:
             pass
     finally:
-        # Cancel any remaining tasks cleanly
+        # Cancel remaining tasks
         pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
-        for t in pending:
-            t.cancel()
+        for task in pending:
+            task.cancel()
 
         if pending:
             try:
-                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
             except Exception:
                 pass
 
