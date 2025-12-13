@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
 @dataclass
@@ -8,6 +8,7 @@ class CreatorContext:
     display_name: str
     platforms: Dict[str, bool]
     limits: Dict[str, Any]
+    rumble_channel_url: Optional[str] = None
 
     def platform_enabled(self, name: str) -> bool:
         return bool(self.platforms.get(name, False))
