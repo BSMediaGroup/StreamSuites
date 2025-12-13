@@ -11,8 +11,14 @@ from shared.logging.logger import get_logger
 
 log = get_logger("rumble.browser")
 
-ROOM_RE = re.compile(r'(?:roomId|chatRoomId|room_id)\s*["\']?\s*[:=]\s*["\']([^"\']+)["\']', re.IGNORECASE)
-POST_RE = re.compile(r'(?:postPath|chatPostPath|post_path)\s*["\']?\s*[:=]\s*["\']([^"\']+)["\']', re.IGNORECASE)
+ROOM_RE = re.compile(
+    r'(?:roomId|chatRoomId|room_id)\s*["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+    re.IGNORECASE,
+)
+POST_RE = re.compile(
+    r'(?:postPath|chatPostPath|post_path)\s*["\']?\s*[:=]\s*["\']([^"\']+)["\']',
+    re.IGNORECASE,
+)
 
 
 class RumbleBrowserClient:
@@ -36,6 +42,10 @@ class RumbleBrowserClient:
         if not cls._instance:
             cls._instance = cls()
         return cls._instance
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
 
     async def start(self):
         async with self._lock:
@@ -63,7 +73,7 @@ class RumbleBrowserClient:
         await self.start()
         log.debug(f"Browser fetching: {url}")
         await self._page.goto(url, wait_until="domcontentloaded")
-        await self._page.wait_for_timeout(1500)
+        await self._page.wait_for_timeout(2000)
 
     async def get_page(self, url: str) -> Page:
         await self.navigate(url)
@@ -94,9 +104,51 @@ class RumbleBrowserClient:
                 self._sessions.clear()
                 self._ws_hooked.clear()
 
+    # ------------------------------------------------------------------
+    # Socket.IO POLLING (CRITICAL)
+    # ------------------------------------------------------------------
+
     async def _on_response(self, response: Response):
-        # Keep this for fallback only — WS is authoritative now
-        return
+        try:
+            url = response.url or ""
+            if "/socket.io/" not in url:
+                return
+
+            body = await response.body()
+            if not body:
+                return
+
+            text = body.decode("utf-8", errors="ignore").strip()
+            if not text:
+                return
+
+            # Socket.IO event frame: 42["init",{...}]
+            if text.startswith("42"):
+                try:
+                    payload = json.loads(text[2:])
+                except Exception:
+                    return
+
+                if isinstance(payload, list) and len(payload) >= 2:
+                    event, data = payload[0], payload[1]
+                    if event == "init" and isinstance(data, dict):
+                        room = data.get("room_id")
+                        post = data.get("post_path")
+                        if room and post:
+                            self._store_session(room, post, url, "socketio-polling-init")
+                            return
+
+            # Fallback regex scan (some responses inline it)
+            rid, ppath = self._find_chat_keys_text(text)
+            if rid and ppath:
+                self._store_session(rid, ppath, url, "socketio-polling-regex")
+
+        except Exception as e:
+            log.debug(f"Ignoring socket.io response parse error: {e}")
+
+    # ------------------------------------------------------------------
+    # WebSocket (OPTIONAL UPGRADE PATH)
+    # ------------------------------------------------------------------
 
     def _on_websocket(self, ws: WebSocket):
         try:
@@ -128,35 +180,47 @@ class RumbleBrowserClient:
             if not payload:
                 return
 
-            # Attempt JSON parse
+            s = str(payload).strip()
+
+            # Socket.IO framed WS message
+            if s.startswith("42"):
+                try:
+                    data = json.loads(s[2:])
+                except Exception:
+                    return
+
+                if isinstance(data, list) and len(data) >= 2:
+                    event, d = data[0], data[1]
+                    if event == "init" and isinstance(d, dict):
+                        room = d.get("room_id")
+                        post = d.get("post_path")
+                        if room and post:
+                            self._store_session(room, post, ws_url, "ws-socketio-init")
+                            return
+
+            # Generic JSON scan
             try:
-                data = json.loads(payload)
+                obj = json.loads(s)
             except Exception:
-                data = None
+                obj = None
 
-            if isinstance(data, dict):
-                # Explicit Rumble chat init handshake
-                if data.get("type") == "init" and isinstance(data.get("data"), dict):
-                    d = data["data"]
-                    room = d.get("room_id")
-                    post = d.get("post_path")
-
-                    if room and post:
-                        self._store_session(room, post, ws_url, "ws-init")
-                        return
-
-                # Generic deep scan fallback
-                rid, ppath = self._find_chat_keys_json(data)
+            if obj:
+                rid, ppath = self._find_chat_keys_json(obj)
                 if rid and ppath:
                     self._store_session(rid, ppath, ws_url, "ws-json")
+                    return
 
-            # Regex fallback (string frames)
-            rid, ppath = self._find_chat_keys_text(str(payload))
+            # Regex fallback
+            rid, ppath = self._find_chat_keys_text(s)
             if rid and ppath:
                 self._store_session(rid, ppath, ws_url, "ws-regex")
 
         except Exception as e:
             log.debug(f"Ignoring websocket frame parse error: {e}")
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
     def _find_chat_keys_text(self, text: str) -> Tuple[Optional[str], Optional[str]]:
         if not text:
