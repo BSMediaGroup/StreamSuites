@@ -1,3 +1,4 @@
+import asyncio
 from typing import Dict, Optional
 
 from services.rumble.browser.browser_client import RumbleBrowserClient
@@ -6,54 +7,61 @@ from shared.logging.logger import get_logger
 log = get_logger("rumble.api.watch_page")
 
 
-async def fetch_watch_page_chat_state(
-    watch_url: str,
-) -> Dict[str, Optional[str]]:
+async def fetch_watch_page_chat_state(watch_url: str) -> Dict[str, Optional[str]]:
     """
-    Load a Rumble livestream watch page.
+    Load a Rumble livestream watch page and extract chat metadata.
 
-    IMPORTANT:
-    - This function does NOT parse HTML
-    - It does NOT inspect Nuxt / Vue state
-    - It simply navigates the page so that the
-      browser client's network interception layer
-      can detect chat bootstrap responses.
-
-    Chat metadata is retrieved from the browser
-    client AFTER navigation.
+    Strategy:
+    - Navigate with the persistent browser profile (Cloudflare-safe)
+    - Wait briefly for either:
+        (a) JSON/XHR responses parsed by the browser client
+        (b) WebSocket URL/frame parsing (common for chat bootstraps)
     """
     browser = RumbleBrowserClient.instance()
 
-    # Trigger navigation (this enables response interception)
-    await browser.navigate(watch_url)
+    # Important: clear previous detection so we don’t reuse stale sessions
+    browser.clear_sessions()
 
-    # Give network requests time to fire
-    await asyncio_sleep_safe(3)
+    try:
+        await browser.navigate(watch_url)
 
-    # Ask browser client for the most recent livestream session
-    session = browser.get_latest_session()
+        # Wait up to N seconds for the browser to detect a session
+        timeout_s = 20
+        poll_every = 0.25
+        waited = 0.0
 
-    if not session:
+        while waited < timeout_s:
+            session = browser.get_latest_session()
+            if session:
+                room_id = session.get("room_id")
+                post_path = session.get("post_path")
+
+                if room_id and post_path:
+                    log.info(
+                        f"Detected livestream chat session: room={room_id}"
+                    )
+                    return {
+                        "is_live": True,
+                        "chat_room_id": str(room_id),
+                        "chat_post_path": str(post_path),
+                    }
+
+            await asyncio.sleep(poll_every)
+            waited += poll_every
+
         log.error("No livestream chat session detected after navigation")
+
         return {
             "is_live": False,
             "chat_room_id": None,
             "chat_post_path": None,
         }
 
-    return {
-        "is_live": True,
-        "chat_room_id": session.get("room_id"),
-        "chat_post_path": session.get("post_path"),
-    }
+    except Exception as e:
+        log.error(f"Watch-page chat state fetch failed: {e}")
 
-
-async def asyncio_sleep_safe(seconds: float):
-    """
-    Shielded sleep helper to avoid cancellation noise.
-    """
-    try:
-        import asyncio
-        await asyncio.sleep(seconds)
-    except asyncio.CancelledError:
-        pass
+        return {
+            "is_live": False,
+            "chat_room_id": None,
+            "chat_post_path": None,
+        }
