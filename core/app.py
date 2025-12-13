@@ -9,22 +9,22 @@ from media.jobs.clip_job import ClipJob
 
 log = get_logger("core.app")
 
+_GLOBAL_JOB_REGISTRY: JobRegistry | None = None
+
 
 async def main():
+    global _GLOBAL_JOB_REGISTRY
+
     log.info("StreamSuites booting")
 
-    # Load creators
-    registry = CreatorRegistry()
-    creators = registry.load()
-
-    # Initialize core systems
+    creators = CreatorRegistry().load()
     scheduler = Scheduler()
     jobs = JobRegistry()
 
-    # Register job types
+    _GLOBAL_JOB_REGISTRY = jobs
+
     jobs.register("clip", ClipJob)
 
-    # Start per-creator runtimes
     for ctx in creators.values():
         await scheduler.start_creator(ctx)
 
