@@ -41,7 +41,10 @@ class CreatorRegistry:
                 display_name=c.get("display_name", creator_id),
                 platforms=c.get("platforms", {}),
                 limits=c.get("limits", {}),
-                rumble_channel_url=c.get("rumble_channel_url")
+
+                # Platform-specific config (additive, non-breaking)
+                rumble_channel_url=c.get("rumble_channel_url"),
+                rumble_watch_url=c.get("rumble_watch_url"),
             )
 
             out[creator_id] = ctx
