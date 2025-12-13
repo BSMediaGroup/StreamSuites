@@ -57,6 +57,8 @@ class RumbleChatWorker:
         - REST client is ready for sending messages
         - WebSocket chat feed is subscribed
         """
+        log.info(f"[{self.ctx.creator_id}] Initializing browser + chat client")
+
         self.browser = RumbleBrowserClient.instance()
 
         watch_url = getattr(self.ctx, "rumble_watch_url", None)
@@ -79,7 +81,7 @@ class RumbleChatWorker:
 
         self.client = RumbleChatClient(cookies)
 
-        # Subscribe exactly once
+        log.info(f"[{self.ctx.creator_id}] Subscribing to browser chat feed")
         self.browser.subscribe_chat(self._on_chat_message)
 
         log.info(
@@ -119,19 +121,29 @@ class RumbleChatWorker:
         MUST remain lightweight.
         """
         try:
+            # HARD TRACE — proves callback is executing
+            log.debug(
+                f"[{self.ctx.creator_id}] _on_chat_message invoked: keys={list(msg.keys())}"
+            )
+
             text = str(msg.get("text", "")).strip()
             user = (msg.get("user") or {}).get("username", "unknown")
 
             if not text:
+                log.debug(
+                    f"[{self.ctx.creator_id}] Chat payload without text ignored"
+                )
                 return
 
-            # 🔥 HARD DIAGNOSTIC LOG — DO NOT REMOVE YET
+            # 🔥 HARD DIAGNOSTIC LOG — DO NOT REMOVE
             log.info(f"CHAT [{user}]: {text}")
 
             asyncio.create_task(self._handle_message(user, text))
 
-        except Exception:
-            # Never let WS listener crash
+        except Exception as e:
+            log.error(
+                f"[{self.ctx.creator_id}] Chat WS handler error: {e}"
+            )
             return
 
     # ------------------------------------------------------------------
@@ -139,6 +151,10 @@ class RumbleChatWorker:
     # ------------------------------------------------------------------
 
     async def _handle_message(self, user: str, text: str) -> None:
+        log.debug(
+            f"[{self.ctx.creator_id}] Handling message from {user}: {text}"
+        )
+
         if not text.lower().startswith("!clip"):
             return
 
@@ -175,6 +191,10 @@ class RumbleChatWorker:
                 return
 
             self.last_clip_time = now
+
+            log.info(
+                f"[{self.ctx.creator_id}] !clip accepted from {user} ({length}s)"
+            )
 
             await self.jobs.dispatch(
                 job_type="clip",
