@@ -11,18 +11,19 @@ from shared.logging.logger import get_logger
 
 log = get_logger("rumble.browser")
 
-ROOM_RE = re.compile(r'(?:roomId|chatRoomId)"?\s*[:=]\s*"([^"]+)"', re.IGNORECASE)
-POST_RE = re.compile(r'(?:postPath|chatPostPath)"?\s*[:=]\s*"([^"]+)"', re.IGNORECASE)
+ROOM_RE = re.compile(r'(?:roomId|chatRoomId)\s*["\']?\s*[:=]\s*["\']([^"\']+)["\']', re.IGNORECASE)
+POST_RE = re.compile(r'(?:postPath|chatPostPath)\s*["\']?\s*[:=]\s*["\']([^"\']+)["\']', re.IGNORECASE)
 
 
 class RumbleBrowserClient:
     """
-    Persistent browser client that:
-    - survives Cloudflare better via a persistent profile
-    - allows you to log in once and stay logged in
-    - extracts chat bootstrap data from:
-        (a) XHR/fetch response bodies (any JSON-ish content type)
-        (b) WebSocket URLs / frames (common for chat)
+    Persistent browser client (Cloudflare-safe) using a persistent profile.
+    Extracts livestream chat session metadata via:
+      - XHR/FETCH responses (bytes -> safe decode -> regex + JSON walk)
+      - Document HTML (page.content) (regex)
+      - WebSocket URLs + frames (regex + JSON walk)
+
+    This is intentionally defensive: it must never crash the runtime.
     """
 
     _instance: Optional["RumbleBrowserClient"] = None
@@ -32,20 +33,29 @@ class RumbleBrowserClient:
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
 
-        # session_id -> session dict
-        self._sessions: Dict[str, dict] = {}
-
         self._lock = asyncio.Lock()
 
-        # Persistent profile directory (kept out of git via .gitignore)
         self._profile_dir = Path(".browser") / "rumble"
         self._profile_dir.mkdir(parents=True, exist_ok=True)
+
+        # room_id -> session dict
+        self._sessions: Dict[str, dict] = {}
+
+        # Prevent duplicate websocket hooks
+        self._ws_hooked = set()
+
+        # For throttling DOM scans
+        self._last_dom_scan_at = 0.0
 
     @classmethod
     def instance(cls) -> "RumbleBrowserClient":
         if not cls._instance:
             cls._instance = cls()
         return cls._instance
+
+    # ---------------------------------------------------------------------
+    # Lifecycle
+    # ---------------------------------------------------------------------
 
     async def start(self):
         async with self._lock:
@@ -66,7 +76,7 @@ class RumbleBrowserClient:
             pages = self._context.pages
             self._page = pages[0] if pages else await self._context.new_page()
 
-            # Attach listeners
+            # Hooks
             self._page.on("response", self._on_response)
             self._page.on("websocket", self._on_websocket)
 
@@ -76,21 +86,39 @@ class RumbleBrowserClient:
             raise RuntimeError("Browser page not initialized")
 
         log.debug(f"Browser fetching: {url}")
+
+        # domcontentloaded is safer under CF; networkidle can hang
         await self._page.goto(url, wait_until="domcontentloaded")
+
+        # Small wait to allow initial scripts to execute
+        await self._page.wait_for_timeout(1500)
+
+        # Immediately attempt a DOM scan as a fallback (some pages embed values)
+        await self._scan_dom_for_chat_keys(force=True)
+
+    async def get_page(self, url: str) -> Page:
+        """
+        Back-compat helper used by older modules.
+        """
+        await self.navigate(url)
+        if not self._page:
+            raise RuntimeError("Browser page not initialized")
+        return self._page
+
+    def clear_sessions(self):
+        self._sessions.clear()
 
     def get_latest_session(self) -> Optional[dict]:
         if not self._sessions:
             return None
         return max(self._sessions.values(), key=lambda s: s["detected_at"])
 
-    def clear_sessions(self):
-        self._sessions.clear()
-
     async def shutdown(self):
         async with self._lock:
             log.info("Shutting down persistent Chromium browser")
 
             try:
+                # If the user manually closed the window, these may already be dead.
                 if self._context:
                     await self._context.close()
                 if self._playwright:
@@ -102,85 +130,113 @@ class RumbleBrowserClient:
                 self._page = None
                 self._playwright = None
                 self._sessions.clear()
+                self._ws_hooked.clear()
+                self._last_dom_scan_at = 0.0
 
-    # ----------------------------
-    # Response extraction
-    # ----------------------------
+    # ---------------------------------------------------------------------
+    # Hooks: Response
+    # ---------------------------------------------------------------------
 
     async def _on_response(self, response: Response):
         """
-        Try to parse response bodies for chat keys.
-
-        We DO NOT rely on content-type == application/json.
-        We instead focus on fetch/xhr resources because those are likely API payloads.
+        Only attempt body extraction for:
+          - xhr/fetch/doc
+        and only if content-length seems reasonable.
         """
         try:
             req = response.request
             rtype = req.resource_type if req else None
-            if rtype not in ("xhr", "fetch"):
+            if rtype not in ("xhr", "fetch", "document"):
                 return
 
-            # Some responses will not have bodies accessible; ignore quietly.
+            # Headers can be missing; be defensive.
+            headers = {}
             try:
-                body_text = await response.text()
+                headers = response.headers or {}
+            except Exception:
+                headers = {}
+
+            content_type = (headers.get("content-type") or "").lower()
+
+            # Avoid chewing through huge binaries
+            # (We can't always trust content-length, but if present, use it.)
+            cl = headers.get("content-length")
+            if cl:
+                try:
+                    if int(cl) > 2_000_000:
+                        return
+                except Exception:
+                    pass
+
+            # Read bytes first (safe for binary)
+            try:
+                body = await response.body()
             except Exception as e:
+                # Very common with certain resources; just ignore.
                 log.debug(f"Ignoring response body read error: {e}")
                 return
 
-            if not body_text:
+            if not body:
                 return
 
-            # Fast-path: regex scan before attempting JSON parse
-            rid, ppath = self._find_chat_keys_text(body_text)
+            # Decode safely
+            text = self._safe_decode(body)
+
+            # Fast regex scan
+            rid, ppath = self._find_chat_keys_text(text)
             if rid and ppath:
-                self._store_session(rid, ppath, source=response.url, kind="response-regex")
+                self._store_session(rid, ppath, source=response.url, kind=f"response-{rtype}-regex")
                 return
 
-            # If it looks like JSON, attempt parsing
-            body_strip = body_text.lstrip()
-            if not (body_strip.startswith("{") or body_strip.startswith("[")):
-                return
+            # If it claims to be JSON or looks like JSON, try parse and walk.
+            if "json" in content_type or text.lstrip().startswith(("{", "[")):
+                data = None
+                try:
+                    data = json.loads(text)
+                except Exception:
+                    data = None
 
-            try:
-                data = json.loads(body_text)
-            except Exception:
-                return
+                if data is not None:
+                    rid2, ppath2 = self._find_chat_keys_json(data)
+                    if rid2 and ppath2:
+                        self._store_session(rid2, ppath2, source=response.url, kind=f"response-{rtype}-json")
+                        return
 
-            rid2, ppath2 = self._find_chat_keys_json(data)
-            if rid2 and ppath2:
-                self._store_session(rid2, ppath2, source=response.url, kind="response-json")
+            # Occasionally the page embeds things late; throttle DOM scan a bit
+            await self._scan_dom_for_chat_keys()
 
         except Exception as e:
+            # Never crash the event loop for logging
             log.debug(f"Ignoring response parse error: {e}")
 
-    # ----------------------------
-    # WebSocket extraction
-    # ----------------------------
+    # ---------------------------------------------------------------------
+    # Hooks: WebSocket
+    # ---------------------------------------------------------------------
 
     def _on_websocket(self, ws: WebSocket):
-        """
-        WebSocket handler is sync. We attach frame listeners and parse URLs/frames.
-        """
         try:
-            url = ws.url or ""
-            # Try extracting from URL immediately (sometimes roomId appears here)
-            rid, ppath = self._find_chat_keys_text(url)
-            if rid and ppath:
-                self._store_session(rid, ppath, source=url, kind="ws-url")
+            ws_url = ws.url or ""
+            if ws_url in self._ws_hooked:
+                return
+            self._ws_hooked.add(ws_url)
 
-            ws.on("framereceived", lambda frame: asyncio.create_task(self._on_ws_frame(url, frame)))
-            ws.on("framesent", lambda frame: asyncio.create_task(self._on_ws_frame(url, frame)))
+            log.debug(f"WebSocket opened: {ws_url}")
+
+            # URL scan (rare but cheap)
+            rid, ppath = self._find_chat_keys_text(ws_url)
+            if rid and ppath:
+                self._store_session(rid, ppath, source=ws_url, kind="ws-url")
+
+            ws.on("framereceived", lambda frame: asyncio.create_task(self._on_ws_frame(ws_url, frame)))
+            ws.on("framesent", lambda frame: asyncio.create_task(self._on_ws_frame(ws_url, frame)))
+
         except Exception as e:
             log.debug(f"Ignoring websocket hook error: {e}")
 
     async def _on_ws_frame(self, ws_url: str, frame: Any):
-        """
-        Parse websocket frames. Frame may be text or binary.
-        """
         try:
             payload = None
 
-            # Playwright frame can be str or dict depending on version
             if isinstance(frame, str):
                 payload = frame
             elif isinstance(frame, dict):
@@ -191,15 +247,15 @@ class RumbleBrowserClient:
             if not payload:
                 return
 
-            # 1) regex scan text
-            rid, ppath = self._find_chat_keys_text(payload)
+            # Regex scan
+            rid, ppath = self._find_chat_keys_text(str(payload))
             if rid and ppath:
                 self._store_session(rid, ppath, source=ws_url, kind="ws-frame-regex")
                 return
 
-            # 2) try json if possible
+            # JSON scan (if plausible)
             s = str(payload).lstrip()
-            if s.startswith("{") or s.startswith("["):
+            if s.startswith(("{", "[")):
                 try:
                     data = json.loads(payload)
                 except Exception:
@@ -212,29 +268,52 @@ class RumbleBrowserClient:
         except Exception as e:
             log.debug(f"Ignoring websocket frame parse error: {e}")
 
-    # ----------------------------
-    # Key finding + storage
-    # ----------------------------
+    # ---------------------------------------------------------------------
+    # DOM fallback scan
+    # ---------------------------------------------------------------------
 
-    def _store_session(self, room_id: str, post_path: str, source: str, kind: str):
-        session_id = str(room_id)
-        if session_id in self._sessions:
+    async def _scan_dom_for_chat_keys(self, force: bool = False):
+        """
+        Some Rumble pages embed these keys in inline scripts or DOM attributes.
+        Scan page HTML occasionally.
+        """
+        try:
+            if not self._page:
+                return
+
+            now = time.time()
+            if not force and (now - self._last_dom_scan_at) < 3.0:
+                return
+            self._last_dom_scan_at = now
+
+            html = await self._page.content()
+            if not html:
+                return
+
+            rid, ppath = self._find_chat_keys_text(html)
+            if rid and ppath:
+                self._store_session(rid, ppath, source="page.content()", kind="dom-regex")
+
+        except Exception:
             return
 
-        self._sessions[session_id] = {
-            "room_id": str(room_id),
-            "post_path": str(post_path),
-            "detected_at": time.time(),
-            "source_url": source,
-            "kind": kind,
-        }
+    # ---------------------------------------------------------------------
+    # Extraction helpers
+    # ---------------------------------------------------------------------
 
-        log.info(f"Discovered livestream chat session: room={room_id} ({kind})")
+    def _safe_decode(self, b: bytes) -> str:
+        """
+        Decode bytes without throwing.
+        """
+        try:
+            return b.decode("utf-8", errors="ignore")
+        except Exception:
+            try:
+                return b.decode("latin-1", errors="ignore")
+            except Exception:
+                return ""
 
     def _find_chat_keys_text(self, text: str) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Regex search for room/post keys in arbitrary text.
-        """
         try:
             if not text:
                 return None, None
@@ -255,9 +334,6 @@ class RumbleBrowserClient:
             return None, None
 
     def _find_chat_keys_json(self, obj: Any) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Walk arbitrary JSON and return (room_id, post_path) if found.
-        """
         room_id = None
         post_path = None
 
@@ -286,3 +362,18 @@ class RumbleBrowserClient:
 
         walk(obj)
         return room_id, post_path
+
+    def _store_session(self, room_id: str, post_path: str, source: str, kind: str):
+        session_id = str(room_id)
+        if session_id in self._sessions:
+            return
+
+        self._sessions[session_id] = {
+            "room_id": str(room_id),
+            "post_path": str(post_path),
+            "detected_at": time.time(),
+            "source_url": source,
+            "kind": kind,
+        }
+
+        log.info(f"Discovered livestream chat session: room={room_id} ({kind})")
