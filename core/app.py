@@ -1,5 +1,5 @@
 import asyncio
-import os
+import sys
 
 from dotenv import load_dotenv
 
@@ -30,7 +30,6 @@ async def main():
     # Initialize core systems
     scheduler = Scheduler()
     jobs = JobRegistry()
-
     _GLOBAL_JOB_REGISTRY = jobs
 
     # Register job types
@@ -41,14 +40,19 @@ async def main():
         await scheduler.start_creator(ctx)
 
     try:
+        # Long sleep keeps loop alive without busy waiting
         while True:
-            await asyncio.sleep(1)
-    except (KeyboardInterrupt, SystemExit):
-        log.info("Shutdown signal received")
+            await asyncio.sleep(3600)
+    except asyncio.CancelledError:
+        # Expected during shutdown
+        pass
     finally:
         await scheduler.shutdown()
         log.info("StreamSuites stopped")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        sys.exit(0)
