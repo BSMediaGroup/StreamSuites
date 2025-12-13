@@ -28,17 +28,6 @@ async def main():
     for ctx in creators.values():
         await scheduler.start_creator(ctx)
 
-    # TEMPORARY: Dispatch a test clip job on startup
-    # (This will be removed once chat command triggers are implemented)
-    for ctx in creators.values():
-        await jobs.dispatch(
-            job_type="clip",
-            ctx=ctx,
-            payload={
-                "length": 15
-            }
-        )
-
     try:
         while True:
             await asyncio.sleep(1)
