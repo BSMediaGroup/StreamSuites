@@ -74,6 +74,14 @@ class RumbleBrowserClient:
             pages = self._context.pages
             self._page = pages[0] if pages else await self._context.new_page()
 
+            # ----------------------------------------------------------
+            # CRITICAL: initialize session by loading Rumble
+            # (prevents about:blank + missing CF cookies)
+            # ----------------------------------------------------------
+            log.info("Initializing Rumble session in browser")
+            await self._page.goto("https://rumble.com", wait_until="domcontentloaded")
+            await self._page.wait_for_timeout(2000)
+
     async def shutdown(self) -> None:
         async with self._lock:
             log.info("Shutting down persistent Chromium browser")
