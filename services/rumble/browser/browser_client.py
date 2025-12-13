@@ -38,7 +38,7 @@ class RumbleBrowserClient:
 
         self._last_nav_at = 0.0
 
-        # Chat subscribers (callbacks)
+        # Chat subscribers
         self._chat_callbacks: list[Callable[[dict], None]] = []
 
     # ------------------------------------------------------------------
@@ -77,14 +77,12 @@ class RumbleBrowserClient:
             pages = self._context.pages
             self._page = pages[0] if pages else await self._context.new_page()
 
-            # Hook WebSockets immediately
+            # 🔥 Hook ALL websockets
             self._page.on("websocket", self._on_websocket)
 
-            # Navigate so Rumble initializes chat + cookies
             if watch_url:
                 await self.navigate(watch_url)
 
-            # Log cookie presence for sanity
             cookies = await self.get_cookie_dict_for("rumble.com")
             if cookies:
                 log.warning(
@@ -120,12 +118,12 @@ class RumbleBrowserClient:
 
         self._last_nav_at = now
 
-        log.info(f"Initializing Rumble session in browser")
+        log.info(f"Initializing Rumble session in browser → {url}")
         await self._page.goto(url, wait_until="domcontentloaded")
         await self._page.wait_for_timeout(3000)
 
     # ------------------------------------------------------------------
-    # Cookie export (REQUIRED BY CHAT WORKER)
+    # Cookie export
     # ------------------------------------------------------------------
 
     async def get_cookie_dict_for(self, domain_substr: str = "rumble.com") -> Dict[str, str]:
@@ -154,51 +152,42 @@ class RumbleBrowserClient:
     # ------------------------------------------------------------------
 
     def subscribe_chat(self, callback: Callable[[dict], None]) -> None:
-        """
-        Register a callback that receives parsed chat messages.
-        """
         if callback not in self._chat_callbacks:
             self._chat_callbacks.append(callback)
 
     def _on_websocket(self, ws: WebSocket) -> None:
+        url = ws.url or ""
+        log.info(f"WebSocket opened: {url}")
+
+        ws.on("framereceived", lambda payload: asyncio.create_task(
+            self._handle_ws_frame(payload)
+        ))
+
+    async def _handle_ws_frame(self, payload: Any) -> None:
         try:
-            url = ws.url or ""
-            if "/chat" not in url:
-                return
-
-            log.info(f"Chat WebSocket connected")
-
-            ws.on(
-                "framereceived",
-                lambda frame: asyncio.create_task(
-                    self._handle_ws_frame(frame)
-                ),
-            )
-
-        except Exception as e:
-            log.error(f"WebSocket hook error: {e}")
-
-    async def _handle_ws_frame(self, frame: Any) -> None:
-        try:
-            payload = frame.get("payload") if isinstance(frame, dict) else None
-            if not payload:
-                return
-
+            # Playwright gives BYTES or STR — not dicts
             if isinstance(payload, bytes):
-                payload = payload.decode("utf-8", errors="ignore")
-
-            if not payload.startswith("{"):
+                text = payload.decode("utf-8", errors="ignore")
+            elif isinstance(payload, str):
+                text = payload
+            else:
                 return
 
-            data = json.loads(payload)
+            # 🔥 TEMPORARY RAW FRAME LOG
+            log.debug(f"WS FRAME: {text[:500]}")
 
-            # Rumble chat messages arrive as structured JSON
-            if "text" in data and "user" in data:
+            if not text.startswith("{"):
+                return
+
+            data = json.loads(text)
+
+            # Pass through anything that looks like chat
+            if isinstance(data, dict) and "text" in data and "user" in data:
                 for cb in self._chat_callbacks:
                     try:
                         cb(data)
                     except Exception:
                         pass
 
-        except Exception:
-            return
+        except Exception as e:
+            log.error(f"WS frame parse error: {e}")
