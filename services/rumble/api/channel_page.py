@@ -7,8 +7,8 @@ from shared.logging.logger import get_logger
 
 log = get_logger("rumble.api.channel_page")
 
-CHANNEL_STATE_RE = re.compile(
-    r"window\.__INITIAL_STATE__\s*=\s*({.*?});",
+NUXT_STATE_RE = re.compile(
+    r"window\.__NUXT__\s*=\s*({.*?});",
     re.DOTALL
 )
 
@@ -16,7 +16,7 @@ CHANNEL_STATE_RE = re.compile(
 async def fetch_channel_livestream_state(channel_url: str) -> Dict[str, Any]:
     """
     Fetch Rumble channel page HTML via Playwright
-    and extract embedded __INITIAL_STATE__ JSON.
+    and extract embedded Nuxt state.
     """
     browser = RumbleBrowserClient.instance()
 
@@ -26,13 +26,14 @@ async def fetch_channel_livestream_state(channel_url: str) -> Dict[str, Any]:
         log.error(f"Browser fetch failed: {e}")
         return {}
 
-    match = CHANNEL_STATE_RE.search(html)
+    match = NUXT_STATE_RE.search(html)
     if not match:
-        log.error("Unable to locate __INITIAL_STATE__ in channel page HTML")
+        log.error("Unable to locate window.__NUXT__ in channel page HTML")
         return {}
 
     try:
-        return json.loads(match.group(1))
+        state = json.loads(match.group(1))
+        return state
     except json.JSONDecodeError as e:
-        log.error(f"Failed to parse __INITIAL_STATE__: {e}")
+        log.error(f"Failed to parse window.__NUXT__: {e}")
         return {}
