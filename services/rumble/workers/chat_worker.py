@@ -36,7 +36,6 @@ class RumbleChatWorker:
         self.client: Optional[RumbleChatClient] = None
         self.browser: Optional[RumbleBrowserClient] = None
 
-        # Prevent overlapping !clip handling
         self._lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
@@ -121,12 +120,14 @@ class RumbleChatWorker:
         """
         try:
             text = str(msg.get("text", "")).strip()
+            user = (msg.get("user") or {}).get("username", "unknown")
+
             if not text:
                 return
 
-            user = (msg.get("user") or {}).get("username", "unknown")
+            # 🔥 HARD DIAGNOSTIC LOG — DO NOT REMOVE YET
+            log.info(f"CHAT [{user}]: {text}")
 
-            # Hand off to asyncio loop
             asyncio.create_task(self._handle_message(user, text))
 
         except Exception:
