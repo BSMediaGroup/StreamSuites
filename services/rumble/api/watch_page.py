@@ -1,5 +1,3 @@
-import json
-import re
 from typing import Dict, Optional
 
 from services.rumble.browser.browser_client import RumbleBrowserClient
@@ -7,64 +5,56 @@ from shared.logging.logger import get_logger
 
 log = get_logger("rumble.api.watch_page")
 
-RUMBLE_STATE_PATTERNS = [
-    re.compile(r"window\.__RUMBLE_STATE__\s*=\s*({.*?});", re.DOTALL),
-    re.compile(r"window\.__RUMBLE_DATA__\s*=\s*({.*?});", re.DOTALL),
-]
-
 
 async def fetch_watch_page_chat_state(watch_url: str) -> Dict[str, Optional[str]]:
     """
-    Fetch a Rumble watch page and extract live chat metadata.
+    Load a Rumble livestream watch page and extract chat metadata
+    directly from the in-page Vue / Nuxt runtime.
     """
     browser = RumbleBrowserClient.instance()
-    html = await browser.fetch_html(watch_url)
+    page = await browser.get_page(watch_url)
 
-    state = None
-
-    # 1️⃣ Try known global state objects
-    for pattern in RUMBLE_STATE_PATTERNS:
-        match = pattern.search(html)
-        if match:
-            try:
-                state = json.loads(match.group(1))
-                break
-            except Exception as e:
-                log.error(f"Failed to parse RUMBLE state JSON: {e}")
-
-    # 2️⃣ Fallback: script[type=application/json]
-    if not state:
-        for block in re.findall(
-            r'<script[^>]+type="application/json"[^>]*>(.*?)</script>',
-            html,
-            re.DOTALL,
-        ):
-            try:
-                candidate = json.loads(block.strip())
-                if isinstance(candidate, dict) and "video" in candidate:
-                    state = candidate
-                    break
-            except Exception:
-                continue
-
-    if not state:
-        log.error("Unable to locate embedded JSON state on watch page")
-        return {
-            "is_live": False,
-            "chat_room_id": None,
-            "chat_post_path": None,
-        }
-
-    # 3️⃣ Extract chat metadata
     try:
-        video = state.get("video") or {}
-        chat = video.get("chat") or {}
+        # Give Nuxt time to hydrate
+        await page.wait_for_function(
+            "window.__NUXT__ || window.$nuxt",
+            timeout=15000,
+        )
+
+        state = await page.evaluate(
+            """
+            () => {
+                if (window.__NUXT__) return window.__NUXT__;
+                if (window.$nuxt && window.$nuxt.$store)
+                    return window.$nuxt.$store.state;
+                return null;
+            }
+            """
+        )
+
+        if not state:
+            log.error("Nuxt state not found in page runtime")
+            return {
+                "is_live": False,
+                "chat_room_id": None,
+                "chat_post_path": None,
+            }
+
+        # Walk known Rumble structures
+        video = (
+            state.get("video")
+            or state.get("videos", {}).get("current")
+            or {}
+        )
+
+        livestream = video.get("livestream") or {}
+        chat = livestream.get("chat") or video.get("chat") or {}
 
         room_id = chat.get("roomId")
         post_path = chat.get("postPath")
 
         if not room_id or not post_path:
-            log.error("Chat metadata not present in watch page state")
+            log.error("Chat metadata missing from Nuxt state")
             return {
                 "is_live": False,
                 "chat_room_id": None,
@@ -78,7 +68,7 @@ async def fetch_watch_page_chat_state(watch_url: str) -> Dict[str, Optional[str]
         }
 
     except Exception as e:
-        log.error(f"Failed extracting chat metadata: {e}")
+        log.error(f"Failed extracting chat state from page runtime: {e}")
         return {
             "is_live": False,
             "chat_room_id": None,
