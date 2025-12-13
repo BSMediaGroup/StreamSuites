@@ -2,7 +2,7 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 from core.jobs import JobRegistry
 from services.rumble.chat_client import RumbleChatClient
@@ -16,12 +16,13 @@ CLIP_RULES_FILE = Path("shared/config/clip_rules.json")
 
 class RumbleChatWorker:
     """
-    Stateful chat worker for a single Rumble chat channel.
+    WebSocket-driven Rumble chat worker.
 
-    IMPORTANT:
-    - Cookies are sourced LIVE from the persistent Playwright browser
-    - NO cookies are read from .env anymore
-    - This keeps cf_clearance / __cf_bm / session cookies fresh automatically
+    CRITICAL DESIGN:
+    - Chat is READ via Playwright WebSocket (browser-owned)
+    - Chat is SENT via REST POST (RumbleChatClient)
+    - NO REST polling
+    - Browser MUST stay open
     """
 
     def __init__(self, ctx, jobs: JobRegistry, channel_id: str):
@@ -29,12 +30,11 @@ class RumbleChatWorker:
         self.jobs = jobs
         self.channel_id = str(channel_id)
 
-        self.last_seen_id: Optional[str] = None
         self.last_clip_time = 0.0
-
         self.clip_rules = self._load_clip_rules()
 
         self.client: Optional[RumbleChatClient] = None
+        self._browser: Optional[RumbleBrowserClient] = None
 
     # ------------------------------------------------------------------
     # Setup
@@ -46,29 +46,38 @@ class RumbleChatWorker:
         except Exception:
             return {"enabled": False}
 
-    async def _ensure_client(self) -> None:
+    async def _ensure_browser_and_client(self):
         """
-        Ensure we have a chat client with FRESH cookies from the browser.
-        This can be re-run safely if cookies rotate.
+        Ensure:
+        - Persistent browser is running
+        - Browser is navigated to the WATCH PAGE
+        - Fresh cookies are harvested
+        - REST client is ready for sending messages
         """
-        browser = RumbleBrowserClient.instance()
+        self._browser = RumbleBrowserClient.instance()
 
-        # Ensure browser is running & logged in
-        await browser.start()
+        # Browser MUST navigate to watch page to attach chat WS
+        watch_url = getattr(self.ctx, "rumble_watch_url", None)
+        if not watch_url:
+            raise RuntimeError("ctx.rumble_watch_url is required but missing")
 
-        cookies: Dict[str, str] = await browser.get_cookie_dict_for("rumble.com")
+        await self._browser.start(watch_url=watch_url)
 
-        # Hard requirement: these MUST exist or chat will fail
+        cookies = await self._browser.get_cookie_dict_for("rumble.com")
+
         required = ["u_s", "a_s", "cf_clearance"]
         missing = [k for k in required if k not in cookies]
 
         if missing:
             raise RuntimeError(
                 f"Missing required Rumble cookies from browser: {missing}. "
-                f"Open the browser window and log into Rumble manually."
+                f"Log into Rumble in the opened browser window."
             )
 
         self.client = RumbleChatClient(cookies)
+
+        # Subscribe to browser WebSocket chat feed
+        self._browser.subscribe_chat(self._on_chat_message)
 
     # ------------------------------------------------------------------
     # Runtime
@@ -77,24 +86,15 @@ class RumbleChatWorker:
     async def run(self):
         log.info(
             f"[{self.ctx.creator_id}] Rumble chat bot active "
-            f"(channel={self.channel_id})"
+            f"(channel={self.channel_id}, websocket mode)"
         )
 
         try:
-            # Initial client bootstrap
-            await self._ensure_client()
+            await self._ensure_browser_and_client()
 
+            # Keep task alive forever; browser pushes messages via callback
             while True:
-                try:
-                    await self._poll()
-                except Exception as e:
-                    # Any fetch/send failure → refresh cookies + client
-                    log.error(
-                        f"[{self.ctx.creator_id}] Chat poll error, refreshing cookies: {e}"
-                    )
-                    await self._ensure_client()
-
-                await asyncio.sleep(2)
+                await asyncio.sleep(3600)
 
         except asyncio.CancelledError:
             raise
@@ -102,28 +102,26 @@ class RumbleChatWorker:
         except Exception as e:
             log.error(f"[{self.ctx.creator_id}] Chat worker crashed: {e}")
 
-    async def _poll(self):
-        if not self.client:
-            return
+    # ------------------------------------------------------------------
+    # WebSocket inbound messages
+    # ------------------------------------------------------------------
 
-        messages = self.client.fetch_messages(
-            channel_id=self.channel_id,
-            since_id=self.last_seen_id,
-        )
-
-        for msg in messages:
-            msg_id = msg.get("id")
-            if not msg_id:
-                continue
-
-            # Advance cursor
-            self.last_seen_id = str(msg_id)
-
+    def _on_chat_message(self, msg: dict):
+        """
+        Called directly from Playwright WebSocket listener.
+        MUST be sync-safe → offload async work.
+        """
+        try:
             text = str(msg.get("text", "")).strip()
             user = (msg.get("user") or {}).get("username", "unknown")
 
-            if text:
-                await self._handle_message(user, text)
+            if not text:
+                return
+
+            asyncio.create_task(self._handle_message(user, text))
+
+        except Exception:
+            return
 
     # ------------------------------------------------------------------
     # Command handling
@@ -138,7 +136,8 @@ class RumbleChatWorker:
 
         if now - self.last_clip_time < cooldown:
             self.client.send_message(
-                self.channel_id, "⏳ Cooldown active. Try again shortly."
+                self.channel_id,
+                "⏳ Cooldown active. Try again shortly."
             )
             return
 
@@ -150,14 +149,16 @@ class RumbleChatWorker:
                 length = int(parts[1])
             except ValueError:
                 self.client.send_message(
-                    self.channel_id, "❌ Invalid clip length."
+                    self.channel_id,
+                    "❌ Invalid clip length."
                 )
                 return
 
         max_len = int(self.clip_rules.get("max_length", 90))
         if length > max_len:
             self.client.send_message(
-                self.channel_id, f"❌ Clip too long (max {max_len}s)."
+                self.channel_id,
+                f"❌ Clip too long (max {max_len}s)."
             )
             return
 
@@ -174,5 +175,6 @@ class RumbleChatWorker:
         )
 
         self.client.send_message(
-            self.channel_id, f"🎬 Clip queued ({length}s)"
+            self.channel_id,
+            f"🎬 Clip queued ({length}s)"
         )
