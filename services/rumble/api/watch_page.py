@@ -12,45 +12,67 @@ POST_RE = re.compile(r"(?:postPath|chatPostPath)=([^&]+)")
 
 async def fetch_watch_page_chat_state(watch_url: str) -> Dict[str, Optional[str]]:
     """
-    Extract Rumble livestream chat metadata by piercing the <rumble-chat>
-    shadow DOM and reading the embedded iframe src.
+    Extract Rumble livestream chat metadata by recursively traversing
+    DOM + shadow DOM and locating the embedded chat iframe.
 
-    This is the ONLY reliable method.
+    This handles rumble-player → rumble-live-chat → iframe.
     """
     browser = RumbleBrowserClient.instance()
     page = await browser.get_page(watch_url)
 
     try:
-        # Wait for the custom element itself
-        await page.wait_for_selector("rumble-chat", timeout=20000)
+        # Allow player + chat boot
+        await page.wait_for_timeout(5000)
 
-        result = await page.evaluate(
+        iframe_src = await page.evaluate(
             """
             () => {
-              const host = document.querySelector('rumble-chat');
-              if (!host || !host.shadowRoot) return null;
+              const seen = new Set();
 
-              const iframe = host.shadowRoot.querySelector('iframe');
-              if (!iframe) return null;
+              function walk(node) {
+                if (!node || seen.has(node)) return null;
+                seen.add(node);
 
-              return iframe.src || null;
+                // iframe check
+                if (node.tagName === 'IFRAME' && node.src && node.src.includes('/chat')) {
+                  return node.src;
+                }
+
+                // shadow root
+                if (node.shadowRoot) {
+                  const found = walk(node.shadowRoot);
+                  if (found) return found;
+                }
+
+                // children
+                if (node.children) {
+                  for (const child of node.children) {
+                    const found = walk(child);
+                    if (found) return found;
+                  }
+                }
+
+                return null;
+              }
+
+              return walk(document.body);
             }
             """
         )
 
-        if not result:
-            raise RuntimeError("Chat iframe not found inside rumble-chat shadowRoot")
+        if not iframe_src:
+            raise RuntimeError("Chat iframe not found in DOM or shadow DOM")
 
-        room_match = ROOM_RE.search(result)
-        post_match = POST_RE.search(result)
+        room_match = ROOM_RE.search(iframe_src)
+        post_match = POST_RE.search(iframe_src)
 
         if not room_match or not post_match:
-            raise RuntimeError(f"Chat iframe src missing metadata: {result}")
+            raise RuntimeError(f"Chat iframe src missing metadata: {iframe_src}")
 
         room_id = room_match.group(1)
         post_path = post_match.group(1)
 
-        log.info(f"Extracted chat metadata via shadow DOM: room={room_id}")
+        log.info(f"Extracted chat metadata via deep shadow scan: room={room_id}")
 
         return {
             "is_live": True,
