@@ -16,7 +16,7 @@ class CreatorRegistry:
 
     def load(self) -> Dict[str, CreatorContext]:
         """
-        Load creators from shared/config/creators.json and return a map:
+        Load creators from shared/config/creators.json and return:
         { creator_id: CreatorContext }
         """
         if not self.path.exists():
@@ -42,9 +42,12 @@ class CreatorRegistry:
                 platforms=c.get("platforms", {}),
                 limits=c.get("limits", {}),
 
-                # Platform-specific config (additive, non-breaking)
+                # ----------------------------
+                # RUMBLE CONFIG (AUTHORITATIVE)
+                # ----------------------------
                 rumble_channel_url=c.get("rumble_channel_url"),
                 rumble_watch_url=c.get("rumble_watch_url"),
+                rumble_chat_channel_id=c.get("rumble_chat_channel_id"),
             )
 
             out[creator_id] = ctx
