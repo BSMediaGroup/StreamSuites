@@ -141,21 +141,19 @@ class RumbleBrowserClient:
         """
         Export cookies from the persistent browser context
         as a dict suitable for httpx.
-
-        This completely replaces `.env` cookie management.
         """
         await self.start()
         if not self._context:
             return {}
-
+    
         try:
             cookies = await self._context.cookies()
         except Exception as e:
             log.warning(f"Failed to read browser cookies: {e}")
             return {}
-
+    
         out: Dict[str, str] = {}
-
+    
         for c in cookies:
             domain = (c.get("domain") or "").lstrip(".")
             if domain_substr in domain:
@@ -163,5 +161,8 @@ class RumbleBrowserClient:
                 value = c.get("value")
                 if name and value:
                     out[name] = value
-
+    
+        # 🔎 TEMP DEBUG — DO NOT REMOVE YET
+        log.warning("RUMBLE COOKIES PRESENT: " + ", ".join(sorted(out.keys())))
+    
         return out
