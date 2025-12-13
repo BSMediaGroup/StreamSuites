@@ -2,9 +2,9 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Dict, Optional, Callable, Any
+from typing import Dict, Optional, Callable, Any, List
 
-from playwright.async_api import async_playwright, BrowserContext, Page, WebSocket
+from playwright.async_api import async_playwright, BrowserContext, Page, Response
 
 from shared.logging.logger import get_logger
 
@@ -13,15 +13,11 @@ log = get_logger("rumble.browser")
 
 class RumbleBrowserClient:
     """
-    Persistent Chromium browser (Cloudflare-safe).
-
-    RESPONSIBILITIES:
-      - Own authentication state (login, CF clearance, session cookies)
-      - Stay open for the lifetime of the bot
-      - Expose fresh cookies to REST clients
-      - Tap into Rumble chat WebSocket traffic
-
-    THIS CLASS IS AUTHORITATIVE FOR AUTH.
+    Persistent Chromium browser that:
+      - Owns Rumble authentication
+      - Stays open
+      - Intercepts Socket.IO polling responses
+      - Emits decoded chat messages
     """
 
     _instance: Optional["RumbleBrowserClient"] = None
@@ -31,19 +27,14 @@ class RumbleBrowserClient:
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
 
-        self._lock = asyncio.Lock()
-
         self._profile_dir = Path(".browser") / "rumble"
         self._profile_dir.mkdir(parents=True, exist_ok=True)
 
-        self._last_nav_at = 0.0
+        self._lock = asyncio.Lock()
+        self._chat_callbacks: List[Callable[[dict], None]] = []
+        self._started = False
 
-        # Chat subscribers
-        self._chat_callbacks: list[Callable[[dict], None]] = []
-
-    # ------------------------------------------------------------------
-    # Singleton
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------
 
     @classmethod
     def instance(cls) -> "RumbleBrowserClient":
@@ -51,19 +42,16 @@ class RumbleBrowserClient:
             cls._instance = cls()
         return cls._instance
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------
 
-    async def start(self, watch_url: Optional[str] = None) -> None:
+    async def start(self, watch_url: str) -> None:
         async with self._lock:
-            if self._context and self._page:
+            if self._started:
                 return
 
-            log.info("Starting persistent Chromium browser (Cloudflare-safe)")
+            log.info("Starting persistent Chromium browser (Socket.IO interception mode)")
 
             self._playwright = await async_playwright().start()
-
             self._context = await self._playwright.chromium.launch_persistent_context(
                 user_data_dir=str(self._profile_dir),
                 headless=False,
@@ -74,120 +62,99 @@ class RumbleBrowserClient:
                 viewport={"width": 1280, "height": 800},
             )
 
-            pages = self._context.pages
-            self._page = pages[0] if pages else await self._context.new_page()
+            self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()
 
-            # 🔥 Hook ALL websockets
-            self._page.on("websocket", self._on_websocket)
+            # Hook network responses (THIS IS THE KEY)
+            self._page.on("response", self._on_response)
 
-            if watch_url:
-                await self.navigate(watch_url)
+            log.info(f"Navigating browser to watch page → {watch_url}")
+            await self._page.goto(watch_url, wait_until="domcontentloaded")
+            await self._page.wait_for_timeout(5000)
 
             cookies = await self.get_cookie_dict_for("rumble.com")
             if cookies:
-                log.warning(
-                    "RUMBLE COOKIES PRESENT: " + ", ".join(sorted(cookies.keys()))
-                )
+                log.warning("RUMBLE COOKIES PRESENT: " + ", ".join(sorted(cookies.keys())))
+
+            self._started = True
+
+    # ------------------------------------------------------------
 
     async def shutdown(self) -> None:
         async with self._lock:
-            log.info("Shutting down persistent Chromium browser")
             try:
                 if self._context:
                     await self._context.close()
                 if self._playwright:
                     await self._playwright.stop()
-            except Exception as e:
-                log.warning(f"Browser shutdown error ignored: {e}")
             finally:
                 self._context = None
                 self._page = None
                 self._playwright = None
+                self._started = False
 
-    # ------------------------------------------------------------------
-    # Navigation
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------
 
-    async def navigate(self, url: str, min_interval_sec: float = 2.0) -> None:
-        if not self._page:
-            return
-
-        now = time.time()
-        if (now - self._last_nav_at) < min_interval_sec:
-            return
-
-        self._last_nav_at = now
-
-        log.info(f"Initializing Rumble session in browser → {url}")
-        await self._page.goto(url, wait_until="domcontentloaded")
-        await self._page.wait_for_timeout(3000)
-
-    # ------------------------------------------------------------------
-    # Cookie export
-    # ------------------------------------------------------------------
-
-    async def get_cookie_dict_for(self, domain_substr: str = "rumble.com") -> Dict[str, str]:
+    async def get_cookie_dict_for(self, domain_substr: str) -> Dict[str, str]:
         if not self._context:
             return {}
 
-        try:
-            cookies = await self._context.cookies()
-        except Exception as e:
-            log.error(f"Failed to read cookies: {e}")
-            return {}
-
+        cookies = await self._context.cookies()
         out: Dict[str, str] = {}
+
         for c in cookies:
             domain = (c.get("domain") or "").lstrip(".")
             if domain_substr in domain:
-                name = c.get("name")
-                val = c.get("value")
-                if name and val:
-                    out[name] = val
+                if c.get("name") and c.get("value"):
+                    out[c["name"]] = c["value"]
 
         return out
 
-    # ------------------------------------------------------------------
-    # WebSocket handling
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------
+    # Chat subscription
+    # ------------------------------------------------------------
 
     def subscribe_chat(self, callback: Callable[[dict], None]) -> None:
         if callback not in self._chat_callbacks:
             self._chat_callbacks.append(callback)
 
-    def _on_websocket(self, ws: WebSocket) -> None:
-        url = ws.url or ""
-        log.info(f"WebSocket opened: {url}")
+    # ------------------------------------------------------------
+    # Socket.IO polling interception (THE IMPORTANT PART)
+    # ------------------------------------------------------------
 
-        ws.on("framereceived", lambda payload: asyncio.create_task(
-            self._handle_ws_frame(payload)
-        ))
+    def _on_response(self, response: Response) -> None:
+        url = response.url
 
-    async def _handle_ws_frame(self, payload: Any) -> None:
+        if "socket.io" not in url or "transport=polling" not in url:
+            return
+
+        asyncio.create_task(self._handle_socketio_response(response))
+
+    async def _handle_socketio_response(self, response: Response) -> None:
         try:
-            # Playwright gives BYTES or STR — not dicts
-            if isinstance(payload, bytes):
-                text = payload.decode("utf-8", errors="ignore")
-            elif isinstance(payload, str):
-                text = payload
-            else:
-                return
+            text = await response.text()
+        except Exception:
+            return
 
-            # 🔥 TEMPORARY RAW FRAME LOG
-            log.debug(f"WS FRAME: {text[:500]}")
+        # Socket.IO packets are newline separated
+        for line in text.splitlines():
+            if not line.startswith("42"):
+                continue
 
-            if not text.startswith("{"):
-                return
+            try:
+                payload = json.loads(line[2:])
+            except Exception:
+                continue
 
-            data = json.loads(text)
+            if not isinstance(payload, list) or len(payload) < 2:
+                continue
 
-            # Pass through anything that looks like chat
-            if isinstance(data, dict) and "text" in data and "user" in data:
-                for cb in self._chat_callbacks:
-                    try:
-                        cb(data)
-                    except Exception:
-                        pass
+            event, data = payload[0], payload[1]
 
-        except Exception as e:
-            log.error(f"WS frame parse error: {e}")
+            if event != "message" or not isinstance(data, dict):
+                continue
+
+            for cb in self._chat_callbacks:
+                try:
+                    cb(data)
+                except Exception:
+                    pass
