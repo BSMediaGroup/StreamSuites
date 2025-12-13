@@ -1,9 +1,10 @@
 import asyncio
+import json
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 
-from playwright.async_api import async_playwright, BrowserContext, Page
+from playwright.async_api import async_playwright, BrowserContext, Page, WebSocket
 
 from shared.logging.logger import get_logger
 
@@ -14,15 +15,11 @@ class RumbleBrowserClient:
     """
     Persistent Chromium browser (Cloudflare-safe).
 
-    Responsibilities:
-      - Maintain a logged-in Rumble session across restarts
-      - Automatically refresh rotating cookies (cf_clearance, __cf_bm, etc.)
-      - Provide fresh cookies to REST clients (httpx)
-
-    IMPORTANT:
-      - This class does NOT scrape pages
-      - This class does NOT handle chat
-      - This class exists solely to own authentication state
+    AUTHORITATIVE RESPONSIBILITIES:
+      - Maintain logged-in Rumble session
+      - Navigate to livestream watch page
+      - Own the chat WebSocket
+      - Emit chat messages to subscribers
     """
 
     _instance: Optional["RumbleBrowserClient"] = None
@@ -34,11 +31,11 @@ class RumbleBrowserClient:
 
         self._lock = asyncio.Lock()
 
-        # Persistent profile directory (login state lives here)
         self._profile_dir = Path(".browser") / "rumble"
         self._profile_dir.mkdir(parents=True, exist_ok=True)
 
-        self._last_nav_at = 0.0
+        self._chat_listeners: list[Callable[[dict], None]] = []
+        self._ws_hooked = set()
 
     # ------------------------------------------------------------------
 
@@ -52,7 +49,7 @@ class RumbleBrowserClient:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    async def start(self) -> None:
+    async def start(self, watch_url: str) -> None:
         async with self._lock:
             if self._context and self._page:
                 return
@@ -74,18 +71,17 @@ class RumbleBrowserClient:
             pages = self._context.pages
             self._page = pages[0] if pages else await self._context.new_page()
 
-            # ----------------------------------------------------------
-            # CRITICAL: initialize session by loading Rumble
-            # (prevents about:blank + missing CF cookies)
-            # ----------------------------------------------------------
+            self._page.on("websocket", self._on_websocket)
+
             log.info("Initializing Rumble session in browser")
-            await self._page.goto("https://rumble.com", wait_until="domcontentloaded")
-            await self._page.wait_for_timeout(2000)
+            await self._page.goto(watch_url, wait_until="domcontentloaded")
+            await self._page.wait_for_timeout(3000)
+
+            await self._log_cookie_state()
 
     async def shutdown(self) -> None:
         async with self._lock:
             log.info("Shutting down persistent Chromium browser")
-
             try:
                 if self._context:
                     await self._context.close()
@@ -97,72 +93,63 @@ class RumbleBrowserClient:
                 self._context = None
                 self._page = None
                 self._playwright = None
+                self._ws_hooked.clear()
+                self._chat_listeners.clear()
 
     # ------------------------------------------------------------------
-    # Optional navigation helper
+    # Cookie diagnostics (debug only)
     # ------------------------------------------------------------------
 
-    async def navigate(self, url: str, min_interval_sec: float = 2.0) -> None:
-        """
-        OPTIONAL helper.
-
-        Use this if you want to:
-          - Manually log in once
-          - Refresh Cloudflare clearance
-        """
-        await self.start()
-        if not self._page:
-            raise RuntimeError("Browser page not initialized")
-
-        now = time.time()
-        if (now - self._last_nav_at) < min_interval_sec:
-            return
-
-        self._last_nav_at = now
-
-        log.debug(f"Browser navigating to: {url}")
-        await self._page.goto(url, wait_until="domcontentloaded")
-        await self._page.wait_for_timeout(1500)
-
-    async def get_page(self) -> Page:
-        await self.start()
-        if not self._page:
-            raise RuntimeError("Browser page not initialized")
-        return self._page
-
-    # ------------------------------------------------------------------
-    # Cookie export (AUTHORITATIVE SOURCE)
-    # ------------------------------------------------------------------
-
-    async def get_cookie_dict_for(
-        self,
-        domain_substr: str = "rumble.com",
-    ) -> Dict[str, str]:
-        """
-        Export cookies from the persistent browser context
-        as a dict suitable for httpx.
-        """
-        await self.start()
-        if not self._context:
-            return {}
-    
+    async def _log_cookie_state(self):
         try:
             cookies = await self._context.cookies()
+            names = sorted(c["name"] for c in cookies if "rumble" in c.get("domain", ""))
+            log.warning(f"RUMBLE COOKIES PRESENT: {', '.join(names)}")
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Chat subscription
+    # ------------------------------------------------------------------
+
+    def subscribe_chat(self, callback: Callable[[dict], None]) -> None:
+        self._chat_listeners.append(callback)
+
+    # ------------------------------------------------------------------
+    # WebSocket handling
+    # ------------------------------------------------------------------
+
+    def _on_websocket(self, ws: WebSocket):
+        try:
+            if ws.url in self._ws_hooked:
+                return
+
+            self._ws_hooked.add(ws.url)
+            log.info(f"Chat WebSocket connected: {ws.url}")
+
+            ws.on("framereceived", lambda f: asyncio.create_task(self._handle_frame(f)))
         except Exception as e:
-            log.warning(f"Failed to read browser cookies: {e}")
-            return {}
-    
-        out: Dict[str, str] = {}
-    
-        for c in cookies:
-            domain = (c.get("domain") or "").lstrip(".")
-            if domain_substr in domain:
-                name = c.get("name")
-                value = c.get("value")
-                if name and value:
-                    out[name] = value
-    
-        # 🔎 TEMP DEBUG — DO NOT REMOVE YET
-        log.warning("RUMBLE COOKIES PRESENT: " + ", ".join(sorted(out.keys())))
-    
-        return out
+            log.error(f"WebSocket hook error: {e}")
+
+    async def _handle_frame(self, frame):
+        try:
+            payload = frame if isinstance(frame, str) else getattr(frame, "payload", None)
+            if not payload:
+                return
+
+            if not payload.strip().startswith("{"):
+                return
+
+            data = json.loads(payload)
+
+            # Rumble chat messages arrive inside message events
+            msg = data.get("data") or data.get("message")
+            if not isinstance(msg, dict):
+                return
+
+            for cb in self._chat_listeners:
+                cb(msg)
+
+        except Exception:
+            # NEVER crash browser loop
+            return
