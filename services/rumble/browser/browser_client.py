@@ -1,85 +1,94 @@
 import asyncio
-from pathlib import Path
 from typing import Optional
 
-from playwright.async_api import async_playwright, BrowserContext, Page
-
+from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 from shared.logging.logger import get_logger
 
 log = get_logger("rumble.browser")
 
 
 class RumbleBrowserClient:
-    """
-    Persistent Playwright Chromium client.
-    Uses a real browser profile so Cloudflare clears once and stays cleared.
-    """
-
     _instance: Optional["RumbleBrowserClient"] = None
-
-    PROFILE_DIR = Path(".browser/rumble")
 
     def __init__(self):
         self._playwright = None
+        self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
-        self._page: Optional[Page] = None
         self._lock = asyncio.Lock()
 
     @classmethod
     def instance(cls) -> "RumbleBrowserClient":
-        if cls._instance is None:
+        if not cls._instance:
             cls._instance = cls()
         return cls._instance
 
-    async def start(self):
-        if self._context:
-            return
-
-        log.info("Starting persistent Chromium browser (Cloudflare-safe)")
-
-        self.PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-
-        self._playwright = await async_playwright().start()
-
-        # IMPORTANT: headless=False + persistent profile
-        self._context = await self._playwright.chromium.launch_persistent_context(
-            user_data_dir=str(self.PROFILE_DIR),
-            headless=False,   # REQUIRED for Cloudflare
-            viewport={"width": 1280, "height": 800},
-            args=[
-                "--disable-blink-features=AutomationControlled"
-            ],
-        )
-
-        self._page = await self._context.new_page()
-
-    async def fetch_html(self, url: str) -> str:
+    async def _ensure_browser(self):
         async with self._lock:
-            if not self._context or not self._page:
-                await self.start()
+            if self._browser and self._context:
+                return
 
-            log.debug(f"Browser fetching: {url}")
+            log.info("Starting persistent Chromium browser (Cloudflare-safe)")
 
-            await self._page.goto(
-                url,
-                wait_until="load",
-                timeout=60000
+            self._playwright = await async_playwright().start()
+
+            self._browser = await self._playwright.chromium.launch(
+                headless=False,  # MUST be visible for Cloudflare
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-infobars",
+                    "--no-sandbox",
+                ],
             )
 
-            # Give Cloudflare time if needed
-            await asyncio.sleep(2)
+            self._context = await self._browser.new_context(
+                viewport={"width": 1280, "height": 900},
+                locale="en-US",
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+            )
 
-            return await self._page.content()
+    async def get_page(self, url: str) -> Page:
+        """
+        Ensure browser is running, open a new page,
+        navigate to the URL, and return the page.
+        """
+        await self._ensure_browser()
+
+        assert self._context is not None
+
+        page = await self._context.new_page()
+
+        log.debug(f"Browser fetching: {url}")
+
+        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+
+        return page
 
     async def shutdown(self):
-        log.info("Shutting down persistent Chromium browser")
+        async with self._lock:
+            log.info("Shutting down persistent Chromium browser")
 
-        try:
-            if self._context:
-                await self._context.close()
-            if self._playwright:
-                await self._playwright.stop()
-        finally:
+            try:
+                if self._context:
+                    await self._context.close()
+            except Exception:
+                pass
+
+            try:
+                if self._browser:
+                    await self._browser.close()
+            except Exception:
+                pass
+
+            try:
+                if self._playwright:
+                    await self._playwright.stop()
+            except Exception:
+                pass
+
             self._context = None
+            self._browser = None
             self._playwright = None
-            self._page = None
