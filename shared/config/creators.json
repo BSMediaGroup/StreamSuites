@@ -14,7 +14,8 @@
       },
       "limits": {
         "max_concurrent_clip_jobs": 2
-      }
+      },
+      "rumble_channel_url": "https://rumble.com/c/StreamSuites"
     }
   ]
 }
