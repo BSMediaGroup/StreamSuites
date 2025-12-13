@@ -12,15 +12,17 @@ log = get_logger("rumble.browser")
 
 class RumbleBrowserClient:
     """
-    Persistent Chromium browser (Cloudflare-safe) using a persistent profile.
+    Persistent Chromium browser (Cloudflare-safe).
 
-    Purpose (now):
-      - Keep a logged-in Rumble session alive across runs
-      - Provide fresh cookies to REST clients (httpx) so you DO NOT manage cookies in .env
+    Responsibilities:
+      - Maintain a logged-in Rumble session across restarts
+      - Automatically refresh rotating cookies (cf_clearance, __cf_bm, etc.)
+      - Provide fresh cookies to REST clients (httpx)
 
-    Notes:
-      - Uses launch_persistent_context(user_data_dir=...)
-      - headless=False so you can see/log-in once, then it stays logged in
+    IMPORTANT:
+      - This class does NOT scrape pages
+      - This class does NOT handle chat
+      - This class exists solely to own authentication state
     """
 
     _instance: Optional["RumbleBrowserClient"] = None
@@ -32,12 +34,13 @@ class RumbleBrowserClient:
 
         self._lock = asyncio.Lock()
 
-        # Persistent profile directory (this is where login state lives)
+        # Persistent profile directory (login state lives here)
         self._profile_dir = Path(".browser") / "rumble"
         self._profile_dir.mkdir(parents=True, exist_ok=True)
 
-        # For throttling navigation
         self._last_nav_at = 0.0
+
+    # ------------------------------------------------------------------
 
     @classmethod
     def instance(cls) -> "RumbleBrowserClient":
@@ -45,9 +48,9 @@ class RumbleBrowserClient:
             cls._instance = cls()
         return cls._instance
 
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------------
     # Lifecycle
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------------
 
     async def start(self) -> None:
         async with self._lock:
@@ -87,14 +90,17 @@ class RumbleBrowserClient:
                 self._page = None
                 self._playwright = None
 
-    # ---------------------------------------------------------------------
-    # Navigation (optional helper)
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Optional navigation helper
+    # ------------------------------------------------------------------
 
     async def navigate(self, url: str, min_interval_sec: float = 2.0) -> None:
         """
-        Navigate the persistent page. This is optional for cookie harvesting,
-        but useful if you want to ensure Cloudflare clearance is refreshed.
+        OPTIONAL helper.
+
+        Use this if you want to:
+          - Manually log in once
+          - Refresh Cloudflare clearance
         """
         await self.start()
         if not self._page:
@@ -103,9 +109,10 @@ class RumbleBrowserClient:
         now = time.time()
         if (now - self._last_nav_at) < min_interval_sec:
             return
+
         self._last_nav_at = now
 
-        log.debug(f"Browser fetching: {url}")
+        log.debug(f"Browser navigating to: {url}")
         await self._page.goto(url, wait_until="domcontentloaded")
         await self._page.wait_for_timeout(1500)
 
@@ -115,14 +122,19 @@ class RumbleBrowserClient:
             raise RuntimeError("Browser page not initialized")
         return self._page
 
-    # ---------------------------------------------------------------------
-    # Cookie export (THIS is the key piece)
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Cookie export (AUTHORITATIVE SOURCE)
+    # ------------------------------------------------------------------
 
-    async def get_cookie_dict_for(self, domain_substr: str = "rumble.com") -> Dict[str, str]:
+    async def get_cookie_dict_for(
+        self,
+        domain_substr: str = "rumble.com",
+    ) -> Dict[str, str]:
         """
-        Return cookies from the persistent context as a dict usable by httpx.
-        This keeps your bot working even when cf_clearance/__cf_bm rotate.
+        Export cookies from the persistent browser context
+        as a dict suitable for httpx.
+
+        This completely replaces `.env` cookie management.
         """
         await self.start()
         if not self._context:
@@ -135,12 +147,13 @@ class RumbleBrowserClient:
             return {}
 
         out: Dict[str, str] = {}
+
         for c in cookies:
-            dom = (c.get("domain") or "").lstrip(".")
-            if domain_substr in dom:
+            domain = (c.get("domain") or "").lstrip(".")
+            if domain_substr in domain:
                 name = c.get("name")
-                val = c.get("value")
-                if name and val:
-                    out[name] = val
+                value = c.get("value")
+                if name and value:
+                    out[name] = value
 
         return out
