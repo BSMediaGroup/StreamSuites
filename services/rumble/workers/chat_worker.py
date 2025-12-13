@@ -1,11 +1,12 @@
 import asyncio
 import json
+import os
 import time
 from pathlib import Path
-from typing import Optional
 
 from core.jobs import JobRegistry
 from services.rumble.api.chat import fetch_chat_messages
+from services.rumble.api.chat_post import post_chat_message
 from shared.logging.logger import get_logger
 
 log = get_logger("rumble.chat_worker")
@@ -14,31 +15,28 @@ CLIP_RULES_FILE = Path("shared/config/clip_rules.json")
 
 
 class RumbleChatWorker:
-    def __init__(
-        self,
-        ctx,
-        jobs: JobRegistry,
-        room_id: str
-    ):
+    def __init__(self, ctx, jobs: JobRegistry, room_id: str, post_path: str):
         self.ctx = ctx
         self.jobs = jobs
         self.room_id = room_id
+        self.post_path = post_path
 
-        self.last_seen_timestamp: int = 0
-        self.last_clip_time: float = 0.0
+        self.last_seen_timestamp = 0
+        self.last_clip_time = 0.0
 
         self.clip_rules = self._load_clip_rules()
+        self.cookie = os.getenv(
+            f"RUMBLE_BOT_SESSION_COOKIE_{ctx.creator_id.upper()}"
+        )
 
     def _load_clip_rules(self) -> dict:
         try:
-            return json.loads(CLIP_RULES_FILE.read_text(encoding="utf-8"))
+            return json.loads(CLIP_RULES_FILE.read_text())
         except Exception:
-            return {
-                "enabled": False
-            }
+            return {"enabled": False}
 
     async def run(self):
-        log.info(f"[{self.ctx.creator_id}] Rumble chat worker started")
+        log.info(f"[{self.ctx.creator_id}] Rumble chat bot active")
 
         while True:
             await self._poll()
@@ -51,12 +49,11 @@ class RumbleChatWorker:
         )
 
         for msg in messages:
-            timestamp = int(msg.get("time", 0))
-            if timestamp <= self.last_seen_timestamp:
+            ts = int(msg.get("time", 0))
+            if ts <= self.last_seen_timestamp:
                 continue
 
-            self.last_seen_timestamp = timestamp
-
+            self.last_seen_timestamp = ts
             text = str(msg.get("text", "")).strip()
             user = msg.get("user", "unknown")
 
@@ -66,38 +63,28 @@ class RumbleChatWorker:
         if not text.lower().startswith("!clip"):
             return
 
-        if not self.clip_rules.get("enabled", False):
-            log.info("Clipping disabled by rules")
-            return
-
         now = time.time()
         cooldown = self.clip_rules.get("cooldown_seconds", 30)
 
         if now - self.last_clip_time < cooldown:
-            log.info("Clip command ignored due to cooldown")
+            await self._reply(f"⏳ Cooldown active. Try again shortly.")
             return
 
-        parts = text.split()
         length = self.clip_rules.get("default_length", 30)
+        parts = text.split()
 
-        if len(parts) >= 2:
+        if len(parts) > 1:
             try:
                 length = int(parts[1])
             except ValueError:
+                await self._reply("❌ Invalid clip length.")
                 return
 
-        min_len = self.clip_rules.get("min_length", 5)
-        max_len = self.clip_rules.get("max_length", 90)
-
-        if length < min_len or length > max_len:
-            log.info(f"Invalid clip length requested: {length}")
+        if length > self.clip_rules.get("max_length", 90):
+            await self._reply("❌ Clip too long (max 90s).")
             return
 
         self.last_clip_time = now
-
-        log.info(
-            f"[{self.ctx.creator_id}] Clip requested by {user} ({length}s)"
-        )
 
         await self.jobs.dispatch(
             job_type="clip",
@@ -107,4 +94,17 @@ class RumbleChatWorker:
                 "requested_by": user,
                 "platform": "rumble"
             }
+        )
+
+        await self._reply(f"🎬 Clip queued ({length}s)")
+
+    async def _reply(self, message: str):
+        if not self.cookie:
+            log.error("Missing RUMBLE_BOT_SESSION_COOKIE")
+            return
+
+        await post_chat_message(
+            cookie=self.cookie,
+            post_path=self.post_path,
+            message=message
         )
