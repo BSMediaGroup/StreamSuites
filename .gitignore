@@ -2,12 +2,16 @@
 # STREAMSUITES – GITIGNORE
 ######################################
 
-# --- Environment / Secrets ---
+# ====================================
+# Environment / Secrets
+# ====================================
 .env
 .env.*
 !.env.example
 
-# --- Python ---
+# ====================================
+# Python
+# ====================================
 __pycache__/
 *.py[cod]
 *.pyo
@@ -18,17 +22,30 @@ __pycache__/
 dist/
 build/
 
-# --- Virtual environments ---
+# ====================================
+# Virtual Environments
+# ====================================
 venv/
 .venv/
 env/
 ENV/
 
-# --- Logs ---
+# ====================================
+# Logs
+# ====================================
 logs/
 *.log
 
-# --- OS / Editor junk ---
+# ====================================
+# Playwright / Browser State (CRITICAL)
+# ====================================
+.browser/
+playwright-report/
+test-results/
+
+# ====================================
+# OS / Editor Junk
+# ====================================
 .DS_Store
 Thumbs.db
 .idea/
@@ -36,10 +53,8 @@ Thumbs.db
 *.swp
 *.swo
 
-# --- Temporary / runtime files ---
+# ====================================
+# Temporary / Runtime Files
+# ====================================
 tmp/
 .cache/
-
-# --- Logs ---
-logs/
-*.log
