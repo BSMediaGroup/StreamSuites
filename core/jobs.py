@@ -1,8 +1,10 @@
 import asyncio
 import uuid
+import time
 from typing import Dict, Type
 
 from shared.logging.logger import get_logger
+from shared.storage.state_store import append_job, update_job
 
 log = get_logger("core.jobs")
 
@@ -13,6 +15,7 @@ class Job:
         self.ctx = ctx
         self.payload = payload
         self.status = "pending"
+        self.created_at = int(time.time())
 
     async def run(self):
         raise NotImplementedError
@@ -33,6 +36,15 @@ class JobRegistry:
 
         job = self._job_types[job_type](ctx, payload)
 
+        append_job({
+            "id": job.id,
+            "type": job_type,
+            "creator_id": ctx.creator_id,
+            "status": job.status,
+            "created_at": job.created_at,
+            "payload": payload
+        })
+
         task = asyncio.create_task(self._run_job(job))
         self._active_jobs[job.id] = task
 
@@ -42,10 +54,16 @@ class JobRegistry:
     async def _run_job(self, job: Job):
         try:
             job.status = "running"
+            update_job(job.id, {"status": "running"})
             await job.run()
             job.status = "completed"
+            update_job(job.id, {"status": "completed"})
         except Exception as e:
             job.status = "failed"
-            log.exception(f"Job {job.id} failed: {e}")
+            update_job(job.id, {
+                "status": "failed",
+                "error": str(e)
+            })
+            log.exception(f"Job {job.id} failed")
         finally:
             self._active_jobs.pop(job.id, None)
