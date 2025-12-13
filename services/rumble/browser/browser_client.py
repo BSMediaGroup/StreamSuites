@@ -10,8 +10,7 @@ log = get_logger("rumble.browser")
 
 class RumbleBrowserClient:
     """
-    Singleton-style browser client for fetching Rumble pages
-    through real Chromium to satisfy Cloudflare.
+    Singleton Playwright Chromium client for Cloudflare-safe page fetches.
     """
 
     _instance: Optional["RumbleBrowserClient"] = None
@@ -35,9 +34,7 @@ class RumbleBrowserClient:
         log.info("Starting Playwright Chromium browser")
 
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(
-            headless=True
-        )
+        self._browser = await self._playwright.chromium.launch(headless=True)
 
         context = await self._browser.new_context(
             user_agent=(
@@ -50,9 +47,6 @@ class RumbleBrowserClient:
         self._page = await context.new_page()
 
     async def fetch_html(self, url: str) -> str:
-        """
-        Fetch page HTML using real browser context.
-        """
         async with self._lock:
             if not self._browser or not self._page:
                 await self.start()
@@ -61,9 +55,12 @@ class RumbleBrowserClient:
 
             await self._page.goto(
                 url,
-                wait_until="networkidle",
+                wait_until="domcontentloaded",
                 timeout=30000
             )
+
+            # Ensure scripts have executed
+            await self._page.wait_for_selector("script", timeout=10000)
 
             return await self._page.content()
 
@@ -75,6 +72,8 @@ class RumbleBrowserClient:
                 await self._browser.close()
             if self._playwright:
                 await self._playwright.stop()
+        except Exception as e:
+            log.error(f"Error shutting down browser: {e}")
         finally:
             self._browser = None
             self._playwright = None
