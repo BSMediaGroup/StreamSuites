@@ -2,7 +2,7 @@ import asyncio
 import os
 from typing import Optional
 
-from services.rumble.api.livestream import fetch_livestream_data
+from services.rumble.api.channel_page import fetch_channel_livestream_state
 from services.rumble.workers.chat_worker import RumbleChatWorker
 from core.jobs import JobRegistry
 from shared.logging.logger import get_logger
@@ -15,8 +15,9 @@ class RumbleLivestreamWorker:
         self.ctx = ctx
         self.jobs = jobs
 
-        self.api_key = os.getenv(
-            f"RUMBLE_LIVESTREAM_KEY_{ctx.creator_id.upper()}"
+        self.channel_url = ctx.rumble_channel_url
+        self.cookie = os.getenv(
+            f"RUMBLE_BOT_SESSION_COOKIE_{ctx.creator_id.upper()}"
         )
 
         self.chat_task: Optional[asyncio.Task] = None
@@ -27,43 +28,60 @@ class RumbleLivestreamWorker:
         log.info(f"[{self.ctx.creator_id}] Rumble livestream worker started")
 
         while True:
-            await self._check_livestream()
-            await asyncio.sleep(15)
+            try:
+                await self._check_channel()
+            except Exception as e:
+                log.error(f"Livestream worker error: {e}")
 
-    async def _check_livestream(self):
-        if not self.api_key:
-            log.error(f"[{self.ctx.creator_id}] Missing RUMBLE_LIVESTREAM_KEY")
-            return
+            await asyncio.sleep(10)
 
-        data = await fetch_livestream_data(
-            api_key=self.api_key,
-            creator_id=self.ctx.creator_id
+    async def _check_channel(self):
+        state = await fetch_channel_livestream_state(
+            channel_url=self.channel_url,
+            cookie=self.cookie
         )
 
-        livestream = data.get("livestream", {})
-
-        is_live = bool(livestream.get("is_live"))
-        chat = livestream.get("chat", {}) or {}
-
-        room_id = chat.get("room_id")
-        post_path = chat.get("post_path")
-
-        if is_live and room_id and post_path:
-            if self.chat_task and self.current_room_id == room_id:
-                return
-
-            await self._start_chat(room_id, post_path)
-        else:
+        livestream = self._extract_livestream(state)
+        if not livestream:
             await self._stop_chat()
+            return
+
+        room_id = livestream.get("chatRoomId")
+        post_path = livestream.get("chatPostPath")
+
+        if not room_id or not post_path:
+            log.error("Livestream detected but chat data missing")
+            return
+
+        if self.chat_task and self.current_room_id == room_id:
+            return
+
+        await self._start_chat(room_id, post_path)
+
+    def _extract_livestream(self, state: dict) -> Optional[dict]:
+        """
+        Walk the initial state tree to locate live stream data.
+        """
+        try:
+            for item in state.get("channel", {}).get("livestreams", []):
+                if item.get("isLive"):
+                    return {
+                        "chatRoomId": item.get("chat", {}).get("roomId"),
+                        "chatPostPath": item.get("chat", {}).get("postPath")
+                    }
+        except Exception:
+            pass
+
+        return None
 
     async def _start_chat(self, room_id: str, post_path: str):
         await self._stop_chat()
 
         log.info(
-            f"[{self.ctx.creator_id}] Stream live, starting chat bot"
+            f"[{self.ctx.creator_id}] Live detected — starting chat bot"
         )
 
-        chat_worker = RumbleChatWorker(
+        worker = RumbleChatWorker(
             ctx=self.ctx,
             jobs=self.jobs,
             room_id=room_id,
@@ -72,12 +90,12 @@ class RumbleLivestreamWorker:
 
         self.current_room_id = room_id
         self.chat_post_path = post_path
-        self.chat_task = asyncio.create_task(chat_worker.run())
+        self.chat_task = asyncio.create_task(worker.run())
 
     async def _stop_chat(self):
         if self.chat_task:
             log.info(
-                f"[{self.ctx.creator_id}] Stream offline, stopping chat bot"
+                f"[{self.ctx.creator_id}] Stream offline — stopping chat bot"
             )
             self.chat_task.cancel()
             self.chat_task = None
