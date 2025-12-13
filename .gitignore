@@ -39,3 +39,7 @@ Thumbs.db
 # --- Temporary / runtime files ---
 tmp/
 .cache/
+
+# --- Logs ---
+logs/
+*.log
