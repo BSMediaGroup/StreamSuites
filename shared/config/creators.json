@@ -1,1 +1,20 @@
-{}
+{
+  "creators": [
+    {
+      "creator_id": "daniel",
+      "display_name": "Daniel Clancy",
+      "enabled": true,
+      "platforms": {
+        "rumble": true,
+        "youtube": true,
+        "twitch": true,
+        "pilled": false,
+        "twitter": true,
+        "discord": true
+      },
+      "limits": {
+        "max_concurrent_clip_jobs": 2
+      }
+    }
+  ]
+}
