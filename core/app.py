@@ -18,33 +18,46 @@ _GLOBAL_JOB_REGISTRY: JobRegistry | None = None
 async def main(stop_event: asyncio.Event):
     global _GLOBAL_JOB_REGISTRY
 
-    # Load environment variables
+    # --------------------------------------------------
+    # ENV
+    # --------------------------------------------------
     load_dotenv()
     log.info("Environment variables loaded")
-
     log.info("StreamSuites booting")
 
-    # Load creators
+    # --------------------------------------------------
+    # LOAD CREATORS
+    # --------------------------------------------------
     creators = CreatorRegistry().load()
 
-    # Initialize core systems
+    # --------------------------------------------------
+    # CORE SYSTEMS
+    # --------------------------------------------------
     scheduler = Scheduler()
     jobs = JobRegistry()
     _GLOBAL_JOB_REGISTRY = jobs
 
-    # Register job types
+    # --------------------------------------------------
+    # REGISTER JOB TYPES
+    # --------------------------------------------------
     jobs.register("clip", ClipJob)
 
-    # Start per-creator runtimes
+    # --------------------------------------------------
+    # START CREATOR RUNTIMES
+    # --------------------------------------------------
     for ctx in creators.values():
         await scheduler.start_creator(ctx)
 
-    # Wait for shutdown signal
+    # --------------------------------------------------
+    # BLOCK UNTIL SHUTDOWN
+    # --------------------------------------------------
     await stop_event.wait()
 
     log.info("Shutdown initiated")
 
-    # Shutdown scheduler (this stops all workers)
+    # --------------------------------------------------
+    # ORDERLY SHUTDOWN
+    # --------------------------------------------------
     try:
         await scheduler.shutdown()
     except Exception as e:
@@ -53,11 +66,19 @@ async def main(stop_event: asyncio.Event):
     log.info("StreamSuites stopped")
 
 
-def _install_signal_handlers(loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event):
+# ----------------------------------------------------------------------
+# SIGNAL HANDLING (WINDOWS-SAFE)
+# ----------------------------------------------------------------------
+
+def _install_signal_handlers(
+    loop: asyncio.AbstractEventLoop,
+    stop_event: asyncio.Event,
+):
     """
     Windows-safe Ctrl+C handler.
     Uses signal.signal + asyncio.Event to unwind cleanly.
     """
+
     def _handler(signum, frame):
         try:
             loop.call_soon_threadsafe(stop_event.set)
@@ -68,9 +89,13 @@ def _install_signal_handlers(loop: asyncio.AbstractEventLoop, stop_event: asynci
         signal.signal(signal.SIGINT, _handler)
         signal.signal(signal.SIGTERM, _handler)
     except Exception:
-        # Signal handling can be restricted on some platforms
+        # Signal handling may be restricted on some platforms
         pass
 
+
+# ----------------------------------------------------------------------
+# ENTRYPOINT
+# ----------------------------------------------------------------------
 
 def run():
     stop_event = asyncio.Event()
@@ -83,7 +108,7 @@ def run():
     try:
         loop.run_until_complete(main(stop_event))
     except KeyboardInterrupt:
-        # Fallback if signal handlers didn't fire
+        # Fallback if signal handlers didn’t fire
         log.info("KeyboardInterrupt received — shutdown initiated")
         try:
             stop_event.set()
@@ -91,7 +116,7 @@ def run():
         except Exception:
             pass
     finally:
-        # Cancel remaining tasks
+        # Cancel any remaining tasks
         pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
         for task in pending:
             task.cancel()
