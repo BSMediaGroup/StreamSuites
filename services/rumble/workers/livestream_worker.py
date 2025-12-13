@@ -15,7 +15,7 @@ class RumbleLivestreamWorker:
         self.ctx = ctx
         self.jobs = jobs
 
-        self.channel_url = ctx.rumble_channel_url
+        self.channel_url = getattr(ctx, "rumble_channel_url", None)
         self.cookie = os.getenv(
             f"RUMBLE_BOT_SESSION_COOKIE_{ctx.creator_id.upper()}"
         )
@@ -27,11 +27,15 @@ class RumbleLivestreamWorker:
     async def run(self):
         log.info(f"[{self.ctx.creator_id}] Rumble livestream worker started")
 
+        if not self.channel_url:
+            log.error(f"[{self.ctx.creator_id}] Missing rumble_channel_url in creator config")
+            return
+
         while True:
             try:
                 await self._check_channel()
             except Exception as e:
-                log.error(f"Livestream worker error: {e}")
+                log.error(f"[{self.ctx.creator_id}] Livestream worker error: {e}")
 
             await asyncio.sleep(10)
 
@@ -50,7 +54,7 @@ class RumbleLivestreamWorker:
         post_path = livestream.get("chatPostPath")
 
         if not room_id or not post_path:
-            log.error("Livestream detected but chat data missing")
+            log.error(f"[{self.ctx.creator_id}] Livestream detected but chat data missing")
             return
 
         if self.chat_task and self.current_room_id == room_id:
@@ -61,13 +65,18 @@ class RumbleLivestreamWorker:
     def _extract_livestream(self, state: dict) -> Optional[dict]:
         """
         Walk the initial state tree to locate live stream data.
+        This will be refined once we see the real __INITIAL_STATE__ shape.
         """
         try:
-            for item in state.get("channel", {}).get("livestreams", []):
+            channel = state.get("channel", {}) if isinstance(state, dict) else {}
+            livestreams = channel.get("livestreams", []) if isinstance(channel, dict) else []
+
+            for item in livestreams:
                 if item.get("isLive"):
+                    chat = item.get("chat", {}) or {}
                     return {
-                        "chatRoomId": item.get("chat", {}).get("roomId"),
-                        "chatPostPath": item.get("chat", {}).get("postPath")
+                        "chatRoomId": chat.get("roomId"),
+                        "chatPostPath": chat.get("postPath"),
                     }
         except Exception:
             pass
@@ -77,9 +86,7 @@ class RumbleLivestreamWorker:
     async def _start_chat(self, room_id: str, post_path: str):
         await self._stop_chat()
 
-        log.info(
-            f"[{self.ctx.creator_id}] Live detected — starting chat bot"
-        )
+        log.info(f"[{self.ctx.creator_id}] Live detected — starting chat bot")
 
         worker = RumbleChatWorker(
             ctx=self.ctx,
@@ -94,9 +101,7 @@ class RumbleLivestreamWorker:
 
     async def _stop_chat(self):
         if self.chat_task:
-            log.info(
-                f"[{self.ctx.creator_id}] Stream offline — stopping chat bot"
-            )
+            log.info(f"[{self.ctx.creator_id}] Stream offline — stopping chat bot")
             self.chat_task.cancel()
             self.chat_task = None
             self.current_room_id = None
