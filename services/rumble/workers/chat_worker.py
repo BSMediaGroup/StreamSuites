@@ -1,12 +1,12 @@
 import asyncio
 import json
-import os
 import time
 from pathlib import Path
 from typing import Dict, Optional
 
 from core.jobs import JobRegistry
 from services.rumble.chat_client import RumbleChatClient
+from services.rumble.browser.browser_client import RumbleBrowserClient
 from shared.logging.logger import get_logger
 
 log = get_logger("rumble.chat_worker")
@@ -14,38 +14,16 @@ log = get_logger("rumble.chat_worker")
 CLIP_RULES_FILE = Path("shared/config/clip_rules.json")
 
 
-def _parse_cookie_header(cookie_header: str) -> Dict[str, str]:
-    """
-    Convert a Cookie header string like:
-      "u_s=...; a_s=...; cf_clearance=...; __cf_bm=..."
-    into {"u_s": "...", "a_s": "...", ...}
-
-    This is tolerant of whitespace and missing segments.
-    """
-    out: Dict[str, str] = {}
-    if not cookie_header:
-        return out
-
-    parts = [p.strip() for p in cookie_header.split(";") if p.strip()]
-    for part in parts:
-        if "=" not in part:
-            continue
-        k, v = part.split("=", 1)
-        k = k.strip()
-        v = v.strip()
-        if k and v:
-            out[k] = v
-    return out
-
-
-def _cookie_env_key_for_creator(ctx) -> str:
-    # Creator IDs in your configs are lowercase like "daniel"
-    # Your env uses suffixes like _DANIEL
-    cid = getattr(ctx, "creator_id", "") or ""
-    return f"RUMBLE_BOT_SESSION_COOKIE_{cid.upper()}"
-
-
 class RumbleChatWorker:
+    """
+    Stateful chat worker for a single Rumble chat channel.
+
+    IMPORTANT:
+    - Cookies are sourced LIVE from the persistent Playwright browser
+    - NO cookies are read from .env anymore
+    - This keeps cf_clearance / __cf_bm / session cookies fresh automatically
+    """
+
     def __init__(self, ctx, jobs: JobRegistry, channel_id: str):
         self.ctx = ctx
         self.jobs = jobs
@@ -56,35 +34,11 @@ class RumbleChatWorker:
 
         self.clip_rules = self._load_clip_rules()
 
-        # --- Cookie sourcing ---
-        # Preferred: full cookie header string, per creator
-        cookie_header_key = _cookie_env_key_for_creator(ctx)
-        cookie_header = (os.getenv(cookie_header_key) or "").strip()
+        self.client: Optional[RumbleChatClient] = None
 
-        cookies = _parse_cookie_header(cookie_header)
-
-        # Fallback: individual cookie vars (global)
-        # (This supports your older layout)
-        cookies.setdefault("u_s", os.getenv("RUMBLE_U_S") or "")
-        cookies.setdefault("a_s", os.getenv("RUMBLE_A_S") or "")
-        cookies.setdefault("cf_clearance", os.getenv("RUMBLE_CF_CLEARANCE") or "")
-        cookies.setdefault("__cf_bm", os.getenv("RUMBLE_CF_BM") or "")
-
-        # Remove empties
-        self.cookies: Dict[str, str] = {k: v for k, v in cookies.items() if v}
-
-        # We require at least the session cookies + CF clearance typically.
-        # Don’t hard-crash the whole runtime; log loudly and let worker exit.
-        required = ["u_s", "a_s", "cf_clearance"]
-        missing = [k for k in required if k not in self.cookies]
-        if missing:
-            raise RuntimeError(
-                f"Missing Rumble auth cookies: {missing}. "
-                f"Provide {cookie_header_key} as a full cookie string OR set "
-                f"RUMBLE_U_S / RUMBLE_A_S / RUMBLE_CF_CLEARANCE."
-            )
-
-        self.client = RumbleChatClient(self.cookies)
+    # ------------------------------------------------------------------
+    # Setup
+    # ------------------------------------------------------------------
 
     def _load_clip_rules(self) -> dict:
         try:
@@ -92,27 +46,71 @@ class RumbleChatWorker:
         except Exception:
             return {"enabled": False}
 
+    async def _ensure_client(self) -> None:
+        """
+        Ensure we have a chat client with FRESH cookies from the browser.
+        This can be re-run safely if cookies rotate.
+        """
+        browser = RumbleBrowserClient.instance()
+
+        # Ensure browser is running & logged in
+        await browser.start()
+
+        cookies: Dict[str, str] = await browser.get_cookie_dict_for("rumble.com")
+
+        # Hard requirement: these MUST exist or chat will fail
+        required = ["u_s", "a_s", "cf_clearance"]
+        missing = [k for k in required if k not in cookies]
+
+        if missing:
+            raise RuntimeError(
+                f"Missing required Rumble cookies from browser: {missing}. "
+                f"Open the browser window and log into Rumble manually."
+            )
+
+        self.client = RumbleChatClient(cookies)
+
+    # ------------------------------------------------------------------
+    # Runtime
+    # ------------------------------------------------------------------
+
     async def run(self):
-        log.info(f"[{self.ctx.creator_id}] Rumble chat bot active (channel={self.channel_id})")
+        log.info(
+            f"[{self.ctx.creator_id}] Rumble chat bot active "
+            f"(channel={self.channel_id})"
+        )
 
         try:
+            # Initial client bootstrap
+            await self._ensure_client()
+
             while True:
-                await self._poll()
+                try:
+                    await self._poll()
+                except Exception as e:
+                    # Any fetch/send failure → refresh cookies + client
+                    log.error(
+                        f"[{self.ctx.creator_id}] Chat poll error, refreshing cookies: {e}"
+                    )
+                    await self._ensure_client()
+
                 await asyncio.sleep(2)
+
         except asyncio.CancelledError:
-            # clean detach
             raise
+
         except Exception as e:
             log.error(f"[{self.ctx.creator_id}] Chat worker crashed: {e}")
-            # Don’t re-raise: let livestream_worker recreate it if needed.
 
     async def _poll(self):
+        if not self.client:
+            return
+
         messages = self.client.fetch_messages(
             channel_id=self.channel_id,
             since_id=self.last_seen_id,
         )
 
-        # If endpoint resolved but returns empty, fine.
         for msg in messages:
             msg_id = msg.get("id")
             if not msg_id:
@@ -127,8 +125,11 @@ class RumbleChatWorker:
             if text:
                 await self._handle_message(user, text)
 
+    # ------------------------------------------------------------------
+    # Command handling
+    # ------------------------------------------------------------------
+
     async def _handle_message(self, user: str, text: str):
-        # Only react to commands (keep it tight)
         if not text.lower().startswith("!clip"):
             return
 
@@ -148,12 +149,16 @@ class RumbleChatWorker:
             try:
                 length = int(parts[1])
             except ValueError:
-                self.client.send_message(self.channel_id, "❌ Invalid clip length.")
+                self.client.send_message(
+                    self.channel_id, "❌ Invalid clip length."
+                )
                 return
 
         max_len = int(self.clip_rules.get("max_length", 90))
         if length > max_len:
-            self.client.send_message(self.channel_id, f"❌ Clip too long (max {max_len}s).")
+            self.client.send_message(
+                self.channel_id, f"❌ Clip too long (max {max_len}s)."
+            )
             return
 
         self.last_clip_time = now
@@ -168,4 +173,6 @@ class RumbleChatWorker:
             },
         )
 
-        self.client.send_message(self.channel_id, f"🎬 Clip queued ({length}s)")
+        self.client.send_message(
+            self.channel_id, f"🎬 Clip queued ({length}s)"
+        )
