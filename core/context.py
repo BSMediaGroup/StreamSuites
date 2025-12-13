@@ -9,9 +9,14 @@ class CreatorContext:
     platforms: Dict[str, bool]
     limits: Dict[str, Any]
 
-    # Platform-specific config (additive)
+    # -------------------------------------------------
+    # RUMBLE CONFIG (AUTHORITATIVE + CHAT)
+    # -------------------------------------------------
     rumble_channel_url: Optional[str] = None
     rumble_watch_url: Optional[str] = None
+
+    # REQUIRED for REST chat posting
+    rumble_chat_channel_id: Optional[str] = None
 
     def platform_enabled(self, name: str) -> bool:
         return bool(self.platforms.get(name, False))
