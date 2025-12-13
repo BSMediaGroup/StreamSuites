@@ -1,4 +1,5 @@
 import httpx
+import os
 from typing import Dict, Any
 
 from shared.logging.logger import get_logger
@@ -8,16 +9,26 @@ log = get_logger("rumble.api.livestream")
 LIVESTREAM_ENDPOINT = "https://rumble.com/-livestream-api/get-data"
 
 
-async def fetch_livestream_data(api_key: str) -> Dict[str, Any]:
+async def fetch_livestream_data(api_key: str, creator_id: str) -> Dict[str, Any]:
     """
     Fetch livestream metadata for a Rumble channel.
 
-    Rumble protects this endpoint with Cloudflare and expects
-    browser-like headers.
+    NOTE:
+    - This endpoint now requires BOTH:
+        - livestream API key
+        - valid Cloudflare + session cookies
     """
     params = {
         "key": api_key
     }
+
+    cookie = os.getenv(
+        f"RUMBLE_BOT_SESSION_COOKIE_{creator_id.upper()}"
+    )
+
+    if not cookie:
+        log.error("Missing RUMBLE_BOT_SESSION_COOKIE for livestream fetch")
+        return {}
 
     headers = {
         "User-Agent": (
@@ -27,7 +38,8 @@ async def fetch_livestream_data(api_key: str) -> Dict[str, Any]:
         ),
         "Accept": "application/json, text/plain, */*",
         "Referer": "https://rumble.com/",
-        "Origin": "https://rumble.com"
+        "Origin": "https://rumble.com",
+        "Cookie": cookie
     }
 
     async with httpx.AsyncClient(timeout=10, headers=headers) as client:
