@@ -1,4 +1,7 @@
 import asyncio
+import os
+
+from dotenv import load_dotenv
 
 from core.registry import CreatorRegistry
 from core.scheduler import Scheduler
@@ -15,16 +18,25 @@ _GLOBAL_JOB_REGISTRY: JobRegistry | None = None
 async def main():
     global _GLOBAL_JOB_REGISTRY
 
+    # Load environment variables
+    load_dotenv()
+    log.info("Environment variables loaded")
+
     log.info("StreamSuites booting")
 
+    # Load creators
     creators = CreatorRegistry().load()
+
+    # Initialize core systems
     scheduler = Scheduler()
     jobs = JobRegistry()
 
     _GLOBAL_JOB_REGISTRY = jobs
 
+    # Register job types
     jobs.register("clip", ClipJob)
 
+    # Start per-creator runtimes
     for ctx in creators.values():
         await scheduler.start_creator(ctx)
 
