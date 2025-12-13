@@ -12,12 +12,10 @@ NUXT_STATE_RE = re.compile(
     re.DOTALL
 )
 
+_logged_html_sample = False
+
 
 async def fetch_channel_livestream_state(channel_url: str) -> Dict[str, Any]:
-    """
-    Fetch Rumble channel page HTML via Playwright
-    and extract embedded Nuxt state.
-    """
     browser = RumbleBrowserClient.instance()
 
     try:
@@ -28,12 +26,17 @@ async def fetch_channel_livestream_state(channel_url: str) -> Dict[str, Any]:
 
     match = NUXT_STATE_RE.search(html)
     if not match:
-        log.error("Unable to locate window.__NUXT__ in channel page HTML")
+        global _logged_html_sample
+        if not _logged_html_sample:
+            log.error(
+                "window.__NUXT__ not found. HTML sample:\n"
+                + html[:500]
+            )
+            _logged_html_sample = True
         return {}
 
     try:
-        state = json.loads(match.group(1))
-        return state
+        return json.loads(match.group(1))
     except json.JSONDecodeError as e:
         log.error(f"Failed to parse window.__NUXT__: {e}")
         return {}
