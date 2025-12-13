@@ -12,37 +12,45 @@ POST_RE = re.compile(r"(?:postPath|chatPostPath)=([^&]+)")
 
 async def fetch_watch_page_chat_state(watch_url: str) -> Dict[str, Optional[str]]:
     """
-    Load a Rumble livestream watch page and extract chat metadata
-    by inspecting the chat iframe URL.
+    Extract Rumble livestream chat metadata by piercing the <rumble-chat>
+    shadow DOM and reading the embedded iframe src.
 
-    This is the ONLY reliable method on modern Rumble pages.
+    This is the ONLY reliable method.
     """
     browser = RumbleBrowserClient.instance()
     page = await browser.get_page(watch_url)
 
     try:
-        # Wait for chat iframe to appear
-        iframe = await page.wait_for_selector(
-            'iframe[src*="/chat"]',
-            timeout=20000
+        # Wait for the custom element itself
+        await page.wait_for_selector("rumble-chat", timeout=20000)
+
+        result = await page.evaluate(
+            """
+            () => {
+              const host = document.querySelector('rumble-chat');
+              if (!host || !host.shadowRoot) return null;
+
+              const iframe = host.shadowRoot.querySelector('iframe');
+              if (!iframe) return null;
+
+              return iframe.src || null;
+            }
+            """
         )
 
-        src = await iframe.get_attribute("src")
-        if not src:
-            raise RuntimeError("Chat iframe has no src attribute")
+        if not result:
+            raise RuntimeError("Chat iframe not found inside rumble-chat shadowRoot")
 
-        room_match = ROOM_RE.search(src)
-        post_match = POST_RE.search(src)
+        room_match = ROOM_RE.search(result)
+        post_match = POST_RE.search(result)
 
         if not room_match or not post_match:
-            raise RuntimeError(f"Chat iframe src missing metadata: {src}")
+            raise RuntimeError(f"Chat iframe src missing metadata: {result}")
 
         room_id = room_match.group(1)
         post_path = post_match.group(1)
 
-        log.info(
-            f"Extracted chat metadata from iframe: room={room_id}"
-        )
+        log.info(f"Extracted chat metadata via shadow DOM: room={room_id}")
 
         return {
             "is_live": True,
