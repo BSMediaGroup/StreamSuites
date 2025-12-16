@@ -58,3 +58,26 @@ Thumbs.db
 # ====================================
 tmp/
 .cache/
+
+# ====================================
+# Dashboard / Frontend Artifacts
+# ====================================
+docs/.cache/
+docs/dist/
+docs/node_modules/
+
+
+# ====================================
+# Runtime State (Generated)
+# ====================================
+shared/state/
+
+
+# ====================================
+# Windows Build Artifacts
+# ====================================
+*.exe
+*.msi
+*.dll
+
+!test_rumble_api.py

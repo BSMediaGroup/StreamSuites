@@ -1,3 +1,14 @@
 {
-  "jobs": []
+  "jobs": [
+    {
+      "id": "4b418e4d-1158-4315-a15a-de4ba5144b85",
+      "type": "clip",
+      "creator_id": "daniel",
+      "status": "completed",
+      "created_at": 1765615979,
+      "payload": {
+        "length": 15
+      }
+    }
+  ]
 }

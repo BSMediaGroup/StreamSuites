@@ -2,6 +2,7 @@ import asyncio
 from typing import Optional
 
 from core.jobs import JobRegistry
+from services.rumble.browser.browser_client import RumbleBrowserClient
 from services.rumble.workers.chat_worker import RumbleChatWorker
 from shared.logging.logger import get_logger
 
@@ -10,84 +11,81 @@ log = get_logger("rumble.livestream_worker")
 
 class RumbleLivestreamWorker:
     """
-    Attaches the StreamSuites chat bot to a Rumble chat channel
-    using REST (cookie-authenticated).
+    MODEL A — LIVESTREAM CONTROLLER (HARDENED)
 
-    IMPORTANT:
-      - This worker does NOT detect live/offline state
-      - This worker does NOT scrape pages
-      - This worker treats rumble_chat_channel_id as authoritative
+    RULES:
+    - Manual watch URL ONLY
+    - Exactly ONE ChatWorker
+    - ChatWorker owns navigation + polling
     """
 
     def __init__(self, ctx, jobs: JobRegistry):
         self.ctx = ctx
         self.jobs = jobs
 
-        # REQUIRED config
-        self.channel_id: Optional[str] = getattr(
-            ctx, "rumble_chat_channel_id", None
-        )
-
+        self.browser = RumbleBrowserClient.instance()
         self.chat_task: Optional[asyncio.Task] = None
+        self._running = False
 
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------
 
     async def run(self):
-        log.info(f"[{self.ctx.creator_id}] Rumble livestream worker started")
-
-        if not self.channel_id:
-            log.error(
-                f"[{self.ctx.creator_id}] Missing rumble_chat_channel_id in creator config"
+        if self._running:
+            log.warning(
+                f"[{self.ctx.creator_id}] Livestream worker already running — ignoring duplicate start"
             )
             return
 
-        while True:
-            try:
-                # Restart chat worker if needed
-                if not self.chat_task or self.chat_task.done():
-                    if self.chat_task and self.chat_task.done():
-                        if not self.chat_task.cancelled():
-                            exc = self.chat_task.exception()
-                            if exc:
-                                log.error(
-                                    f"[{self.ctx.creator_id}] Chat worker crashed: {exc}"
-                                )
+        self._running = True
 
-                    await self._start_chat()
-
-            except Exception as e:
-                log.error(
-                    f"[{self.ctx.creator_id}] Livestream worker error: {e}"
-                )
-                await asyncio.sleep(5)
-
-            await asyncio.sleep(10)
-
-    # ------------------------------------------------------------------
-    # Chat lifecycle
-    # ------------------------------------------------------------------
-
-    async def _start_chat(self):
-        log.info(
-            f"[{self.ctx.creator_id}] Attaching bot to Rumble chat channel {self.channel_id}"
-        )
-
-        worker = RumbleChatWorker(
-            ctx=self.ctx,
-            jobs=self.jobs,
-            channel_id=str(self.channel_id),
-        )
-
-        self.chat_task = asyncio.create_task(worker.run())
-
-    async def _stop_chat(self):
-        if self.chat_task:
-            log.info(
-                f"[{self.ctx.creator_id}] Detaching bot from Rumble chat"
+        if not self.ctx.rumble_manual_watch_url:
+            raise RuntimeError(
+                f"[{self.ctx.creator_id}] rumble_manual_watch_url is REQUIRED"
             )
+
+        try:
+            await self.browser.start()
+            await self.browser.ensure_logged_in()
+
+            log.info(
+                f"[{self.ctx.creator_id}] Livestream locked → {self.ctx.rumble_manual_watch_url}"
+            )
+
+            # Spawn ChatWorker ONCE
+            worker = RumbleChatWorker(
+                ctx=self.ctx,
+                jobs=self.jobs,
+                watch_url=self.ctx.rumble_manual_watch_url,
+            )
+
+            self.chat_task = asyncio.create_task(worker.run())
+
+            # Hard idle — lifecycle owner
+            while True:
+                await asyncio.sleep(30)
+
+        except asyncio.CancelledError:
+            log.info(f"[{self.ctx.creator_id}] Livestream worker cancelled")
+            raise
+
+        finally:
+            await self._shutdown()
+
+    # ------------------------------------------------------------
+
+    async def _shutdown(self):
+        log.info(f"[{self.ctx.creator_id}] Livestream worker shutting down")
+
+        if self.chat_task and not self.chat_task.done():
             self.chat_task.cancel()
             try:
                 await self.chat_task
-            except Exception:
+            except asyncio.CancelledError:
                 pass
-            self.chat_task = None
+            except Exception as e:
+                log.error(
+                    f"[{self.ctx.creator_id}] Chat worker shutdown error: {e}"
+                )
+
+        self.chat_task = None
+        self._running = False

@@ -19,9 +19,13 @@
       },
 
       "rumble_channel_url": "https://rumble.com/c/StreamSuites",
-      "rumble_watch_url": "https://rumble.com/v72yrsm-testing-build-1.html",
 
-      "rumble_chat_channel_id": "424574510"
+      "rumble_manual_watch_url": "https://rumble.com/v73261y-testing-build-5.html",
+
+      "rumble_livestream_api_env_key": "RUMBLE_LIVESTREAM_KEY_DANIEL",
+
+      "rumble_chat_channel_id": "424574510",
+      "rumble_dom_chat_enabled": true
     }
   ]
 }

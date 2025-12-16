@@ -1,11 +1,8 @@
 import asyncio
-import json
-import time
 from pathlib import Path
-from typing import Dict, Optional, Callable, Any, List
+from typing import Optional
 
-from playwright.async_api import async_playwright, BrowserContext, Page, Response
-
+from playwright.async_api import async_playwright, BrowserContext, Page, Frame
 from shared.logging.logger import get_logger
 
 log = get_logger("rumble.browser")
@@ -13,11 +10,12 @@ log = get_logger("rumble.browser")
 
 class RumbleBrowserClient:
     """
-    Persistent Chromium browser that:
-      - Owns Rumble authentication
-      - Stays open
-      - Intercepts Socket.IO polling responses
-      - Emits decoded chat messages
+    MODEL A — DOM INJECTION BROWSER CLIENT (POC-LOCKED)
+
+    HARD LAWS:
+    - Persistent profile (cookies ONLY)
+    - ONE authoritative page
+    - CHAT SUBMIT MUST USE PLAYWRIGHT KEYBOARD
     """
 
     _instance: Optional["RumbleBrowserClient"] = None
@@ -26,13 +24,14 @@ class RumbleBrowserClient:
         self._playwright = None
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
+        self._chat_frame: Optional[Frame] = None
 
         self._profile_dir = Path(".browser") / "rumble"
         self._profile_dir.mkdir(parents=True, exist_ok=True)
 
         self._lock = asyncio.Lock()
-        self._chat_callbacks: List[Callable[[dict], None]] = []
         self._started = False
+        self._shutting_down = False
 
     # ------------------------------------------------------------
 
@@ -44,117 +43,146 @@ class RumbleBrowserClient:
 
     # ------------------------------------------------------------
 
-    async def start(self, watch_url: str) -> None:
+    async def start(self) -> None:
         async with self._lock:
             if self._started:
                 return
 
-            log.info("Starting persistent Chromium browser (Socket.IO interception mode)")
+            log.info("Starting persistent Chromium browser (safe reset)")
 
             self._playwright = await async_playwright().start()
+
             self._context = await self._playwright.chromium.launch_persistent_context(
                 user_data_dir=str(self._profile_dir),
                 headless=False,
+                viewport={"width": 1280, "height": 800},
                 args=[
                     "--disable-blink-features=AutomationControlled",
-                    "--disable-dev-shm-usage",
+                    "--disable-session-crashed-bubble",
+                    "--disable-restore-session-state",
+                    "--no-first-run",
+                    "--no-default-browser-check",
                 ],
-                viewport={"width": 1280, "height": 800},
             )
 
-            self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()
+            pages = self._context.pages
 
-            # Hook network responses (THIS IS THE KEY)
-            self._page.on("response", self._on_response)
+            if pages:
+                self._page = pages[0]
+                await self._page.goto("about:blank")
+                for p in pages[1:]:
+                    await p.close()
+            else:
+                self._page = await self._context.new_page()
 
-            log.info(f"Navigating browser to watch page → {watch_url}")
-            await self._page.goto(watch_url, wait_until="domcontentloaded")
-            await self._page.wait_for_timeout(5000)
-
-            cookies = await self.get_cookie_dict_for("rumble.com")
-            if cookies:
-                log.warning("RUMBLE COOKIES PRESENT: " + ", ".join(sorted(cookies.keys())))
-
+            self._chat_frame = None
             self._started = True
+            self._shutting_down = False
+
+    # ------------------------------------------------------------
+
+    async def ensure_logged_in(self) -> None:
+        if not self._page:
+            raise RuntimeError("Browser not started")
+
+        await self._page.goto(
+            "https://rumble.com/account/login",
+            wait_until="domcontentloaded",
+        )
+
+        login_form = await self._page.query_selector("form[action*='login']")
+        if login_form:
+            log.warning("🔐 Login required — complete login, then press ENTER")
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, input)
+        else:
+            log.info("✅ Login session valid — continuing")
+
+    # ------------------------------------------------------------
+
+    async def open_watch(self, url: str) -> None:
+        if not self._page:
+            raise RuntimeError("Browser not started")
+
+        log.info(f"Navigating to watch page → {url}")
+        self._chat_frame = None
+        await self._page.goto(url, wait_until="domcontentloaded")
+
+    # ------------------------------------------------------------
+
+    async def wait_for_chat_ready(self, timeout_ms: int = 30000) -> None:
+        if not self._page:
+            raise RuntimeError("Browser not started")
+
+        log.info("Waiting for chat iframe")
+
+        deadline = timeout_ms / 1000
+        start = asyncio.get_event_loop().time()
+
+        while asyncio.get_event_loop().time() - start < deadline:
+            for frame in self._page.frames:
+                try:
+                    if await frame.query_selector("#chat-message-text-input"):
+                        self._chat_frame = frame
+                        log.info("Chat iframe detected and locked")
+                        return
+                except Exception:
+                    pass
+
+            await asyncio.sleep(0.5)
+
+        raise TimeoutError("Chat iframe not found")
+
+    # ------------------------------------------------------------
+    # 🔥 AUTHORITATIVE CHAT SEND — PLAYWRIGHT KEYBOARD ONLY
+    # ------------------------------------------------------------
+
+    async def send_chat_dom(self, message: str) -> bool:
+        if not self._chat_frame or not self._page:
+            raise RuntimeError("Chat frame not initialized")
+
+        try:
+            await self._chat_frame.click("#chat-message-text-input")
+
+            await self._page.keyboard.press("Control+A")
+            await self._page.keyboard.press("Backspace")
+
+            await self._page.keyboard.type(message, delay=20)
+            await self._page.keyboard.press("Enter")
+
+            return True
+
+        except Exception as e:
+            log.error(f"Chat send failed: {e}")
+            return False
 
     # ------------------------------------------------------------
 
     async def shutdown(self) -> None:
         async with self._lock:
+            if self._shutting_down:
+                return
+
+            self._shutting_down = True
+            log.info("Shutting down browser")
+
             try:
                 if self._context:
-                    await self._context.close()
+                    try:
+                        await self._context.close()
+                    except Exception as e:
+                        log.warning(f"Browser context close ignored: {e}")
+
                 if self._playwright:
-                    await self._playwright.stop()
+                    try:
+                        await self._playwright.stop()
+                    except Exception as e:
+                        log.warning(f"Playwright stop ignored: {e}")
+
             finally:
                 self._context = None
                 self._page = None
+                self._chat_frame = None
                 self._playwright = None
                 self._started = False
-
-    # ------------------------------------------------------------
-
-    async def get_cookie_dict_for(self, domain_substr: str) -> Dict[str, str]:
-        if not self._context:
-            return {}
-
-        cookies = await self._context.cookies()
-        out: Dict[str, str] = {}
-
-        for c in cookies:
-            domain = (c.get("domain") or "").lstrip(".")
-            if domain_substr in domain:
-                if c.get("name") and c.get("value"):
-                    out[c["name"]] = c["value"]
-
-        return out
-
-    # ------------------------------------------------------------
-    # Chat subscription
-    # ------------------------------------------------------------
-
-    def subscribe_chat(self, callback: Callable[[dict], None]) -> None:
-        if callback not in self._chat_callbacks:
-            self._chat_callbacks.append(callback)
-
-    # ------------------------------------------------------------
-    # Socket.IO polling interception (THE IMPORTANT PART)
-    # ------------------------------------------------------------
-
-    def _on_response(self, response: Response) -> None:
-        url = response.url
-
-        if "socket.io" not in url or "transport=polling" not in url:
-            return
-
-        asyncio.create_task(self._handle_socketio_response(response))
-
-    async def _handle_socketio_response(self, response: Response) -> None:
-        try:
-            text = await response.text()
-        except Exception:
-            return
-
-        # Socket.IO packets are newline separated
-        for line in text.splitlines():
-            if not line.startswith("42"):
-                continue
-
-            try:
-                payload = json.loads(line[2:])
-            except Exception:
-                continue
-
-            if not isinstance(payload, list) or len(payload) < 2:
-                continue
-
-            event, data = payload[0], payload[1]
-
-            if event != "message" or not isinstance(data, dict):
-                continue
-
-            for cb in self._chat_callbacks:
-                try:
-                    cb(data)
-                except Exception:
-                    pass
+                self._shutting_down = False

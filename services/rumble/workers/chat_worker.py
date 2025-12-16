@@ -1,212 +1,262 @@
 import asyncio
-import json
-import time
-from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Set, Tuple
+from datetime import datetime, timezone
 
 from core.jobs import JobRegistry
-from services.rumble.chat_client import RumbleChatClient
 from services.rumble.browser.browser_client import RumbleBrowserClient
 from shared.logging.logger import get_logger
 
 log = get_logger("rumble.chat_worker")
 
-CLIP_RULES_FILE = Path("shared/config/clip_rules.json")
+POLL_SECONDS = 2
+SEND_COOLDOWN_SECONDS = 0.75
+STARTUP_ANNOUNCEMENT = "🤖 StreamSuites bot online"
 
 
 class RumbleChatWorker:
     """
-    WebSocket-driven Rumble chat worker.
+    MODEL A — CHAT WORKER (POC-FAITHFUL, HARDENED)
 
-    CRITICAL DESIGN:
-    - Chat is READ via Playwright WebSocket (browser-owned)
-    - Chat is SENT via REST POST (RumbleChatClient)
-    - NO REST polling
-    - Browser MUST stay open
+    READ: Livestream API (authoritative)
+    SEND: DOM injection (Playwright keyboard)
     """
 
-    def __init__(self, ctx, jobs: JobRegistry, channel_id: str):
+    def __init__(
+        self,
+        ctx,
+        jobs: JobRegistry,
+        watch_url: str,
+    ):
         self.ctx = ctx
         self.jobs = jobs
-        self.channel_id = str(channel_id)
+        self.watch_url = watch_url
 
-        self.last_clip_time = 0.0
-        self.clip_rules = self._load_clip_rules()
-
-        self.client: Optional[RumbleChatClient] = None
         self.browser: Optional[RumbleBrowserClient] = None
 
+        # Seen message de-duplication
+        self._seen: Set[Tuple[str, str, str]] = set()
+
+        # Concurrency + rate limiting
         self._lock = asyncio.Lock()
+        self._last_send_ts: float = 0.0
 
-    # ------------------------------------------------------------------
-    # Setup
-    # ------------------------------------------------------------------
+        # Startup baseline control
+        self._startup_sync_complete = False
+        self._startup_cutoff_ts: Optional[datetime] = None
+        self._startup_announced = False
 
-    def _load_clip_rules(self) -> dict:
-        try:
-            return json.loads(CLIP_RULES_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            return {"enabled": False}
+        self._poll_count = 0
 
-    async def _ensure_browser_and_client(self) -> None:
-        """
-        Ensure:
-        - Persistent browser is running
-        - Browser is navigated to the WATCH PAGE
-        - Fresh cookies are harvested
-        - REST client is ready for sending messages
-        - WebSocket chat feed is subscribed
-        """
-        log.info(f"[{self.ctx.creator_id}] Initializing browser + chat client")
+    # ------------------------------------------------------------
 
+    async def _ensure_browser(self) -> None:
         self.browser = RumbleBrowserClient.instance()
 
-        watch_url = getattr(self.ctx, "rumble_watch_url", None)
-        if not watch_url:
-            raise RuntimeError("ctx.rumble_watch_url is required but missing")
-
-        # Start browser and force navigation to watch page
-        await self.browser.start(watch_url=watch_url)
-
-        cookies = await self.browser.get_cookie_dict_for("rumble.com")
-
-        required = ["u_s", "a_s", "cf_clearance"]
-        missing = [k for k in required if k not in cookies]
-
-        if missing:
-            raise RuntimeError(
-                f"Missing required Rumble cookies from browser: {missing}. "
-                f"Log into Rumble in the opened browser window."
-            )
-
-        self.client = RumbleChatClient(cookies)
-
-        log.info(f"[{self.ctx.creator_id}] Subscribing to browser chat feed")
-        self.browser.subscribe_chat(self._on_chat_message)
+        await self.browser.start()
+        await self.browser.ensure_logged_in()
 
         log.info(
-            f"[{self.ctx.creator_id}] Chat WebSocket subscribed successfully"
+            f"[{self.ctx.creator_id}] Navigating to livestream → {self.watch_url}"
         )
 
-    # ------------------------------------------------------------------
-    # Runtime
-    # ------------------------------------------------------------------
+        await self.browser.open_watch(self.watch_url)
+        await self.browser.wait_for_chat_ready()
+
+    # ------------------------------------------------------------
 
     async def run(self):
         log.info(
-            f"[{self.ctx.creator_id}] Rumble chat bot active "
-            f"(channel={self.channel_id}, websocket mode)"
+            f"[{self.ctx.creator_id}] Chat worker starting (API READ / DOM SEND)"
         )
 
-        try:
-            await self._ensure_browser_and_client()
-
-            # Keep task alive forever — messages arrive via WS callback
-            while True:
-                await asyncio.sleep(3600)
-
-        except asyncio.CancelledError:
-            raise
-
-        except Exception as e:
-            log.error(f"[{self.ctx.creator_id}] Chat worker crashed: {e}")
-
-    # ------------------------------------------------------------------
-    # WebSocket inbound messages
-    # ------------------------------------------------------------------
-
-    def _on_chat_message(self, msg: Dict[str, Any]) -> None:
-        """
-        Called synchronously from Playwright WebSocket listener.
-        MUST remain lightweight.
-        """
-        try:
-            # HARD TRACE — proves callback is executing
-            log.debug(
-                f"[{self.ctx.creator_id}] _on_chat_message invoked: keys={list(msg.keys())}"
+        if not self.ctx.rumble_livestream_api_url:
+            raise RuntimeError(
+                f"[{self.ctx.creator_id}] rumble_livestream_api_url is missing"
             )
 
-            text = str(msg.get("text", "")).strip()
-            user = (msg.get("user") or {}).get("username", "unknown")
+        log.info(
+            f"[{self.ctx.creator_id}] Livestream API URL resolved → "
+            f"{self.ctx.rumble_livestream_api_url}"
+        )
 
-            if not text:
-                log.debug(
-                    f"[{self.ctx.creator_id}] Chat payload without text ignored"
+        await self._ensure_browser()
+
+        log.info(
+            f"[{self.ctx.creator_id}] Chat ready — entering API poll loop"
+        )
+
+        while True:
+            try:
+                await self._poll_api_chat()
+                await asyncio.sleep(POLL_SECONDS)
+
+            except asyncio.CancelledError:
+                raise
+
+            except Exception as e:
+                log.error(
+                    f"[{self.ctx.creator_id}] Chat poll error: {e}"
                 )
-                return
+                await asyncio.sleep(5)
 
-            # 🔥 HARD DIAGNOSTIC LOG — DO NOT REMOVE
-            log.info(f"CHAT [{user}]: {text}")
+    # ------------------------------------------------------------
 
-            asyncio.create_task(self._handle_message(user, text))
-
-        except Exception as e:
-            log.error(
-                f"[{self.ctx.creator_id}] Chat WS handler error: {e}"
+    async def _poll_api_chat(self) -> None:
+        if not self.browser or not self.browser._context:
+            log.warning(
+                f"[{self.ctx.creator_id}] Browser context not ready yet"
             )
             return
 
-    # ------------------------------------------------------------------
-    # Command handling
-    # ------------------------------------------------------------------
+        self._poll_count += 1
 
-    async def _handle_message(self, user: str, text: str) -> None:
-        log.debug(
-            f"[{self.ctx.creator_id}] Handling message from {user}: {text}"
+        response = await self.browser._context.request.get(
+            self.ctx.rumble_livestream_api_url,
+            timeout=10000,
+            headers={"Accept": "application/json"},
         )
 
-        if not text.lower().startswith("!clip"):
-            return
+        status = response.status
+        log.info(
+            f"[{self.ctx.creator_id}] API poll #{self._poll_count} → HTTP {status}"
+        )
 
-        async with self._lock:
-            now = time.time()
-            cooldown = int(self.clip_rules.get("cooldown_seconds", 30))
+        if status != 200:
+            body = await response.text()
+            body_preview = body[:500].replace("\n", "\\n")
+            raise RuntimeError(
+                f"Livestream API HTTP {status} body={body_preview}"
+            )
 
-            if now - self.last_clip_time < cooldown:
-                self.client.send_message(
-                    self.channel_id,
-                    "⏳ Cooldown active. Try again shortly."
-                )
-                return
+        data = await response.json()
 
-            length = int(self.clip_rules.get("default_length", 30))
-            parts = text.split()
+        streams = data.get("livestreams", []) or []
+        live_streams = [s for s in streams if s.get("is_live")]
 
-            if len(parts) > 1:
+        log.info(
+            f"[{self.ctx.creator_id}] API data → livestreams={len(streams)} "
+            f"live={len(live_streams)}"
+        )
+
+        total_msgs = 0
+        newest_ts: Optional[datetime] = None
+
+        for stream in live_streams:
+            chat = stream.get("chat", {}) or {}
+            recent = chat.get("recent_messages", []) or []
+
+            total_msgs += len(recent)
+
+            for msg in recent:
+                created_raw = msg.get("created_on")
+                if not created_raw:
+                    continue
+
                 try:
-                    length = int(parts[1])
-                except ValueError:
-                    self.client.send_message(
-                        self.channel_id,
-                        "❌ Invalid clip length."
+                    created_ts = datetime.fromisoformat(
+                        created_raw.replace("Z", "+00:00")
                     )
-                    return
+                except Exception:
+                    continue
 
-            max_len = int(self.clip_rules.get("max_length", 90))
-            if length > max_len:
-                self.client.send_message(
-                    self.channel_id,
-                    f"❌ Clip too long (max {max_len}s)."
+                if not newest_ts or created_ts > newest_ts:
+                    newest_ts = created_ts
+
+                key = (
+                    msg.get("username"),
+                    msg.get("text"),
+                    created_raw,
                 )
-                return
 
-            self.last_clip_time = now
+                if key in self._seen:
+                    continue
+
+                self._seen.add(key)
+
+                # --------------------------------------------------
+                # 🔒 STARTUP BASELINE SYNC (FIRST POLL ONLY)
+                # --------------------------------------------------
+                if not self._startup_sync_complete:
+                    continue
+
+                user = (msg.get("username") or "").strip()
+                text = (msg.get("text") or "").strip()
+
+                if not user or not text:
+                    continue
+
+                if self._startup_cutoff_ts and created_ts <= self._startup_cutoff_ts:
+                    continue
+
+                log.info(
+                    f"💬 {user}: {text} (created_on={created_raw})"
+                )
+
+                if text.lower() == "!ping":
+                    await self._send_pong(user)
+
+        # --------------------------------------------------
+        # FINALIZE STARTUP BASELINE
+        # --------------------------------------------------
+        if not self._startup_sync_complete:
+            self._startup_cutoff_ts = newest_ts
+            self._startup_sync_complete = True
+            log.info(
+                f"[{self.ctx.creator_id}] Startup baseline established "
+                f"(cutoff={self._startup_cutoff_ts})"
+            )
+
+        # --------------------------------------------------
+        # STARTUP ANNOUNCEMENT (ONCE, AFTER BASELINE)
+        # --------------------------------------------------
+        if self._startup_sync_complete and not self._startup_announced:
+            await self._send_startup_announcement()
+
+        log.info(
+            f"[{self.ctx.creator_id}] API poll #{self._poll_count} → "
+            f"recent_messages_total={total_msgs}"
+        )
+
+    # ------------------------------------------------------------
+
+    async def _send_startup_announcement(self):
+        async with self._lock:
+            if self._startup_announced:
+                return
 
             log.info(
-                f"[{self.ctx.creator_id}] !clip accepted from {user} ({length}s)"
+                f"[{self.ctx.creator_id}] Sending startup announcement"
             )
 
-            await self.jobs.dispatch(
-                job_type="clip",
-                ctx=self.ctx,
-                payload={
-                    "length": length,
-                    "requested_by": user,
-                    "platform": "rumble",
-                },
+            sent = await self.browser.send_chat_dom(
+                STARTUP_ANNOUNCEMENT
             )
 
-            self.client.send_message(
-                self.channel_id,
-                f"🎬 Clip queued ({length}s)"
+            if sent:
+                self._startup_announced = True
+                self._last_send_ts = asyncio.get_event_loop().time()
+                log.info("📣 Startup announcement sent")
+            else:
+                log.error("❌ Startup announcement failed")
+
+    # ------------------------------------------------------------
+
+    async def _send_pong(self, user: str):
+        async with self._lock:
+            now = asyncio.get_event_loop().time()
+            delta = now - self._last_send_ts
+
+            if delta < SEND_COOLDOWN_SECONDS:
+                await asyncio.sleep(SEND_COOLDOWN_SECONDS - delta)
+
+            log.info(
+                f"[{self.ctx.creator_id}] !ping detected from {user} — replying pong"
             )
+
+            sent = await self.browser.send_chat_dom("pong")
+
+            if sent:
+                self._last_send_ts = asyncio.get_event_loop().time()
+                log.info("📤 pong sent")
+            else:
+                log.error("❌ pong failed")

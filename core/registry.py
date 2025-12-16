@@ -15,13 +15,6 @@ class CreatorRegistry:
         self.path = path
 
     def load(self) -> Dict[str, CreatorContext]:
-        """
-        Load creators from shared/config/creators.json and return:
-        { creator_id: CreatorContext }
-        """
-        if not self.path.exists():
-            raise FileNotFoundError(f"Creators config not found: {self.path}")
-
         raw = json.loads(self.path.read_text(encoding="utf-8"))
         creators = raw.get("creators", [])
 
@@ -33,7 +26,6 @@ class CreatorRegistry:
 
             creator_id = c.get("creator_id")
             if not creator_id:
-                log.error("Creator entry missing creator_id; skipping")
                 continue
 
             ctx = CreatorContext(
@@ -42,12 +34,12 @@ class CreatorRegistry:
                 platforms=c.get("platforms", {}),
                 limits=c.get("limits", {}),
 
-                # ----------------------------
-                # RUMBLE CONFIG (AUTHORITATIVE)
-                # ----------------------------
                 rumble_channel_url=c.get("rumble_channel_url"),
-                rumble_watch_url=c.get("rumble_watch_url"),
+                rumble_manual_watch_url=c.get("rumble_manual_watch_url"),
+                rumble_livestream_api_env_key=c.get("rumble_livestream_api_env_key"),
+
                 rumble_chat_channel_id=c.get("rumble_chat_channel_id"),
+                rumble_dom_chat_enabled=c.get("rumble_dom_chat_enabled", True),
             )
 
             out[creator_id] = ctx

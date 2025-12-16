@@ -10,6 +10,9 @@ from core.jobs import JobRegistry
 from shared.logging.logger import get_logger
 from media.jobs.clip_job import ClipJob
 
+# IMPORTANT: browser cleanup hook
+from services.rumble.browser.browser_client import RumbleBrowserClient
+
 log = get_logger("core.app")
 
 _GLOBAL_JOB_REGISTRY: JobRegistry | None = None
@@ -29,6 +32,7 @@ async def main(stop_event: asyncio.Event):
     # LOAD CREATORS
     # --------------------------------------------------
     creators = CreatorRegistry().load()
+    log.info(f"Loaded {len(creators)} creator(s)")
 
     # --------------------------------------------------
     # CORE SYSTEMS
@@ -46,22 +50,38 @@ async def main(stop_event: asyncio.Event):
     # START CREATOR RUNTIMES
     # --------------------------------------------------
     for ctx in creators.values():
-        await scheduler.start_creator(ctx)
+        try:
+            await scheduler.start_creator(ctx)
+            log.info(f"[{ctx.creator_id}] Creator runtime started")
+        except Exception as e:
+            log.error(
+                f"[{ctx.creator_id}] Failed to start creator runtime: {e}"
+            )
 
     # --------------------------------------------------
-    # BLOCK UNTIL SHUTDOWN
+    # BLOCK UNTIL SHUTDOWN SIGNAL
     # --------------------------------------------------
     await stop_event.wait()
 
     log.info("Shutdown initiated")
 
     # --------------------------------------------------
-    # ORDERLY SHUTDOWN
+    # ORDERLY SHUTDOWN — TASKS FIRST
     # --------------------------------------------------
     try:
         await scheduler.shutdown()
     except Exception as e:
         log.warning(f"Scheduler shutdown error ignored: {e}")
+
+    # --------------------------------------------------
+    # BROWSER CLEANUP (CRITICAL FOR MODEL A)
+    # --------------------------------------------------
+    try:
+        browser = RumbleBrowserClient.instance()
+        await browser.shutdown()
+        log.info("Rumble browser shutdown complete")
+    except Exception as e:
+        log.warning(f"Browser shutdown error ignored: {e}")
 
     log.info("StreamSuites stopped")
 
@@ -89,7 +109,6 @@ def _install_signal_handlers(
         signal.signal(signal.SIGINT, _handler)
         signal.signal(signal.SIGTERM, _handler)
     except Exception:
-        # Signal handling may be restricted on some platforms
         pass
 
 
@@ -107,16 +126,19 @@ def run():
 
     try:
         loop.run_until_complete(main(stop_event))
+
     except KeyboardInterrupt:
-        # Fallback if signal handlers didn’t fire
         log.info("KeyboardInterrupt received — shutdown initiated")
         try:
             stop_event.set()
             loop.run_until_complete(asyncio.sleep(0))
         except Exception:
             pass
+
     finally:
-        # Cancel any remaining tasks
+        # --------------------------------------------------
+        # CANCEL REMAINING TASKS (CLEANLY)
+        # --------------------------------------------------
         pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
         for task in pending:
             task.cancel()
@@ -129,6 +151,9 @@ def run():
             except Exception:
                 pass
 
+        # --------------------------------------------------
+        # FINAL LOOP CLEANUP
+        # --------------------------------------------------
         try:
             loop.run_until_complete(loop.shutdown_asyncgens())
         except Exception:
