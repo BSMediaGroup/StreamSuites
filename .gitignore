@@ -81,3 +81,10 @@ shared/state/
 *.dll
 
 !test_rumble_api.py
+
+# ====================================
+# Rumble / Playwright Browser Profiles
+# ====================================
+.rumble_profile/
+.rumble_profile_streamsuites/
+.browser/
