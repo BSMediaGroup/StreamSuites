@@ -1,5 +1,7 @@
 import asyncio
-from typing import Optional, Set, Tuple
+import json
+from pathlib import Path
+from typing import Optional, Set, Tuple, Dict, Any, List
 from datetime import datetime, timezone
 
 from core.jobs import JobRegistry
@@ -8,9 +10,26 @@ from shared.logging.logger import get_logger
 
 log = get_logger("rumble.chat_worker")
 
-POLL_SECONDS = 2
-SEND_COOLDOWN_SECONDS = 0.75
-STARTUP_ANNOUNCEMENT = "🤖 StreamSuites bot online"
+# Default fallbacks (used only if config missing/unreadable)
+DEFAULT_POLL_SECONDS = 2
+DEFAULT_SEND_COOLDOWN_SECONDS = 0.75
+DEFAULT_STARTUP_ANNOUNCEMENT = "🤖 StreamSuites bot online"
+
+CONFIG_PATH = Path("shared") / "config" / "chat_behaviour.json"
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _parse_created_on(created_raw: str) -> Optional[datetime]:
+    if not created_raw:
+        return None
+    try:
+        # Rumble often uses ISO with +00:00; sometimes "Z"
+        return datetime.fromisoformat(created_raw.replace("Z", "+00:00"))
+    except Exception:
+        return None
 
 
 class RumbleChatWorker:
@@ -19,6 +38,11 @@ class RumbleChatWorker:
 
     READ: Livestream API (authoritative)
     SEND: DOM injection (Playwright keyboard)
+
+    HARD RULES:
+    - On startup: establish a baseline cutoff BEFORE announcing or responding
+    - Only respond to messages strictly AFTER the baseline cutoff
+    - Rate-limit outgoing sends to avoid flooding / platform rate limits
     """
 
     def __init__(
@@ -33,19 +57,52 @@ class RumbleChatWorker:
 
         self.browser: Optional[RumbleBrowserClient] = None
 
-        # Seen message de-duplication
+        # De-dup key: (username, text, created_on_raw)
         self._seen: Set[Tuple[str, str, str]] = set()
 
         # Concurrency + rate limiting
-        self._lock = asyncio.Lock()
+        self._send_lock = asyncio.Lock()
         self._last_send_ts: float = 0.0
 
-        # Startup baseline control
-        self._startup_sync_complete = False
-        self._startup_cutoff_ts: Optional[datetime] = None
-        self._startup_announced = False
+        # Baseline cutoff (set during startup sync)
+        self._baseline_cutoff: Optional[datetime] = None
+        self._baseline_ready: bool = False
+
+        # Config
+        self._cfg: Dict[str, Any] = {}
+        self._poll_seconds: float = float(DEFAULT_POLL_SECONDS)
+        self._send_cooldown_seconds: float = float(DEFAULT_SEND_COOLDOWN_SECONDS)
+        self._startup_announcement: str = DEFAULT_STARTUP_ANNOUNCEMENT
+        self._enable_startup_announcement: bool = True
+
+        self._triggers: List[Dict[str, Any]] = []
 
         self._poll_count = 0
+
+    # ------------------------------------------------------------
+
+    def _load_config(self) -> None:
+        cfg: Dict[str, Any] = {}
+        try:
+            if CONFIG_PATH.exists():
+                cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+                log.info(f"[{self.ctx.creator_id}] Loaded chat config → {CONFIG_PATH.as_posix()}")
+            else:
+                log.warning(f"[{self.ctx.creator_id}] Chat config missing → {CONFIG_PATH.as_posix()} (using defaults)")
+        except Exception as e:
+            log.error(f"[{self.ctx.creator_id}] Failed to load chat config: {e} (using defaults)")
+            cfg = {}
+
+        self._cfg = cfg
+
+        self._poll_seconds = float(cfg.get("poll_seconds", DEFAULT_POLL_SECONDS))
+        self._send_cooldown_seconds = float(cfg.get("send_cooldown_seconds", DEFAULT_SEND_COOLDOWN_SECONDS))
+        self._startup_announcement = str(cfg.get("startup_announcement", DEFAULT_STARTUP_ANNOUNCEMENT))
+        self._enable_startup_announcement = bool(cfg.get("enable_startup_announcement", True))
+
+        self._triggers = cfg.get("triggers", [])
+        if not isinstance(self._triggers, list):
+            self._triggers = []
 
     # ------------------------------------------------------------
 
@@ -55,9 +112,7 @@ class RumbleChatWorker:
         await self.browser.start()
         await self.browser.ensure_logged_in()
 
-        log.info(
-            f"[{self.ctx.creator_id}] Navigating to livestream → {self.watch_url}"
-        )
+        log.info(f"[{self.ctx.creator_id}] Navigating to livestream → {self.watch_url}")
 
         await self.browser.open_watch(self.watch_url)
         await self.browser.wait_for_chat_ready()
@@ -65,50 +120,45 @@ class RumbleChatWorker:
     # ------------------------------------------------------------
 
     async def run(self):
-        log.info(
-            f"[{self.ctx.creator_id}] Chat worker starting (API READ / DOM SEND)"
-        )
+        log.info(f"[{self.ctx.creator_id}] Chat worker starting (API READ / DOM SEND)")
 
         if not self.ctx.rumble_livestream_api_url:
-            raise RuntimeError(
-                f"[{self.ctx.creator_id}] rumble_livestream_api_url is missing"
-            )
+            raise RuntimeError(f"[{self.ctx.creator_id}] rumble_livestream_api_url is missing")
 
-        log.info(
-            f"[{self.ctx.creator_id}] Livestream API URL resolved → "
-            f"{self.ctx.rumble_livestream_api_url}"
-        )
+        log.info(f"[{self.ctx.creator_id}] Livestream API URL resolved → {self.ctx.rumble_livestream_api_url}")
 
+        # Load external behavior config
+        self._load_config()
+
+        # Ensure browser + chat iframe locked
         await self._ensure_browser()
 
-        log.info(
-            f"[{self.ctx.creator_id}] Chat ready — entering API poll loop"
-        )
+        # 1) Establish baseline cutoff FIRST (prevents historic spam on boot)
+        await self._establish_startup_baseline()
+
+        # 2) Announce only AFTER baseline exists
+        if self._enable_startup_announcement and self._startup_announcement.strip():
+            await self._send_text(self._startup_announcement.strip(), reason="startup_announcement")
+
+        log.info(f"[{self.ctx.creator_id}] Chat ready — entering API poll loop")
 
         while True:
             try:
                 await self._poll_api_chat()
-                await asyncio.sleep(POLL_SECONDS)
+                await asyncio.sleep(self._poll_seconds)
 
             except asyncio.CancelledError:
                 raise
 
             except Exception as e:
-                log.error(
-                    f"[{self.ctx.creator_id}] Chat poll error: {e}"
-                )
+                log.error(f"[{self.ctx.creator_id}] Chat poll error: {e}")
                 await asyncio.sleep(5)
 
     # ------------------------------------------------------------
 
-    async def _poll_api_chat(self) -> None:
+    async def _api_get_data(self) -> Dict[str, Any]:
         if not self.browser or not self.browser._context:
-            log.warning(
-                f"[{self.ctx.creator_id}] Browser context not ready yet"
-            )
-            return
-
-        self._poll_count += 1
+            raise RuntimeError("Browser context not ready")
 
         response = await self.browser._context.request.get(
             self.ctx.rumble_livestream_api_url,
@@ -117,33 +167,95 @@ class RumbleChatWorker:
         )
 
         status = response.status
-        log.info(
-            f"[{self.ctx.creator_id}] API poll #{self._poll_count} → HTTP {status}"
-        )
-
         if status != 200:
             body = await response.text()
             body_preview = body[:500].replace("\n", "\\n")
-            raise RuntimeError(
-                f"Livestream API HTTP {status} body={body_preview}"
-            )
+            raise RuntimeError(f"Livestream API HTTP {status} body={body_preview}")
 
-        data = await response.json()
+        try:
+            return await response.json()
+        except Exception:
+            body = await response.text()
+            body_preview = body[:500].replace("\n", "\\n")
+            raise RuntimeError(f"Livestream API returned non-JSON: {body_preview}")
+
+    # ------------------------------------------------------------
+
+    async def _establish_startup_baseline(self) -> None:
+        """
+        Sets baseline cutoff to the newest created_on found in current recent_messages.
+        This prevents reacting to the backscroll / history on boot.
+
+        Important: this runs AFTER chat iframe is ready, but BEFORE any announcement.
+        """
+        log.info(f"[{self.ctx.creator_id}] Establishing startup baseline (history cutoff)")
+
+        data = await self._api_get_data()
 
         streams = data.get("livestreams", []) or []
+        if not isinstance(streams, list):
+            log.warning(f"[{self.ctx.creator_id}] Baseline: invalid livestreams structure; falling back to now()")
+            self._baseline_cutoff = _utc_now()
+            self._baseline_ready = True
+            return
+
         live_streams = [s for s in streams if s.get("is_live")]
-
-        log.info(
-            f"[{self.ctx.creator_id}] API data → livestreams={len(streams)} "
-            f"live={len(live_streams)}"
-        )
-
-        total_msgs = 0
-        newest_ts: Optional[datetime] = None
+        newest: Optional[datetime] = None
 
         for stream in live_streams:
             chat = stream.get("chat", {}) or {}
             recent = chat.get("recent_messages", []) or []
+            if not isinstance(recent, list):
+                continue
+
+            for msg in recent:
+                created_raw = msg.get("created_on")
+                created_ts = _parse_created_on(created_raw)
+                if not created_ts:
+                    continue
+                if (newest is None) or (created_ts > newest):
+                    newest = created_ts
+
+                # Also mark these as seen so we don't reprocess them immediately
+                key = (msg.get("username"), msg.get("text"), created_raw)
+                self._seen.add(key)
+
+        # If no messages exist, still set a cutoff
+        self._baseline_cutoff = newest if newest else _utc_now()
+        self._baseline_ready = True
+
+        log.info(f"[{self.ctx.creator_id}] Baseline cutoff set → {self._baseline_cutoff.isoformat()}")
+
+    # ------------------------------------------------------------
+
+    async def _poll_api_chat(self) -> None:
+        if not self.browser or not self.browser._context:
+            log.warning(f"[{self.ctx.creator_id}] Browser context not ready yet")
+            return
+
+        if not self._baseline_ready or not self._baseline_cutoff:
+            log.warning(f"[{self.ctx.creator_id}] Baseline not ready; skipping poll cycle")
+            return
+
+        self._poll_count += 1
+
+        data = await self._api_get_data()
+
+        streams = data.get("livestreams", []) or []
+        if not isinstance(streams, list):
+            raise RuntimeError("Livestream API JSON missing/invalid 'livestreams'")
+
+        live_streams = [s for s in streams if s.get("is_live")]
+
+        log.info(f"[{self.ctx.creator_id}] API poll #{self._poll_count} → livestreams={len(streams)} live={len(live_streams)}")
+
+        total_msgs = 0
+
+        for stream in live_streams:
+            chat = stream.get("chat", {}) or {}
+            recent = chat.get("recent_messages", []) or []
+            if not isinstance(recent, list):
+                continue
 
             total_msgs += len(recent)
 
@@ -152,111 +264,103 @@ class RumbleChatWorker:
                 if not created_raw:
                     continue
 
-                try:
-                    created_ts = datetime.fromisoformat(
-                        created_raw.replace("Z", "+00:00")
-                    )
-                except Exception:
-                    continue
-
-                if not newest_ts or created_ts > newest_ts:
-                    newest_ts = created_ts
-
-                key = (
-                    msg.get("username"),
-                    msg.get("text"),
-                    created_raw,
-                )
-
+                key = (msg.get("username"), msg.get("text"), created_raw)
                 if key in self._seen:
                     continue
-
                 self._seen.add(key)
 
-                # --------------------------------------------------
-                # 🔒 STARTUP BASELINE SYNC (FIRST POLL ONLY)
-                # --------------------------------------------------
-                if not self._startup_sync_complete:
+                created_ts = _parse_created_on(created_raw)
+                if not created_ts:
+                    continue
+
+                # HARD RULE: ignore anything at/before baseline cutoff
+                if created_ts <= self._baseline_cutoff:
                     continue
 
                 user = (msg.get("username") or "").strip()
                 text = (msg.get("text") or "").strip()
-
                 if not user or not text:
                     continue
 
-                if self._startup_cutoff_ts and created_ts <= self._startup_cutoff_ts:
-                    continue
+                log.info(f"💬 {user}: {text} (created_on={created_raw})")
 
-                log.info(
-                    f"💬 {user}: {text} (created_on={created_raw})"
-                )
+                # Trigger evaluation
+                await self._handle_triggers(user=user, text=text)
 
-                if text.lower() == "!ping":
-                    await self._send_pong(user)
-
-        # --------------------------------------------------
-        # FINALIZE STARTUP BASELINE
-        # --------------------------------------------------
-        if not self._startup_sync_complete:
-            self._startup_cutoff_ts = newest_ts
-            self._startup_sync_complete = True
-            log.info(
-                f"[{self.ctx.creator_id}] Startup baseline established "
-                f"(cutoff={self._startup_cutoff_ts})"
-            )
-
-        # --------------------------------------------------
-        # STARTUP ANNOUNCEMENT (ONCE, AFTER BASELINE)
-        # --------------------------------------------------
-        if self._startup_sync_complete and not self._startup_announced:
-            await self._send_startup_announcement()
-
-        log.info(
-            f"[{self.ctx.creator_id}] API poll #{self._poll_count} → "
-            f"recent_messages_total={total_msgs}"
-        )
+        log.info(f"[{self.ctx.creator_id}] API poll #{self._poll_count} → recent_messages_total={total_msgs}")
 
     # ------------------------------------------------------------
 
-    async def _send_startup_announcement(self):
-        async with self._lock:
-            if self._startup_announced:
+    async def _handle_triggers(self, user: str, text: str) -> None:
+        """
+        Very small trigger engine.
+        For now it supports:
+          - equals_icase
+          - contains_icase
+        """
+        if not self._triggers:
+            # Backwards-compatible default behavior
+            if text.lower() == "!ping":
+                await self._send_text("pong", reason=f"trigger_default(!ping) user={user}")
+            return
+
+        t = text.strip()
+        tl = t.lower()
+
+        for trig in self._triggers:
+            if not isinstance(trig, dict):
+                continue
+
+            match = str(trig.get("match", "")).strip()
+            if not match:
+                continue
+
+            mode = str(trig.get("match_mode", "equals_icase")).strip()
+            response = str(trig.get("response", "")).strip()
+            if not response:
+                continue
+
+            cooldown = trig.get("cooldown_seconds", None)
+            try:
+                cooldown_s = float(cooldown) if cooldown is not None else self._send_cooldown_seconds
+            except Exception:
+                cooldown_s = self._send_cooldown_seconds
+
+            hit = False
+            if mode == "equals_icase":
+                hit = (tl == match.lower())
+            elif mode == "contains_icase":
+                hit = (match.lower() in tl)
+            else:
+                # Unknown mode — ignore
+                continue
+
+            if hit:
+                await self._send_text(response, reason=f"trigger({match}/{mode}) user={user}", cooldown_override=cooldown_s)
                 return
 
-            log.info(
-                f"[{self.ctx.creator_id}] Sending startup announcement"
-            )
-
-            sent = await self.browser.send_chat_dom(
-                STARTUP_ANNOUNCEMENT
-            )
-
-            if sent:
-                self._startup_announced = True
-                self._last_send_ts = asyncio.get_event_loop().time()
-                log.info("📣 Startup announcement sent")
-            else:
-                log.error("❌ Startup announcement failed")
-
     # ------------------------------------------------------------
 
-    async def _send_pong(self, user: str):
-        async with self._lock:
+    async def _send_text(self, message: str, reason: str = "send", cooldown_override: Optional[float] = None) -> None:
+        if not self.browser:
+            log.error(f"[{self.ctx.creator_id}] Send failed (no browser) reason={reason}")
+            return
+
+        async with self._send_lock:
+            # rate limit
             now = asyncio.get_event_loop().time()
+            cooldown = cooldown_override if cooldown_override is not None else self._send_cooldown_seconds
+
             delta = now - self._last_send_ts
+            if delta < cooldown:
+                await asyncio.sleep(cooldown - delta)
 
-            if delta < SEND_COOLDOWN_SECONDS:
-                await asyncio.sleep(SEND_COOLDOWN_SECONDS - delta)
+            log.info(f"[{self.ctx.creator_id}] Sending chat message reason={reason} msg={message!r}")
 
-            log.info(
-                f"[{self.ctx.creator_id}] !ping detected from {user} — replying pong"
-            )
-
-            sent = await self.browser.send_chat_dom("pong")
+            sent = await self.browser.send_chat_dom(message)
 
             if sent:
                 self._last_send_ts = asyncio.get_event_loop().time()
-                log.info("📤 pong sent")
+                log.info(f"[{self.ctx.creator_id}] 📤 sent OK")
             else:
-                log.error("❌ pong failed")
+                log.error(f"[{self.ctx.creator_id}] ❌ send failed")

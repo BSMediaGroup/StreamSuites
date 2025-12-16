@@ -1,1 +1,18 @@
-{}
+{
+  "poll_seconds": 2,
+  "send_cooldown_seconds": 0.75,
+  "startup_announcement": "🤖 StreamSuites bot online",
+  "enable_startup_announcement": true,
+
+  "baseline_mode": "latest_seen",
+  "baseline_grace_seconds": 0,
+
+  "triggers": [
+    {
+      "match": "!ping",
+      "match_mode": "equals_icase",
+      "response": "pong",
+      "cooldown_seconds": 0.75
+    }
+  ]
+}
