@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Any
 
 from core.context import CreatorContext
 from shared.logging.logger import get_logger
@@ -26,7 +26,7 @@ class CreatorRegistry:
     # TIERS
     # ------------------------------------------------------------------
 
-    def _load_tiers(self) -> dict:
+    def _load_tiers(self) -> Dict[str, Any]:
         if not self.tiers_path.exists():
             raise RuntimeError(
                 f"Tier policy not found: {self.tiers_path}"
@@ -40,16 +40,52 @@ class CreatorRegistry:
 
         return tiers
 
-    def _resolve_tier_limits(self, tier_name: str) -> dict:
+    def _resolve_tier(self, tier_name: str) -> Dict[str, Any]:
         tier = self._tiers.get(tier_name)
         if not tier:
             raise RuntimeError(f"Unknown tier: {tier_name}")
 
+        limits = tier.get("limits")
         features = tier.get("features")
+
+        if not isinstance(limits, dict):
+            raise RuntimeError(f"Tier '{tier_name}' missing limits block")
+
         if not isinstance(features, dict):
             raise RuntimeError(f"Tier '{tier_name}' missing features block")
 
-        return features
+        return {
+            "limits": limits,
+            "features": features,
+        }
+
+    def _merge_limits(
+        self,
+        tier_limits: Dict[str, Any],
+        creator_limits: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Merge creator-requested limits with tier caps.
+
+        Rule:
+        - Creator may request LOWER limits
+        - Creator may NOT exceed tier caps
+        """
+        effective: Dict[str, Any] = {}
+
+        for key, tier_value in tier_limits.items():
+            creator_value = creator_limits.get(key)
+
+            if creator_value is None:
+                effective[key] = tier_value
+                continue
+
+            try:
+                effective[key] = min(creator_value, tier_value)
+            except Exception:
+                effective[key] = tier_value
+
+        return effective
 
     # ------------------------------------------------------------------
     # CREATORS
@@ -74,7 +110,18 @@ class CreatorRegistry:
             # ----------------------------------------------------------
 
             tier_name = c.get("tier", "open")
-            limits = self._resolve_tier_limits(tier_name)
+            tier = self._resolve_tier(tier_name)
+
+            creator_limits = c.get("limits", {})
+            if not isinstance(creator_limits, dict):
+                creator_limits = {}
+
+            effective_limits = self._merge_limits(
+                tier_limits=tier["limits"],
+                creator_limits=creator_limits,
+            )
+
+            effective_features = dict(tier["features"])
 
             # ----------------------------------------------------------
             # CONTEXT
@@ -84,7 +131,7 @@ class CreatorRegistry:
                 creator_id=creator_id,
                 display_name=c.get("display_name", creator_id),
                 platforms=c.get("platforms", {}),
-                limits=limits,
+                limits=effective_limits,
 
                 rumble_channel_url=c.get("rumble_channel_url"),
                 rumble_manual_watch_url=c.get("rumble_manual_watch_url"),
@@ -94,9 +141,13 @@ class CreatorRegistry:
                 rumble_dom_chat_enabled=c.get("rumble_dom_chat_enabled", True),
             )
 
+            # Attach features non-invasively
+            ctx.features = effective_features  # type: ignore[attr-defined]
+
             out[creator_id] = ctx
             log.info(
-                f"Loaded creator: {creator_id} (tier={tier_name})"
+                f"Loaded creator: {creator_id} "
+                f"(tier={tier_name}, limits={effective_limits}, features={effective_features})"
             )
 
         return out
