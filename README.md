@@ -53,33 +53,138 @@ High-level flow:
 ```text
 StreamSuites/
 ├── core/
-│   ├── app.py              # Application entrypoint & lifecycle
-│   ├── scheduler.py       # Task orchestration and shutdown control
-│   ├── registry.py        # Creator loading and validation
-│   ├── context.py         # Per-creator runtime context
-│   └── jobs.py            # Job registry and dispatch
+│   ├── app.py                # Application entrypoint & lifecycle
+│   ├── context.py            # Per-creator runtime context
+│   ├── jobs.py               # Job registry and dispatch
+│   ├── registry.py           # Creator loading and validation
+│   ├── scheduler.py          # Task orchestration and shutdown control
+│   ├── shutdown.py           # Coordinated shutdown helpers
+│   └── signals.py            # Signal handling
 │
 ├── services/
-│   └── rumble/
-│       ├── browser/
-│       │   └── browser_client.py   # Persistent Playwright browser control
+│   ├── discord/
+│   │   ├── client.py
+│   │   ├── permissions.py
+│   │   ├── commands/
+│   │   │   ├── admin.py
+│   │   │   ├── creators.py
+│   │   │   ├── public.py
+│   │   │   └── services.py
+│   │   └── tasks/
+│   │       ├── pilled_live.py
+│   │       ├── rumble_live.py
+│   │       ├── twitch_live.py
+│   │       ├── twitter_posting.py
+│   │       └── youtube_live.py
+│   ├── pilled/
+│   │   └── api/
+│   │       ├── chat.py
+│   │       └── livestream.py
+│   ├── rumble/
+│   │   ├── api/
+│   │   │   ├── channel_page.py
+│   │   │   ├── chat.py
+│   │   │   └── chat_post.py
+│   │   ├── browser/
+│   │   │   └── browser_client.py   # Persistent Playwright browser control
+│   │   ├── chat/
+│   │   │   ├── rest_client.py
+│   │   │   └── ws_listener.py
+│   │   ├── models/
+│   │   │   ├── message.py
+│   │   │   └── stream.py
+│   │   └── workers/
+│   │       ├── chat_worker.py      # Chat read/write logic
+│   │       └── livestream_worker.py
+│   ├── twitch/
+│   │   ├── api/
+│   │   │   ├── chat.py
+│   │   │   └── livestream.py
+│   │   ├── models/
+│   │   │   └── message.py
+│   │   └── workers/
+│   │       └── chat_worker.py
+│   ├── twitter/
+│   │   ├── api/
+│   │   │   ├── auth.py
+│   │   │   └── posting.py
+│   │   └── workers/
+│   │       └── posting_worker.py
+│   └── youtube/
+│       ├── api/
+│       │   ├── chat.py
+│       │   └── livestream.py
+│       ├── models/
+│       │   ├── message.py
+│       │   └── stream.py
 │       └── workers/
-│           ├── livestream_worker.py
-│           └── chat_worker.py      # Chat read/write logic
+│           ├── chat_worker.py
+│           └── livestream_worker.py
 │
 ├── shared/
-│   ├── config/             # Static configuration (JSON)
-│   ├── logging/            # Logging configuration
-│   └── state/              # Runtime state (generated, gitignored)
+│   ├── config/               # Static configuration (JSON)
+│   │   ├── chat_behaviour.json
+│   │   ├── clip_rules.json
+│   │   ├── creators.json
+│   │   ├── logging.json
+│   │   ├── posting_rules.json
+│   │   ├── ratelimits.json
+│   │   ├── services.json
+│   │   ├── system.json
+│   │   └── tiers.json
+│   ├── logging/
+│   │   ├── levels.py
+│   │   └── logger.py
+│   ├── ratelimiter/
+│   │   └── governor.py
+│   ├── storage/
+│   │   ├── file_lock.py
+│   │   ├── paths.py
+│   │   └── state_store.py
+│   ├── utils/
+│   │   ├── files.py
+│   │   ├── hashing.py
+│   │   ├── retry.py
+│   │   └── time.py
+│   └── state/
+│       ├── creators/
+│       │   └── daniel.json
+│       ├── jobs.json
+│       └── system.json
 │
 ├── media/
-│   └── jobs/
-│       └── clip_job.py     # Example job type
+│   ├── capture/
+│   │   ├── rumble.py
+│   │   ├── twitch.py
+│   │   └── youtube.py
+│   ├── jobs/
+│   │   ├── base.py
+│   │   ├── clip_job.py
+│   │   └── upload_job.py
+│   ├── processing/
+│   │   ├── metadata.py
+│   │   ├── transcode.py
+│   │   └── trim.py
+│   └── storage/
+│       ├── buffer.py
+│       ├── cleanup.py
+│       └── clips.py
 │
-├── logs/                   # Runtime logs (gitignored)
-├── .browser/               # Playwright persistent profile (gitignored)
+├── scripts/
+│   ├── bootstrap.py
+│   └── validate_config.py
+│
+├── logs/                    # Runtime logs (gitignored)
+├── .browser/                # Playwright persistent profile (gitignored)
+├── tests/                    # Test harness placeholder
+│   └── __init__.py
+│
+├── rumble_chat_poc.py        # Rumble chat validation script
+├── test_rumble_api.py        # Rumble API probe
+├── requirements.txt
 ├── .env.example
 ├── .gitignore
+├── rumble_poc/               # Persistent browser profile for Rumble PoC
 └── README.md
 ```
 --- 
