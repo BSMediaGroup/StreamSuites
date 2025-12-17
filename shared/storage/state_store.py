@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Dict, List, Any
 from threading import Lock
+import time
 
 _STATE_PATH = Path("shared/state/jobs.json")
 _LOCK = Lock()
@@ -9,11 +10,11 @@ _LOCK = Lock()
 
 def _load_state() -> Dict[str, Any]:
     if not _STATE_PATH.exists():
-        return {"jobs": []}
+        return {"jobs": [], "triggers": {}}
     try:
         return json.loads(_STATE_PATH.read_text(encoding="utf-8"))
     except Exception:
-        return {"jobs": []}
+        return {"jobs": [], "triggers": {}}
 
 
 def _save_state(state: Dict[str, Any]) -> None:
@@ -59,10 +60,6 @@ def get_jobs_for_creator(creator_id: str) -> List[Dict[str, Any]]:
 
 
 def get_job_metrics() -> Dict[str, Any]:
-    """
-    Aggregate metrics for observability only.
-    No enforcement logic.
-    """
     jobs = get_all_jobs()
 
     metrics = {
@@ -92,3 +89,39 @@ def get_job_metrics() -> Dict[str, Any]:
         )
 
     return metrics
+
+
+# ------------------------------------------------------------
+# ADDITIVE — TRIGGER COOLDOWN STATE (AUTHORITATIVE)
+# ------------------------------------------------------------
+
+def get_last_trigger_time(
+    creator_id: str,
+    trigger_key: str,
+) -> float | None:
+    """
+    Returns epoch seconds of last trigger fire, or None.
+    """
+    with _LOCK:
+        state = _load_state()
+        return (
+            state
+            .get("triggers", {})
+            .get(creator_id, {})
+            .get(trigger_key)
+        )
+
+
+def record_trigger_fire(
+    creator_id: str,
+    trigger_key: str,
+) -> None:
+    """
+    Records the current time as last trigger fire.
+    """
+    with _LOCK:
+        state = _load_state()
+        state.setdefault("triggers", {})
+        state["triggers"].setdefault(creator_id, {})
+        state["triggers"][creator_id][trigger_key] = time.time()
+        _save_state(state)
