@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from threading import Lock
 import time
 
@@ -115,13 +115,17 @@ def get_last_trigger_time(
 def record_trigger_fire(
     creator_id: str,
     trigger_key: str,
+    now: Optional[float] = None,
 ) -> None:
     """
     Records the current time as last trigger fire.
+    If 'now' is provided, it is used (for deterministic callers).
     """
+    ts = now if now is not None else time.time()
+
     with _LOCK:
         state = _load_state()
         state.setdefault("triggers", {})
         state["triggers"].setdefault(creator_id, {})
-        state["triggers"][creator_id][trigger_key] = time.time()
+        state["triggers"][creator_id][trigger_key] = ts
         _save_state(state)

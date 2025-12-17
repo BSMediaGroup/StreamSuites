@@ -8,6 +8,17 @@ from core.jobs import JobRegistry
 from services.rumble.browser.browser_client import RumbleBrowserClient
 from shared.logging.logger import get_logger
 
+# ------------------------------------------------------------
+# B3: Persistent trigger cooldowns via state_store (preferred)
+# Falls back to in-memory dict ONLY if state_store functions
+# are not present (safety; does NOT affect normal operation).
+# ------------------------------------------------------------
+try:
+    from shared.storage.state_store import get_last_trigger_time, record_trigger_fire  # type: ignore
+except Exception:
+    get_last_trigger_time = None  # type: ignore
+    record_trigger_fire = None  # type: ignore
+
 log = get_logger("rumble.chat_worker")
 
 # Default fallbacks (used only if config missing/unreadable)
@@ -80,6 +91,12 @@ class RumbleChatWorker:
         # ------------------------------------------------------------
         # B3: Trigger cooldown tracking (in-memory, per worker)
         # Keyed by trigger identity (match + mode)
+        #
+        # NOTE:
+        # Preferred persistence is via shared.storage.state_store:
+        #   get_last_trigger_time / record_trigger_fire
+        # This dict remains ONLY as a safe fallback if those functions
+        # are not available at runtime.
         # ------------------------------------------------------------
         self._trigger_last_fired: Dict[str, float] = {}
 
@@ -345,7 +362,22 @@ class RumbleChatWorker:
 
             if hit:
                 trigger_key = f"{mode}:{match.lower()}"
-                last = self._trigger_last_fired.get(trigger_key)
+
+                # ------------------------------------------------------------
+                # B3: COOLDOWN CHECK (PERSISTENT via state_store preferred)
+                # ------------------------------------------------------------
+                last: Optional[float] = None
+
+                if callable(get_last_trigger_time):
+                    try:
+                        last = get_last_trigger_time(self.ctx.creator_id, trigger_key)
+                    except Exception as e:
+                        log.warning(f"[{self.ctx.creator_id}] Trigger cooldown read failed (state_store): {e}")
+                        last = None
+
+                # Fallback to in-memory if state_store not available / failed
+                if last is None:
+                    last = self._trigger_last_fired.get(trigger_key)
 
                 if last is not None:
                     delta = now - last
@@ -357,7 +389,22 @@ class RumbleChatWorker:
                         )
                         return
 
-                self._trigger_last_fired[trigger_key] = now
+                # Record fire time (persistent preferred)
+                if callable(record_trigger_fire):
+                    try:
+                        record_trigger_fire(self.ctx.creator_id, trigger_key, now)
+                    except TypeError:
+                        # If implementation doesn't accept 'now', call without it
+                        try:
+                            record_trigger_fire(self.ctx.creator_id, trigger_key)
+                        except Exception as e:
+                            log.warning(f"[{self.ctx.creator_id}] Trigger cooldown write failed (state_store): {e}")
+                            self._trigger_last_fired[trigger_key] = now
+                    except Exception as e:
+                        log.warning(f"[{self.ctx.creator_id}] Trigger cooldown write failed (state_store): {e}")
+                        self._trigger_last_fired[trigger_key] = now
+                else:
+                    self._trigger_last_fired[trigger_key] = now
 
                 await self._send_text(
                     response,
