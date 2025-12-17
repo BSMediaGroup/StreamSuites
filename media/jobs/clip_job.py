@@ -43,9 +43,19 @@ class ClipJob(Job):
         # --------------------------------------------------
 
         requested_length = int(self.payload.get("length", 30))
-        effective_length = min(requested_length, max_duration)
 
-        if requested_length > max_duration:
+        # Guard: if max_duration is 0/None, treat as "no cap"
+        try:
+            max_duration_int = int(max_duration)
+        except Exception:
+            max_duration_int = 0
+
+        if max_duration_int > 0:
+            effective_length = min(requested_length, max_duration_int)
+        else:
+            effective_length = requested_length
+
+        if max_duration_int > 0 and requested_length > max_duration_int:
             log.warning(
                 f"[{creator_id}] Clip length capped "
                 f"({requested_length}s → {effective_length}s)"
@@ -54,38 +64,23 @@ class ClipJob(Job):
         # --------------------------------------------------
         # CONCURRENCY ENFORCEMENT
         # --------------------------------------------------
-
-        active = self.scheduler.count_active_jobs(
-            creator_id=creator_id,
-            job_type="clip",
-        )
-
-        if active >= max_concurrent:
-            log.warning(
-                f"[{creator_id}] Clip job rejected: "
-                f"max concurrent clip jobs reached ({active}/{max_concurrent})"
-            )
-            return
+        # NOTE:
+        # Concurrency is enforced AUTHORITATIVELY in core/jobs.py (JobRegistry.dispatch)
+        # using ctx.limits["max_concurrent_clip_jobs"] (or the tier-resolved equivalent).
+        #
+        # This job does NOT own job queue policy and has no scheduler/registry handle.
+        # Keep the variables here for future UI visibility and policy alignment.
+        _ = max_concurrent  # intentionally unused for now
 
         # --------------------------------------------------
         # COOLDOWN ENFORCEMENT
         # --------------------------------------------------
-
-        now = time.time()
-        last = self.scheduler.get_last_job_time(
-            creator_id=creator_id,
-            job_type="clip",
-        )
-
-        if last is not None:
-            delta = now - last
-            if delta < min_cooldown:
-                remaining = round(min_cooldown - delta, 2)
-                log.warning(
-                    f"[{creator_id}] Clip job rejected: "
-                    f"cooldown active ({remaining}s remaining)"
-                )
-                return
+        # NOTE:
+        # Cooldown requires a persisted "last successful clip time" store + wiring.
+        # That plumbing does not exist yet in the current runtime, so enforcing here
+        # would be a runtime error. We will implement cooldown centrally later.
+        _ = min_cooldown  # intentionally unused for now
+        _ = time.time()   # placeholder to keep imports stable
 
         # --------------------------------------------------
         # EXECUTION (SIMULATED)

@@ -42,9 +42,18 @@ async def main(stop_event: asyncio.Event):
     _GLOBAL_JOB_REGISTRY = jobs
 
     # --------------------------------------------------
-    # REGISTER JOB TYPES
+    # REGISTER JOB TYPES (FEATURE-GATED)
     # --------------------------------------------------
-    jobs.register("clip", ClipJob)
+    clip_enabled = any(
+        getattr(ctx, "features", {}).get("clips", False)
+        for ctx in creators.values()
+    )
+
+    if clip_enabled:
+        jobs.register("clip", ClipJob)
+        log.info("Clip job registered (tier feature enabled)")
+    else:
+        log.info("Clip job NOT registered (no tier permits clips)")
 
     # --------------------------------------------------
     # START CREATOR RUNTIMES

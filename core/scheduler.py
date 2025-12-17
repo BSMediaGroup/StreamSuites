@@ -13,6 +13,9 @@ class Scheduler:
         # creator_id -> list[asyncio.Task]
         self._tasks: Dict[str, List[asyncio.Task]] = {}
 
+        # creator_id -> active job counts by type
+        self._job_counts: Dict[str, Dict[str, int]] = {}
+
     # ------------------------------------------------------------
 
     async def start_creator(self, ctx: CreatorContext):
@@ -23,6 +26,7 @@ class Scheduler:
             return
 
         self._tasks[ctx.creator_id] = []
+        self._job_counts[ctx.creator_id] = {}
 
         # --------------------------------------------------
         # Heartbeat (always on)
@@ -40,6 +44,38 @@ class Scheduler:
             )
             task = asyncio.create_task(livestream_worker.run())
             self._tasks[ctx.creator_id].append(task)
+
+    # ------------------------------------------------------------
+
+    def can_start_job(self, ctx: CreatorContext, job_type: str) -> bool:
+        """
+        Enforce per-creator concurrency limits.
+        """
+        limits = ctx.limits or {}
+
+        if job_type == "clip":
+            max_jobs = limits.get("max_concurrent_clip_jobs")
+            if max_jobs is None:
+                return True
+
+            active = self._job_counts.get(ctx.creator_id, {}).get(job_type, 0)
+            return active < max_jobs
+
+        return True
+
+    def register_job_start(self, ctx: CreatorContext, job_type: str):
+        self._job_counts.setdefault(ctx.creator_id, {})
+        self._job_counts[ctx.creator_id][job_type] = (
+            self._job_counts[ctx.creator_id].get(job_type, 0) + 1
+        )
+
+    def register_job_end(self, ctx: CreatorContext, job_type: str):
+        try:
+            self._job_counts[ctx.creator_id][job_type] -= 1
+            if self._job_counts[ctx.creator_id][job_type] <= 0:
+                del self._job_counts[ctx.creator_id][job_type]
+        except Exception:
+            pass
 
     # ------------------------------------------------------------
 
@@ -93,6 +129,7 @@ class Scheduler:
                 log.debug(f"Task exited with exception during shutdown: {result}")
 
         self._tasks.clear()
+        self._job_counts.clear()
 
         log.info("Scheduler shutdown complete")
 

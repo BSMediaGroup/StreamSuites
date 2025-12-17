@@ -23,14 +23,12 @@ class CreatorRegistry:
         self._tiers = self._load_tiers()
 
     # ------------------------------------------------------------------
-    # TIERS
+    # TIERS (POLICY LOADING)
     # ------------------------------------------------------------------
 
     def _load_tiers(self) -> Dict[str, Any]:
         if not self.tiers_path.exists():
-            raise RuntimeError(
-                f"Tier policy not found: {self.tiers_path}"
-            )
+            raise RuntimeError(f"Tier policy not found: {self.tiers_path}")
 
         raw = json.loads(self.tiers_path.read_text(encoding="utf-8"))
 
@@ -45,47 +43,56 @@ class CreatorRegistry:
         if not tier:
             raise RuntimeError(f"Unknown tier: {tier_name}")
 
-        limits = tier.get("limits")
         features = tier.get("features")
-
-        if not isinstance(limits, dict):
-            raise RuntimeError(f"Tier '{tier_name}' missing limits block")
-
         if not isinstance(features, dict):
             raise RuntimeError(f"Tier '{tier_name}' missing features block")
 
-        return {
-            "limits": limits,
-            "features": features,
-        }
+        return features
 
-    def _merge_limits(
-        self,
-        tier_limits: Dict[str, Any],
-        creator_limits: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """
-        Merge creator-requested limits with tier caps.
+    # ------------------------------------------------------------------
+    # FEATURE → RUNTIME LIMIT COMPILATION (AUTHORITATIVE)
+    # ------------------------------------------------------------------
 
-        Rule:
-        - Creator may request LOWER limits
-        - Creator may NOT exceed tier caps
-        """
-        effective: Dict[str, Any] = {}
+    def _compile_runtime_limits(self, features: Dict[str, Any]) -> Dict[str, Any]:
+        limits: Dict[str, Any] = {}
 
-        for key, tier_value in tier_limits.items():
-            creator_value = creator_limits.get(key)
+        # -----------------------------
+        # CLIPS
+        # -----------------------------
+        clips = features.get("clips", {})
+        if clips.get("enabled"):
+            limits["max_concurrent_clip_jobs"] = clips.get("max_concurrent_jobs", 1)
+            limits["clip_max_duration_seconds"] = clips.get("max_duration_seconds", 30)
+            limits["clip_min_cooldown_seconds"] = clips.get("min_cooldown_seconds", 120)
 
-            if creator_value is None:
-                effective[key] = tier_value
-                continue
+        # -----------------------------
+        # TRIGGERS
+        # -----------------------------
+        triggers = features.get("triggers", {})
+        if triggers.get("enabled"):
+            limits["max_triggers"] = triggers.get("max_triggers", 10)
+            limits["trigger_min_cooldown_seconds"] = triggers.get(
+                "min_cooldown_seconds", 2.0
+            )
 
-            try:
-                effective[key] = min(creator_value, tier_value)
-            except Exception:
-                effective[key] = tier_value
+        # -----------------------------
+        # POLLS
+        # -----------------------------
+        polls = features.get("polls", {})
+        if polls.get("enabled"):
+            limits["max_active_polls"] = polls.get("max_active_polls", 1)
+            limits["max_poll_options"] = polls.get("max_options", 4)
 
-        return effective
+        # -----------------------------
+        # BACKUPS
+        # -----------------------------
+        backups = features.get("backups", {})
+        limits["backup_manual_export"] = bool(backups.get("manual_export", False))
+        limits["backup_automated"] = bool(backups.get("automated_backups", False))
+        limits["backup_retention_days"] = backups.get("retention_days", 0)
+        limits["backup_interval_hours"] = backups.get("backup_interval_hours")
+
+        return limits
 
     # ------------------------------------------------------------------
     # CREATORS
@@ -105,33 +112,15 @@ class CreatorRegistry:
             if not creator_id:
                 continue
 
-            # ----------------------------------------------------------
-            # TIER RESOLUTION (AUTHORITATIVE)
-            # ----------------------------------------------------------
-
             tier_name = c.get("tier", "open")
-            tier = self._resolve_tier(tier_name)
-
-            creator_limits = c.get("limits", {})
-            if not isinstance(creator_limits, dict):
-                creator_limits = {}
-
-            effective_limits = self._merge_limits(
-                tier_limits=tier["limits"],
-                creator_limits=creator_limits,
-            )
-
-            effective_features = dict(tier["features"])
-
-            # ----------------------------------------------------------
-            # CONTEXT
-            # ----------------------------------------------------------
+            features = self._resolve_tier(tier_name)
+            runtime_limits = self._compile_runtime_limits(features)
 
             ctx = CreatorContext(
                 creator_id=creator_id,
                 display_name=c.get("display_name", creator_id),
                 platforms=c.get("platforms", {}),
-                limits=effective_limits,
+                limits=runtime_limits,
 
                 rumble_channel_url=c.get("rumble_channel_url"),
                 rumble_manual_watch_url=c.get("rumble_manual_watch_url"),
@@ -141,13 +130,14 @@ class CreatorRegistry:
                 rumble_dom_chat_enabled=c.get("rumble_dom_chat_enabled", True),
             )
 
-            # Attach features non-invasively
-            ctx.features = effective_features  # type: ignore[attr-defined]
+            # Attach features explicitly (read-only intent)
+            ctx.features = features  # type: ignore[attr-defined]
 
             out[creator_id] = ctx
+
             log.info(
                 f"Loaded creator: {creator_id} "
-                f"(tier={tier_name}, limits={effective_limits}, features={effective_features})"
+                f"(tier={tier_name}, limits={runtime_limits})"
             )
 
         return out
