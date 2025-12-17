@@ -26,6 +26,17 @@ class JobRegistry:
         self._job_types: Dict[str, Type[Job]] = {}
         self._active_jobs: Dict[str, asyncio.Task] = {}
 
+        # --------------------------------------------------
+        # METRICS (READ-ONLY, ADDITIVE)
+        # --------------------------------------------------
+        # These counters are observational only.
+        # They do NOT affect scheduling or execution.
+        self._metrics = {
+            "dispatched": 0,
+            "completed": 0,
+            "failed": 0,
+        }
+
     # ------------------------------------------------------------
 
     def register(self, name: str, job_cls: Type[Job]):
@@ -51,6 +62,34 @@ class JobRegistry:
                 count += 1
 
         return count
+
+    # ------------------------------------------------------------
+    # READ-ONLY VISIBILITY HOOKS (SAFE FOR DASHBOARD)
+    # ------------------------------------------------------------
+
+    def get_metrics(self) -> Dict[str, int]:
+        """
+        Returns global job metrics (read-only).
+        """
+        return dict(self._metrics)
+
+    def get_active_job_counts(self) -> Dict[str, int]:
+        """
+        Returns active job counts by job_type.
+        """
+        counts: Dict[str, int] = {}
+
+        for task in self._active_jobs.values():
+            if task.done():
+                continue
+
+            job_type = getattr(task, "_job_type", None)
+            if not job_type:
+                continue
+
+            counts[job_type] = counts.get(job_type, 0) + 1
+
+        return counts
 
     # ------------------------------------------------------------
 
@@ -90,12 +129,15 @@ class JobRegistry:
 
         task = asyncio.create_task(self._run_job(job))
 
-        # Attach authoritative metadata for enforcement
+        # Attach authoritative metadata for enforcement + visibility
         task._job = job
         task._job_type = job_type
         task._creator_id = ctx.creator_id
 
         self._active_jobs[job.id] = task
+
+        # Metrics: dispatched
+        self._metrics["dispatched"] += 1
 
         log.info(f"[{ctx.creator_id}] Job queued: {job_type} ({job.id})")
         return job.id
@@ -106,15 +148,26 @@ class JobRegistry:
         try:
             job.status = "running"
             update_job(job.id, {"status": "running"})
+
             await job.run()
+
             job.status = "completed"
             update_job(job.id, {"status": "completed"})
+
+            # Metrics: completed
+            self._metrics["completed"] += 1
+
         except Exception as e:
             job.status = "failed"
             update_job(job.id, {
                 "status": "failed",
                 "error": str(e)
             })
+
+            # Metrics: failed
+            self._metrics["failed"] += 1
+
             log.exception(f"Job {job.id} failed")
+
         finally:
             self._active_jobs.pop(job.id, None)
