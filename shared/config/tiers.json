@@ -1,0 +1,111 @@
+{
+  "version": "1.0",
+  "tiers": {
+    "open": {
+      "label": "Open Tier",
+      "description": "Free baseline tier with conservative limits and shared resources.",
+      "features": {
+        "triggers": {
+          "enabled": true,
+          "max_triggers": 10,
+          "min_cooldown_seconds": 2.0
+        },
+        "clips": {
+          "enabled": true,
+          "max_duration_seconds": 30,
+          "pre_roll_seconds": 10,
+          "min_cooldown_seconds": 120,
+          "max_concurrent_jobs": 1
+        },
+        "polls": {
+          "enabled": true,
+          "max_active_polls": 1,
+          "max_options": 4
+        },
+        "automation": {
+          "enabled": false
+        },
+        "branding": {
+          "custom_bot_identity": false
+        },
+        "backups": {
+          "manual_export": true,
+          "automated_backups": false,
+          "retention_days": 0
+        }
+      }
+    },
+
+    "gold": {
+      "label": "Gold Tier",
+      "description": "Mid-level paid tier with relaxed limits and expanded functionality.",
+      "features": {
+        "triggers": {
+          "enabled": true,
+          "max_triggers": 25,
+          "min_cooldown_seconds": 1.0
+        },
+        "clips": {
+          "enabled": true,
+          "max_duration_seconds": 60,
+          "pre_roll_seconds": 15,
+          "min_cooldown_seconds": 60,
+          "max_concurrent_jobs": 2
+        },
+        "polls": {
+          "enabled": true,
+          "max_active_polls": 3,
+          "max_options": 6
+        },
+        "automation": {
+          "enabled": true
+        },
+        "branding": {
+          "custom_bot_identity": false
+        },
+        "backups": {
+          "manual_export": true,
+          "automated_backups": true,
+          "backup_interval_hours": 24,
+          "retention_days": 7
+        }
+      }
+    },
+
+    "pro": {
+      "label": "Pro Tier",
+      "description": "Advanced professional tier with maximal flexibility and isolation.",
+      "features": {
+        "triggers": {
+          "enabled": true,
+          "max_triggers": 100,
+          "min_cooldown_seconds": 0
+        },
+        "clips": {
+          "enabled": true,
+          "max_duration_seconds": 120,
+          "pre_roll_seconds": 20,
+          "min_cooldown_seconds": 0,
+          "max_concurrent_jobs": 5
+        },
+        "polls": {
+          "enabled": true,
+          "max_active_polls": 10,
+          "max_options": 10
+        },
+        "automation": {
+          "enabled": true
+        },
+        "branding": {
+          "custom_bot_identity": true
+        },
+        "backups": {
+          "manual_export": true,
+          "automated_backups": true,
+          "backup_interval_hours": 6,
+          "retention_days": 30
+        }
+      }
+    }
+  }
+}
