@@ -77,6 +77,12 @@ class RumbleChatWorker:
 
         self._triggers: List[Dict[str, Any]] = []
 
+        # ------------------------------------------------------------
+        # B3: Trigger cooldown tracking (in-memory, per worker)
+        # Keyed by trigger identity (match + mode)
+        # ------------------------------------------------------------
+        self._trigger_last_fired: Dict[str, float] = {}
+
         self._poll_count = 0
 
     # ------------------------------------------------------------
@@ -307,6 +313,8 @@ class RumbleChatWorker:
         t = text.strip()
         tl = t.lower()
 
+        now = asyncio.get_event_loop().time()
+
         for trig in self._triggers:
             if not isinstance(trig, dict):
                 continue
@@ -336,7 +344,26 @@ class RumbleChatWorker:
                 continue
 
             if hit:
-                await self._send_text(response, reason=f"trigger({match}/{mode}) user={user}", cooldown_override=cooldown_s)
+                trigger_key = f"{mode}:{match.lower()}"
+                last = self._trigger_last_fired.get(trigger_key)
+
+                if last is not None:
+                    delta = now - last
+                    if delta < cooldown_s:
+                        remaining = round(cooldown_s - delta, 2)
+                        log.info(
+                            f"[{self.ctx.creator_id}] Trigger '{match}' ignored "
+                            f"(cooldown {remaining}s remaining)"
+                        )
+                        return
+
+                self._trigger_last_fired[trigger_key] = now
+
+                await self._send_text(
+                    response,
+                    reason=f"trigger({match}/{mode}) user={user}",
+                    cooldown_override=cooldown_s
+                )
                 return
 
     # ------------------------------------------------------------
