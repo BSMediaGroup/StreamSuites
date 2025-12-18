@@ -1,28 +1,32 @@
 """
 Discord Runtime Supervisor
 
-This module owns the lifecycle of the Discord control-plane runtime.
-It is intentionally isolated from:
-- streaming ingestion
-- media processing
-- platform workers (Rumble / YouTube / Twitch)
+Owns the lifecycle of the Discord control-plane runtime.
+
+This supervisor is:
+- scheduler-owned
+- event-loop agnostic
+- safe to run alongside streaming runtimes
 
 Responsibilities:
 - start Discord client
-- monitor connection health
-- handle orderly shutdown
-- provide a single async task entrypoint for Scheduler
+- manage background Discord tasks (status, heartbeat)
+- perform graceful shutdown
 
 IMPORTANT:
-- This supervisor MUST be started by the Scheduler
-- This supervisor MUST NOT create its own event loop
+- MUST be started by core.scheduler
+- MUST NOT create its own event loop
+- MUST NOT install signal handlers
 """
 
+from __future__ import annotations
+
 import asyncio
-from typing import Optional
+from typing import Optional, List
 
 from shared.logging.logger import get_logger
 from services.discord.client import DiscordClient
+from services.discord.status import DiscordStatusManager
 
 log = get_logger("discord.supervisor")
 
@@ -31,15 +35,17 @@ class DiscordSupervisor:
     """
     Owns the Discord runtime lifecycle.
 
-    This class is scheduler-safe:
+    Scheduler-safe contract:
     - start() is awaitable
     - shutdown() is idempotent
     """
 
     def __init__(self):
         self._client: Optional[DiscordClient] = None
-        self._task: Optional[asyncio.Task] = None
-        self._running = False
+        self._tasks: List[asyncio.Task] = []
+        self._running: bool = False
+
+        self._status = DiscordStatusManager()
 
     # --------------------------------------------------
 
@@ -54,7 +60,10 @@ class DiscordSupervisor:
         log.info("Starting Discord supervisor")
 
         self._client = DiscordClient()
-        self._task = asyncio.create_task(self._client.run())
+
+        # Discord client main loop
+        client_task = asyncio.create_task(self._client.run())
+        self._tasks.append(client_task)
 
         self._running = True
         log.info("Discord supervisor started")
@@ -70,21 +79,26 @@ class DiscordSupervisor:
 
         log.info("Shutting down Discord supervisor")
 
+        # Stop Discord client first
         try:
             if self._client:
                 await self._client.shutdown()
         except Exception as e:
             log.warning(f"Discord client shutdown error ignored: {e}")
 
-        if self._task and not self._task.done():
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+        # Cancel remaining tasks
+        for task in self._tasks:
+            if not task.done():
+                task.cancel()
 
+        if self._tasks:
+            await asyncio.gather(
+                *self._tasks,
+                return_exceptions=True
+            )
+
+        self._tasks.clear()
         self._client = None
-        self._task = None
         self._running = False
 
         log.info("Discord supervisor shutdown complete")
