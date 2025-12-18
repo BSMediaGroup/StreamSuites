@@ -91,6 +91,7 @@ StreamSuites/
 │   │   │   ├── rest_client.py
 │   │   │   └── ws_listener.py
 │   │   ├── models/
+│   │   │   ├── chat_event.py
 │   │   │   ├── message.py
 │   │   │   └── stream.py
 │   │   └── workers/
@@ -140,7 +141,13 @@ StreamSuites/
 │   ├── storage/
 │   │   ├── file_lock.py
 │   │   ├── paths.py
-│   │   └── state_store.py
+│   │   ├── state_store.py
+│   │   └── chat_events/        # Placeholder for chat event persistence
+│   │       ├── __init__.py
+│   │       ├── index.py
+│   │       ├── reader.py
+│   │       ├── schema.json
+│   │       └── writer.py
 │   ├── utils/
 │   │   ├── files.py
 │   │   ├── hashing.py
@@ -150,7 +157,9 @@ StreamSuites/
 │       ├── creators/
 │       │   └── daniel.json
 │       ├── jobs.json
-│       └── system.json
+│       ├── system.json
+│       └── chat_logs/          # Runtime-generated chat logs (gitignored)
+│           └── rumble/
 │
 ├── media/
 │   ├── capture/
