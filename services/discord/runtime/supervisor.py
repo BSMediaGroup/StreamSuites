@@ -65,6 +65,22 @@ class DiscordSupervisor:
         client_task = asyncio.create_task(self._client.run())
         self._tasks.append(client_task)
 
+        # Wait for Discord to be ready before applying status
+        async def _post_ready_init():
+            try:
+                await self._client._ready_event.wait()
+                bot = self._client.bot
+                if bot:
+                    await self._status.apply(bot)
+                    log.info("Discord status applied by supervisor")
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                log.warning(f"Post-ready Discord init failed: {e}")
+
+        init_task = asyncio.create_task(_post_ready_init())
+        self._tasks.append(init_task)
+
         self._running = True
         log.info("Discord supervisor started")
 
