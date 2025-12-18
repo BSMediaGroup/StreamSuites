@@ -210,6 +210,27 @@ Behavior is being progressively externalized into JSON-based config.
 
 ---
 
+## Chat Event Logging & Replay (Planned / Optional)
+
+StreamSuites may optionally capture chat events while platform bots are active
+to support historical replay and downstream analysis. Any future logging will
+be append-only, non-blocking, and explicitly optional so that failures never
+affect live chat operations. Logged data is intended for external consumers
+such as the StreamSuites dashboard, browser extensions, or moderation tools.
+
+Planned scaffolding includes:
+- A storage placeholder at `shared/storage/chat_events/` for future writers,
+  readers, and indexing utilities
+- A runtime state root at `shared/state/chat_logs/` (with a Rumble namespace
+  at `shared/state/chat_logs/rumble/`) reserved for generated data and kept
+  gitignored
+- A `services/rumble/models/chat_event.py` placeholder for describing Rumble
+  chat event shapes without impacting current integrations
+
+No logging logic is implemented yet.
+
+---
+
 ## Roadmap (High-Level)
 ### Phase 1 — Core Stabilization (current)
 - Rumble chat read/write
@@ -239,6 +260,11 @@ Behavior is being progressively externalized into JSON-based config.
 - Runtime start/stop
 - Configuration management
 - Log inspection
+
+### Optional Add-On Features
+- Persistent livestream chat logging
+- Historical chat replay tooling
+- External consumers (dashboard, browser extensions)
 
 ---
 
