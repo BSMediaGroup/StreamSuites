@@ -6,15 +6,27 @@ in `core/`:
 
 - `app.py` – streaming runtime supervisor responsible for orchestrating
   ingestion workers, scheduling, and lifecycle management for platform data
-  plane tasks.
-- `discord_app.py` – Discord control-plane runtime supervisor placeholder. This
-  runtime will handle Discord command and control flows independently of the
-  streaming runtime and will be wired with its own lifecycle, logging, and
+  plane tasks. It owns the event loop, scheduler, and coordinated shutdown of
+  all streaming runtimes.
+- `discord_app.py` – Discord control-plane runtime supervisor placeholder.
+  This runtime will handle Discord command and control flows independently of
+  the streaming runtime and will be wired with its own lifecycle, logging, and
   restartability. It shares `shared/` configuration/state and `services/`
   modules but must not launch streaming ingestion workers.
 
 Both entrypoints are valid, independent runtimes that draw from the same shared
 modules to enforce consistent behavior and configuration across platforms.
+
+## Ownership boundaries
+
+- `core/app.py` contains the authoritative event loop, scheduler orchestration,
+  and shutdown controls for streaming runtimes.
+- The Discord runtime is started by the scheduler but remains isolated and
+  independently restartable to avoid coupling control-plane behavior to
+  ingestion.
+- `core/app.py` must not contain Discord-specific logic; Discord behaviors live
+  under `services/discord/` and are invoked through explicit orchestration
+  rather than embedded imports.
 
 ## Rumble runtime status
 
