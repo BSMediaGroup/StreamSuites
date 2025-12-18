@@ -1,7 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
-from typing import Optional, Set, Tuple, Dict, Any, List
+from typing import Optional, Set, Tuple, Dict, Any, List, Union
 from datetime import datetime, timezone
 
 from core.jobs import JobRegistry
@@ -33,14 +33,43 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _parse_created_on(created_raw: str) -> Optional[datetime]:
-    if not created_raw:
+def _parse_created_on(created_raw: Union[str, int, float, None]) -> Optional[datetime]:
+    """
+    POC compatibility fix:
+    Rumble 'created_on' may be:
+      - ISO 8601 string (often with Z)
+      - epoch seconds (int/float)
+      - epoch milliseconds (int/float)
+
+    If we fail to parse, the message is dropped (same behavior as before),
+    but we now correctly parse the common non-ISO variants to prevent a
+    total "no messages seen" failure.
+    """
+    if created_raw is None:
         return None
-    try:
-        # Rumble often uses ISO with +00:00; sometimes "Z"
-        return datetime.fromisoformat(created_raw.replace("Z", "+00:00"))
-    except Exception:
-        return None
+
+    # Numeric epoch handling (seconds or ms)
+    if isinstance(created_raw, (int, float)):
+        try:
+            v = float(created_raw)
+            # Heuristic: ms timestamps are typically > 1e12
+            if v > 1_000_000_000_000:
+                v = v / 1000.0
+            return datetime.fromtimestamp(v, tz=timezone.utc)
+        except Exception:
+            return None
+
+    # String ISO handling
+    if isinstance(created_raw, str):
+        if not created_raw:
+            return None
+        try:
+            # Rumble often uses ISO with +00:00; sometimes "Z"
+            return datetime.fromisoformat(created_raw.replace("Z", "+00:00"))
+        except Exception:
+            return None
+
+    return None
 
 
 class RumbleChatWorker:
@@ -68,7 +97,7 @@ class RumbleChatWorker:
 
         self.browser: Optional[RumbleBrowserClient] = None
 
-        # De-dup key: (username, text, created_on_raw)
+        # De-dup key: (username, text, created_on_raw_str)
         self._seen: Set[Tuple[str, str, str]] = set()
 
         # Concurrency + rate limiting
@@ -240,7 +269,8 @@ class RumbleChatWorker:
                     newest = created_ts
 
                 # Also mark these as seen so we don't reprocess them immediately
-                key = (msg.get("username"), msg.get("text"), created_raw)
+                created_raw_str = str(created_raw)
+                key = (msg.get("username"), msg.get("text"), created_raw_str)
                 self._seen.add(key)
 
         # If no messages exist, still set a cutoff
@@ -284,10 +314,12 @@ class RumbleChatWorker:
 
             for msg in recent:
                 created_raw = msg.get("created_on")
-                if not created_raw:
+                if created_raw is None:
                     continue
 
-                key = (msg.get("username"), msg.get("text"), created_raw)
+                created_raw_str = str(created_raw)
+
+                key = (msg.get("username"), msg.get("text"), created_raw_str)
                 if key in self._seen:
                     continue
                 self._seen.add(key)
@@ -305,7 +337,7 @@ class RumbleChatWorker:
                 if not user or not text:
                     continue
 
-                log.info(f"💬 {user}: {text} (created_on={created_raw})")
+                log.info(f"💬 {user}: {text} (created_on={created_raw_str})")
 
                 # Trigger evaluation
                 await self._handle_triggers(user=user, text=text)

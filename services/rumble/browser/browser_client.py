@@ -134,7 +134,81 @@ class RumbleBrowserClient:
         raise TimeoutError("Chat iframe not found")
 
     # ------------------------------------------------------------
-    # 🔥 AUTHORITATIVE CHAT SEND — PLAYWRIGHT KEYBOARD ONLY
+    # 🔥 AUTHORITATIVE CHAT SEND — POC DOM INJECTION (REACT EVENTS + CLICK)
+    # ------------------------------------------------------------
+
+    async def _send_chat_poc_injection(self, message: str) -> str:
+        """
+        This is the canonical POC mechanism, ported 1:1 into the production client.
+
+        POC steps:
+        1) focus input
+        2) clear + set value
+        3) dispatch React-friendly events (InputEvent + change + compositionend)
+        4) force-enable send button
+        5) click send button
+        """
+        if not self._chat_frame:
+            raise RuntimeError("Chat frame not initialized")
+
+        return await self._chat_frame.evaluate(
+            """
+            (msg) => {
+                const input = document.querySelector("#chat-message-text-input");
+                const sendBtn = document.querySelector("button.chat--send");
+
+                if (!input) return "NO_INPUT";
+                if (!sendBtn) return "NO_SEND_BUTTON";
+
+                // Step 1: focus
+                input.focus();
+
+                // Step 2: clear + set value
+                input.value = "";
+                input.value = msg;
+
+                // Step 3: proper React events
+                input.dispatchEvent(
+                    new InputEvent("input", {
+                        bubbles: true,
+                        inputType: "insertText",
+                        data: msg
+                    })
+                );
+
+                input.dispatchEvent(new Event("change", { bubbles: true }));
+                input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+
+                // Step 4: force-enable button
+                sendBtn.disabled = false;
+
+                // Step 5: click send
+                sendBtn.click();
+
+                return "SENT_OK";
+            }
+            """,
+            message,
+        )
+
+    # ------------------------------------------------------------
+    # LEGACY KEYBOARD PATH (RETAINED AS FALLBACK ONLY)
+    # ------------------------------------------------------------
+
+    async def _send_chat_keyboard(self, message: str) -> bool:
+        if not self._chat_frame or not self._page:
+            raise RuntimeError("Chat frame not initialized")
+
+        await self._chat_frame.click("#chat-message-text-input")
+
+        await self._page.keyboard.press("Control+A")
+        await self._page.keyboard.press("Backspace")
+
+        await self._page.keyboard.type(message, delay=20)
+        await self._page.keyboard.press("Enter")
+
+        return True
+
     # ------------------------------------------------------------
 
     async def send_chat_dom(self, message: str) -> bool:
@@ -142,15 +216,16 @@ class RumbleBrowserClient:
             raise RuntimeError("Chat frame not initialized")
 
         try:
-            await self._chat_frame.click("#chat-message-text-input")
+            # Primary: POC-locked DOM injection that guarantees send via click
+            res = await self._send_chat_poc_injection(message)
 
-            await self._page.keyboard.press("Control+A")
-            await self._page.keyboard.press("Backspace")
+            if res == "SENT_OK":
+                return True
 
-            await self._page.keyboard.type(message, delay=20)
-            await self._page.keyboard.press("Enter")
-
-            return True
+            # If we get here, injection did not succeed deterministically.
+            # Keep legacy keyboard approach as a last-resort fallback.
+            log.warning(f"POC injection did not return SENT_OK (res={res}) — falling back to keyboard send")
+            return await self._send_chat_keyboard(message)
 
         except Exception as e:
             log.error(f"Chat send failed: {e}")
