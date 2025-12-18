@@ -1,10 +1,12 @@
 import asyncio
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from core.context import CreatorContext
 from services.rumble.workers.livestream_worker import RumbleLivestreamWorker
 from services.rumble.browser.browser_client import RumbleBrowserClient
+from services.discord.runtime.supervisor import DiscordSupervisor
 from shared.logging.logger import get_logger
+from shared.config.services import get_services_config
 
 log = get_logger("core.scheduler")
 
@@ -19,6 +21,9 @@ class Scheduler:
 
         # Track which platforms were started (global, not per-creator)
         self._platforms_started: set[str] = set()
+
+        # Discord control-plane supervisor (process-scoped)
+        self._discord_supervisor: Optional[DiscordSupervisor] = None
 
     # ------------------------------------------------------------
 
@@ -50,6 +55,28 @@ class Scheduler:
             )
             task = asyncio.create_task(livestream_worker.run())
             self._tasks[ctx.creator_id].append(task)
+
+        # --------------------------------------------------
+        # Discord control-plane runtime (start once, feature-gated)
+        # --------------------------------------------------
+        await self._ensure_discord_runtime_started()
+
+    # ------------------------------------------------------------
+
+    async def _ensure_discord_runtime_started(self):
+        if self._discord_supervisor:
+            return
+
+        services_cfg = get_services_config()
+        discord_cfg = services_cfg.get("discord", {})
+
+        if not discord_cfg.get("enabled", False):
+            return
+
+        log.info("Starting Discord control-plane runtime")
+
+        self._discord_supervisor = DiscordSupervisor()
+        await self._discord_supervisor.start()
 
     # ------------------------------------------------------------
 
@@ -132,6 +159,16 @@ class Scheduler:
 
         self._tasks.clear()
         self._job_counts.clear()
+
+        # --------------------------------------------------
+        # DISCORD CONTROL-PLANE SHUTDOWN
+        # --------------------------------------------------
+        if self._discord_supervisor:
+            try:
+                await self._discord_supervisor.shutdown()
+            except Exception as e:
+                log.warning(f"Discord supervisor shutdown error ignored: {e}")
+            self._discord_supervisor = None
 
         # --------------------------------------------------
         # PLATFORM-SPECIFIC CLEANUP (OWNED HERE)
