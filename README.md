@@ -20,17 +20,19 @@ re-enablement.
 ## Architecture Overview
 
 StreamSuites is evolving into a multi-runtime architecture while remaining a
-single repository:
+single repository. Runtimes are explicitly isolated by responsibility and
+started by a shared scheduler:
 
-- `core/app.py` is the streaming runtime supervisor responsible for launching
-  ingestion workers, scheduling jobs, and coordinating graceful shutdown.
-- `core/discord_app.py` (new placeholder) is the Discord control-plane runtime
-  entrypoint. It will handle Discord commands and coordination separately from
-  streaming ingestion but will share the same shared configuration and
-  services.
+- Streaming runtimes (per platform) live under `core/app.py` and platform
+  services. They own ingestion, publishing, and data-plane orchestration.
+- The Discord control-plane runtime lives under `core/discord_app.py` (optional
+  entrypoint). It offers admin/status commands and notification routing without
+  embedding ingestion.
+- Shared configuration and state live under `shared/`, with platform-neutral
+  helpers under `services/`.
 
-Both entrypoints are independent runtime processes that draw from `shared/`
-and `services/` for consistency across platforms.
+Both entrypoints are independent runtime processes. The scheduler coordinates
+lifecycles while keeping control-plane behavior separate from streaming logic.
 
 ### High-level flow
 
@@ -87,15 +89,28 @@ High-level streaming flow:
 
 ---
 
+## Control-plane and ownership boundaries
+
+- `core/app.py` remains the streaming runtime authority for event loops,
+  scheduler control, and shutdown.
+- The scheduler may start the Discord runtime but does so in isolation so it
+  can be independently restarted without interrupting streaming workers.
+- Discord control-plane behavior belongs under `services/discord/` and its
+  runtime scaffolding; no Discord logic should live inside `core/app.py`.
+- Dashboard integration is planned (GitHub Pages first, Wix Studio later) and
+  will share interfaces with the Discord control-plane for parity.
+
 ## Current Platform Status
 
-- Discord: **ACTIVE** (control-plane runtime and services scaffolded)
+- Discord: **ACTIVE** (optional control-plane runtime and services scaffolded)
 - YouTube: **ACTIVE**
 - Twitch: **ACTIVE**
 - Twitter/X: **ACTIVE**
 - Rumble: **PAUSED** — upstream API protection/DDoS mitigation limits access;
   all code is retained for reactivation when official access/whitelisting is
-  restored. No functionality has been removed.
+  restored. No functionality has been removed. Rumble chat bot is temporarily
+  paused due to upstream API changes. All code is retained and unmodified
+  pending official support.
 
 ## Rumble integration (paused)
 
@@ -121,12 +136,18 @@ StreamSuites/
 │
 ├── services/
 │   ├── discord/
+│   │   ├── README.md         # Discord runtime overview
 │   │   ├── client.py
 │   │   ├── permissions.py
 │   │   ├── runtime/
+│   │   │   ├── README.md     # Discord lifecycle and supervisor scaffold
 │   │   │   ├── __init__.py   # Discord runtime scaffolding
 │   │   │   ├── lifecycle.py  # Placeholder lifecycle utilities
 │   │   │   └── supervisor.py # Placeholder runtime supervisor
+│   │   ├── status.py         # Placeholder status reporter
+│   │   ├── heartbeat.py      # Placeholder heartbeat signals
+│   │   ├── logging.py        # Placeholder logging adapters
+│   │   ├── announcements.py  # Placeholder announcements/notifications
 │   │   ├── commands/
 │   │   │   ├── admin.py
 │   │   │   ├── creators.py
@@ -218,6 +239,10 @@ StreamSuites/
 │   └── state/
 │       ├── creators/
 │       │   └── daniel.json
+│       ├── discord/
+│       │   ├── README.md
+│       │   └── guilds/
+│       │       └── .gitkeep
 │       ├── jobs.json
 │       ├── system.json
 │       └── chat_logs/          # Runtime-generated chat logs (gitignored)
