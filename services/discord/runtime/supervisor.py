@@ -28,7 +28,8 @@ from shared.logging.logger import get_logger
 from services.discord.client import DiscordClient
 from services.discord.status import DiscordStatusManager
 
-log = get_logger("discord.supervisor")
+# NOTE: routed to Discord runtime log file
+log = get_logger("discord.supervisor", runtime="discord")
 
 
 class DiscordSupervisor:
