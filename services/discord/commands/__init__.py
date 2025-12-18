@@ -25,12 +25,18 @@ from shared.logging.logger import get_logger
 
 # Sub-command modules (registration-only)
 from services.discord.commands import services as service_commands
-# admin / creators / public will be wired later
+from services.discord.commands import admin_commands
 
 log = get_logger("discord.commands", runtime="discord")
 
 
-def setup(bot: commands.Bot):
+def setup(
+    bot: commands.Bot,
+    *,
+    permissions,
+    logger,
+    status,
+):
     """
     Register all Discord command surfaces.
 
@@ -39,23 +45,28 @@ def setup(bot: commands.Bot):
     """
 
     # --------------------------------------------------
-    # Service-level commands (ACTIVE)
+    # Service-level commands
     # --------------------------------------------------
     service_commands.setup(bot)
 
     # --------------------------------------------------
-    # Admin commands (future registration)
+    # Admin-level commands
     # --------------------------------------------------
-    # admin_commands.setup(bot)
+    admin_commands.setup(
+        bot,
+        permissions=permissions,
+        logger=logger,
+        status=status,
+    )
 
     # --------------------------------------------------
-    # Creator commands (future registration)
+    # Creator commands (future)
     # --------------------------------------------------
-    # creator_commands.setup(bot)
+    # creator_commands.setup(...)
 
     # --------------------------------------------------
-    # Public commands (future registration)
+    # Public commands (future)
     # --------------------------------------------------
-    # public_commands.setup(bot)
+    # public_commands.setup(...)
 
     log.info("Discord command surfaces initialized")

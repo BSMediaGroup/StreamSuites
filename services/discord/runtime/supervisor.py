@@ -22,12 +22,12 @@ IMPORTANT:
 from __future__ import annotations
 
 import asyncio
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from shared.logging.logger import get_logger
 from services.discord.client import DiscordClient
 from services.discord.status import DiscordStatusManager
-from services.discord.heartbeat import DiscordHeartbeat
+from services.discord.heartbeat import DiscordHeartbeat, DiscordHeartbeatState
 
 # NOTE: routed to Discord runtime log file
 log = get_logger("discord.supervisor", runtime="discord")
@@ -50,6 +50,8 @@ class DiscordSupervisor:
         self._status = DiscordStatusManager()
         self._heartbeat = DiscordHeartbeat()
 
+    # --------------------------------------------------
+    # Lifecycle
     # --------------------------------------------------
 
     async def start(self):
@@ -111,6 +113,8 @@ class DiscordSupervisor:
         log.info("Discord supervisor started")
 
     # --------------------------------------------------
+    # Shutdown
+    # --------------------------------------------------
 
     async def shutdown(self):
         """
@@ -154,3 +158,54 @@ class DiscordSupervisor:
         self._running = False
 
         log.info("Discord supervisor shutdown complete")
+
+    # --------------------------------------------------
+    # Read-only Introspection (NEW — SAFE)
+    # --------------------------------------------------
+
+    @property
+    def running(self) -> bool:
+        """
+        Whether the Discord runtime is currently running.
+        """
+        return self._running
+
+    @property
+    def heartbeat(self) -> DiscordHeartbeatState:
+        """
+        Snapshot of the current Discord heartbeat state.
+        """
+        return self._heartbeat.snapshot()
+
+    @property
+    def status(self) -> Dict[str, Any]:
+        """
+        Snapshot of the current Discord presence state.
+        """
+        return self._status.snapshot()
+
+    @property
+    def connected(self) -> bool:
+        """
+        Whether the Discord client is currently connected.
+        """
+        return self.heartbeat.connected
+
+    @property
+    def task_count(self) -> int:
+        """
+        Number of supervisor-owned asyncio tasks.
+        """
+        return len(self._tasks)
+
+    def snapshot(self) -> Dict[str, Any]:
+        """
+        Full supervisor state snapshot for diagnostics / dashboard use.
+        """
+        return {
+            "running": self._running,
+            "connected": self.connected,
+            "tasks": self.task_count,
+            "heartbeat": self.heartbeat.snapshot(),
+            "status": self.status,
+        }

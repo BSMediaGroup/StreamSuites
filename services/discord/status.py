@@ -34,9 +34,10 @@ class DiscordStatusManager:
         self._status_text: Optional[str] = None
         self._status_emoji: Optional[str] = None
 
-        self._state_path = (
-            Path(get_state_path()) / STATUS_STATE_FILE
-        )
+        # --------------------------------------------------
+        # FIX: get_state_path now requires a name argument
+        # --------------------------------------------------
+        self._state_path = get_state_path(f"discord/{STATUS_STATE_FILE}")
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
 
         self._load_state()

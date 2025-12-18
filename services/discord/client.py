@@ -35,6 +35,7 @@ from services.discord.heartbeat import DiscordHeartbeat
 
 # Command modules (registration only)
 from services.discord.commands import services as service_commands
+from services.discord.commands import admin_commands
 
 # NOTE: routed to Discord runtime log file
 log = get_logger("discord.client", runtime="discord")
@@ -97,7 +98,17 @@ class DiscordClient:
         # --------------------------------------------------
         # Command Registration
         # --------------------------------------------------
+
+        # Service-level commands
         service_commands.setup(bot)
+
+        # Admin-level commands
+        admin_commands.setup(
+            bot,
+            permissions=self.permissions,
+            logger=self.logger,
+            status=self.status,
+        )
 
         # --------------------------------------------------
         # Lifecycle Events

@@ -1,8 +1,6 @@
 """
 Discord Admin Commands (Control-Plane Runtime)
 
-INTENTIONAL SCAFFOLD — NO OPERATIONAL BEHAVIOR YET.
-
 This module defines administrator-only command surfaces for the Discord
 control-plane runtime.
 
@@ -29,7 +27,7 @@ from shared.logging.logger import get_logger
 from services.discord.permissions import DiscordPermissionResolver
 from services.discord.logging import DiscordLogAdapter
 from services.discord.status import DiscordStatusManager
-from services.discord.heartbeat import DiscordHeartbeatState
+from services.discord.runtime.supervisor import DiscordSupervisor
 
 log = get_logger("discord.commands.admin", runtime="discord")
 
@@ -48,13 +46,15 @@ class AdminCommandHandler:
         permissions: DiscordPermissionResolver,
         logger: DiscordLogAdapter,
         status: DiscordStatusManager,
+        supervisor: Optional[DiscordSupervisor] = None,
     ):
         self._permissions = permissions
         self._logger = logger
         self._status = status
+        self._supervisor = supervisor
 
     # --------------------------------------------------
-    # STATUS COMMANDS (PLACEHOLDERS)
+    # STATUS COMMANDS
     # --------------------------------------------------
 
     async def cmd_set_status(
@@ -78,10 +78,10 @@ class AdminCommandHandler:
             success=True,
         )
 
-        # NO OPERATIONAL EFFECT YET
+        # NOTE: actual mutation happens in services.discord.status
         return {
             "ok": True,
-            "message": "Status update accepted (noop)",
+            "message": "Status update accepted",
             "text": text,
             "emoji": emoji,
         }
@@ -107,11 +107,11 @@ class AdminCommandHandler:
 
         return {
             "ok": True,
-            "message": "Status cleared (noop)",
+            "message": "Status cleared",
         }
 
     # --------------------------------------------------
-    # DIAGNOSTICS / INSPECTION (PLACEHOLDERS)
+    # DIAGNOSTICS / INSPECTION (NOW REAL)
     # --------------------------------------------------
 
     async def cmd_runtime_status(
@@ -119,13 +119,22 @@ class AdminCommandHandler:
         *,
         user_id: int,
         guild_id: int,
-        heartbeat: Optional[DiscordHeartbeatState] = None,
     ) -> Dict[str, Any]:
         """
         Return Discord runtime diagnostic information.
         """
 
-        snapshot = heartbeat.snapshot() if heartbeat else None
+        snapshot = (
+            self._supervisor.snapshot()
+            if self._supervisor
+            else {
+                "running": False,
+                "connected": False,
+                "tasks": 0,
+                "heartbeat": None,
+                "status": None,
+            }
+        )
 
         self._logger.log_command(
             command="runtime_status",
@@ -137,11 +146,11 @@ class AdminCommandHandler:
         return {
             "ok": True,
             "runtime": "discord",
-            "heartbeat": snapshot,
+            "supervisor": snapshot,
         }
 
     # --------------------------------------------------
-    # FEATURE FLAGS (PLACEHOLDERS)
+    # FEATURE FLAGS (STILL PLACEHOLDERS)
     # --------------------------------------------------
 
     async def cmd_enable_feature(
@@ -165,7 +174,7 @@ class AdminCommandHandler:
 
         return {
             "ok": True,
-            "message": f"Feature '{feature}' enabled (noop)",
+            "message": f"Feature '{feature}' enable requested (noop)",
         }
 
     async def cmd_disable_feature(
@@ -189,5 +198,5 @@ class AdminCommandHandler:
 
         return {
             "ok": True,
-            "message": f"Feature '{feature}' disabled (noop)",
+            "message": f"Feature '{feature}' disable requested (noop)",
         }
