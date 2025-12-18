@@ -25,14 +25,30 @@ started by a shared scheduler:
 
 - Streaming runtimes (per platform) live under `core/app.py` and platform
   services. They own ingestion, publishing, and data-plane orchestration.
-- The Discord control-plane runtime lives under `core/discord_app.py` (optional
-  entrypoint). It offers admin/status commands and notification routing without
-  embedding ingestion.
+- The Discord control-plane runtime lives under `core/discord_app.py`
+  (standalone entrypoint) and is optionally started by the scheduler. It offers
+  admin/status commands and notification routing without embedding ingestion.
 - Shared configuration and state live under `shared/`, with platform-neutral
   helpers under `services/`.
 
 Both entrypoints are independent runtime processes. The scheduler coordinates
 lifecycles while keeping control-plane behavior separate from streaming logic.
+
+### Discord control-plane runtime (overview)
+
+- Purpose: process-scoped control-plane runtime for operational commands,
+  status surfaces, and notifications. It is not a streaming bot and never
+  launches ingestion workers.
+- Modes:
+  - Standalone: `python -m core.discord_app`.
+  - Integrated: started by `core.scheduler` when Discord is enabled in config.
+- Responsibilities: DiscordClient ownership, DiscordSupervisor lifecycle,
+  heartbeat loop, and shared-state status persistence.
+- Separation: does not create its own event loop in integrated mode, does not
+  own scheduler logic, and runs alongside streaming runtimes without coupling
+  shutdown.
+- Configuration: feature-gated per creator via `shared/config/creators.json`
+  platform flags and runtime settings under `shared/config/`.
 
 ### High-level flow
 
@@ -129,31 +145,33 @@ StreamSuites/
 │   ├── context.py            # Per-creator runtime context
 │   ├── jobs.py               # Job registry and dispatch
 │   ├── registry.py           # Creator loading and validation
-│   ├── discord_app.py        # Discord control-plane runtime placeholder
+│   ├── discord_app.py        # Discord control-plane runtime entrypoint
 │   ├── scheduler.py          # Task orchestration and shutdown control
 │   ├── shutdown.py           # Coordinated shutdown helpers
 │   └── signals.py            # Signal handling
 │
 ├── services/
 │   ├── discord/
-│   │   ├── README.md         # Discord runtime overview
-│   │   ├── client.py
-│   │   ├── permissions.py
+│   │   ├── README.md         # Discord control-plane runtime architecture
+│   │   ├── client.py         # DiscordClient connection + command surface
+│   │   ├── permissions.py    # Admin gating via Discord-native flags
 │   │   ├── runtime/
-│   │   │   ├── README.md     # Discord lifecycle and supervisor scaffold
+│   │   │   ├── README.md     # Discord lifecycle ownership & supervision
 │   │   │   ├── __init__.py   # Discord runtime scaffolding
-│   │   │   ├── lifecycle.py  # Placeholder lifecycle utilities
-│   │   │   └── supervisor.py # Placeholder runtime supervisor
-│   │   ├── status.py         # Placeholder status reporter
-│   │   ├── heartbeat.py      # Placeholder heartbeat signals
-│   │   ├── logging.py        # Placeholder logging adapters
-│   │   ├── announcements.py  # Placeholder announcements/notifications
+│   │   │   ├── lifecycle.py  # Lifecycle hooks for Discord control-plane
+│   │   │   └── supervisor.py # Supervisor for control-plane runtime
+│   │   ├── status.py         # Shared-state status persistence
+│   │   ├── heartbeat.py      # Heartbeat loop for liveness
+│   │   ├── logging.py        # Logging adapters
+│   │   ├── announcements.py  # Control-plane notifications
 │   │   ├── commands/
-│   │   │   ├── admin.py
-│   │   │   ├── creators.py
-│   │   │   ├── public.py
-│   │   │   └── services.py
+│   │   │   ├── README.md     # Command layering rules
+│   │   │   ├── admin.py      # Admin handlers (pure logic)
+│   │   │   ├── creators.py   # Creator-scoped handler scaffold
+│   │   │   ├── public.py     # Public handler scaffold
+│   │   │   └── services.py   # Service-level handler scaffold
 │   │   └── tasks/
+│   │       ├── README.md     # Control-plane task constraints
 │   │       ├── pilled_live.py
 │   │       ├── rumble_live.py
 │   │       ├── twitch_live.py
