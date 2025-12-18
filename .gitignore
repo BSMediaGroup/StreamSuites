@@ -42,6 +42,8 @@ logs/
 .browser/
 playwright-report/
 test-results/
+.rumble_profile/
+.rumble_profile_streamsuites/
 
 # ====================================
 # OS / Editor Junk
@@ -66,12 +68,10 @@ docs/.cache/
 docs/dist/
 docs/node_modules/
 
-
 # ====================================
 # Runtime State (Generated)
 # ====================================
 shared/state/
-
 
 # ====================================
 # Windows Build Artifacts
@@ -80,11 +80,15 @@ shared/state/
 *.msi
 *.dll
 
-!test_rumble_api.py
+# ====================================
+# Local Launchers / Operator Automation (DO NOT COMMIT)
+# ====================================
+run_streamsuites.ps1
+run_streamsuites.bat
+run_*.ps1
+run_*.bat
 
 # ====================================
-# Rumble / Playwright Browser Profiles
+# Test / Local Utilities
 # ====================================
-.rumble_profile/
-.rumble_profile_streamsuites/
-.browser/
+!test_rumble_api.py
