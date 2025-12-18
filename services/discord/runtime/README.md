@@ -1,16 +1,22 @@
-# Discord runtime lifecycle (scaffold)
+# Discord runtime lifecycle
 
-This package hosts the lifecycle scaffolding for the Discord control-plane
-runtime. No business logic lives here; its purpose is to coordinate process
-health and lifecycle hooks for the Discord bot.
+This package hosts lifecycle management for the Discord control-plane runtime.
+It is responsible for process-scoped orchestration and does not host streaming
+logic or scheduler ownership.
 
-- `supervisor.py` owns startup, reconnect, and shutdown orchestration for the
-  Discord runtime. It keeps control-plane processes isolated from streaming
-  ingestion and is responsible for restartability.
-- `lifecycle.py` provides lifecycle hooks that replace raw `discord.py` events
-  with structured callbacks for supervisors or higher-level controllers.
-- `__init__.py` is intentionally minimal, exposing the package boundary without
-  side effects.
+- `supervisor.py`
+  - Owns startup, reconnection, heartbeat scheduling, and shutdown coordination
+    for the Discord runtime.
+  - Manages background tasks created by the control-plane runtime and ensures
+    they are supervised and cancelled on shutdown.
+  - Guarantees that no event loop is created when `core.scheduler` instantiates
+    the runtime; it binds to the scheduler-owned loop instead.
+- `lifecycle.py`
+  - Provides structured lifecycle hooks that wrap `discord.py` events for use by
+    the supervisor and higher-level controllers.
+- `__init__.py`
+  - Minimal package surface with no import side effects.
 
-All future logic should respect these boundaries and avoid embedding Discord
-business behavior inside the lifecycle scaffolding.
+Shutdown guarantees: the supervisor coordinates cancellation of background
+tasks, heartbeat teardown, and client disconnect to keep the control-plane
+runtime restartable without impacting streaming runtimes.
