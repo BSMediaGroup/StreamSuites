@@ -10,9 +10,6 @@ from core.jobs import JobRegistry
 from shared.logging.logger import get_logger
 from media.jobs.clip_job import ClipJob
 
-# IMPORTANT: browser cleanup hook
-from services.rumble.browser.browser_client import RumbleBrowserClient
-
 log = get_logger("core.app")
 
 _GLOBAL_JOB_REGISTRY: JobRegistry | None = None
@@ -75,22 +72,12 @@ async def main(stop_event: asyncio.Event):
     log.info("Shutdown initiated")
 
     # --------------------------------------------------
-    # ORDERLY SHUTDOWN — TASKS FIRST
+    # ORDERLY SHUTDOWN — DELEGATED TO SCHEDULER
     # --------------------------------------------------
     try:
         await scheduler.shutdown()
     except Exception as e:
         log.warning(f"Scheduler shutdown error ignored: {e}")
-
-    # --------------------------------------------------
-    # BROWSER CLEANUP (CRITICAL FOR MODEL A)
-    # --------------------------------------------------
-    try:
-        browser = RumbleBrowserClient.instance()
-        await browser.shutdown()
-        log.info("Rumble browser shutdown complete")
-    except Exception as e:
-        log.warning(f"Browser shutdown error ignored: {e}")
 
     log.info("StreamSuites stopped")
 

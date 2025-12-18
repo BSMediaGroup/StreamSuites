@@ -3,6 +3,7 @@ from typing import Dict, List
 
 from core.context import CreatorContext
 from services.rumble.workers.livestream_worker import RumbleLivestreamWorker
+from services.rumble.browser.browser_client import RumbleBrowserClient
 from shared.logging.logger import get_logger
 
 log = get_logger("core.scheduler")
@@ -15,6 +16,9 @@ class Scheduler:
 
         # creator_id -> active job counts by type
         self._job_counts: Dict[str, Dict[str, int]] = {}
+
+        # Track which platforms were started (global, not per-creator)
+        self._platforms_started: set[str] = set()
 
     # ------------------------------------------------------------
 
@@ -38,6 +42,8 @@ class Scheduler:
         # Rumble livestream + chat orchestration
         # --------------------------------------------------
         if ctx.platform_enabled("rumble"):
+            self._platforms_started.add("rumble")
+
             livestream_worker = RumbleLivestreamWorker(
                 ctx=ctx,
                 jobs=self._get_job_registry()
@@ -100,36 +106,45 @@ class Scheduler:
             for task in group
         ]
 
-        if not all_tasks:
-            log.info("Scheduler shutdown: no active tasks")
-            return
-
         # --------------------------------------------------
-        # CANCEL FIRST
+        # CANCEL TASKS FIRST
         # --------------------------------------------------
         for task in all_tasks:
             if not task.done():
                 task.cancel()
 
-        # --------------------------------------------------
-        # AWAIT CANCELLATION
-        # --------------------------------------------------
-        results = await asyncio.gather(
-            *all_tasks,
-            return_exceptions=True
-        )
+        if all_tasks:
+            results = await asyncio.gather(
+                *all_tasks,
+                return_exceptions=True
+            )
 
-        # --------------------------------------------------
-        # LOG ABNORMAL EXITS (OPTIONAL BUT USEFUL)
-        # --------------------------------------------------
-        for result in results:
-            if isinstance(result, Exception) and not isinstance(
-                result, asyncio.CancelledError
-            ):
-                log.debug(f"Task exited with exception during shutdown: {result}")
+            # --------------------------------------------------
+            # LOG ABNORMAL EXITS
+            # --------------------------------------------------
+            for result in results:
+                if isinstance(result, Exception) and not isinstance(
+                    result, asyncio.CancelledError
+                ):
+                    log.debug(
+                        f"Task exited with exception during shutdown: {result}"
+                    )
 
         self._tasks.clear()
         self._job_counts.clear()
+
+        # --------------------------------------------------
+        # PLATFORM-SPECIFIC CLEANUP (OWNED HERE)
+        # --------------------------------------------------
+        if "rumble" in self._platforms_started:
+            try:
+                browser = RumbleBrowserClient.instance()
+                await browser.shutdown()
+                log.info("Rumble browser shutdown complete")
+            except Exception as e:
+                log.warning(f"Rumble browser shutdown error ignored: {e}")
+
+        self._platforms_started.clear()
 
         log.info("Scheduler shutdown complete")
 
