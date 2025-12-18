@@ -25,6 +25,7 @@ from discord.ext import commands
 
 from dotenv import load_dotenv
 from shared.logging.logger import get_logger
+from services.discord.status import DiscordStatusManager
 
 log = get_logger("discord.client")
 
@@ -51,6 +52,9 @@ class DiscordClient:
         self._token: str = token
         self._bot: Optional[commands.Bot] = None
         self._ready_event = asyncio.Event()
+
+        # Status manager (persisted presence)
+        self._status = DiscordStatusManager()
 
     # --------------------------------------------------
 
@@ -85,11 +89,24 @@ class DiscordClient:
                 f"(id={bot.user.id}) "
                 f"guilds={len(bot.guilds)}"
             )
+
+            # Apply persisted custom status (if any)
+            try:
+                await self._status.apply(bot)
+            except Exception as e:
+                log.warning(f"Failed to apply Discord status on ready: {e}")
+
             self._ready_event.set()
 
         @bot.event
         async def on_resumed():
             log.info("Discord connection resumed")
+
+            # Re-apply presence on resume (Discord clears it sometimes)
+            try:
+                await self._status.apply(bot)
+            except Exception as e:
+                log.warning(f"Failed to re-apply Discord status on resume: {e}")
 
         @bot.event
         async def on_disconnect():
@@ -153,3 +170,12 @@ class DiscordClient:
 
         self._bot = None
         self._ready_event.clear()
+
+    # --------------------------------------------------
+
+    @property
+    def bot(self) -> Optional[commands.Bot]:
+        """
+        Expose bot instance (read-only) for supervisor / status hooks.
+        """
+        return self._bot
