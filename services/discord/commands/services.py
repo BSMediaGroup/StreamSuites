@@ -25,6 +25,7 @@ from shared.logging.logger import get_logger
 from services.discord.status import DiscordStatusManager
 from services.discord.permissions import require_admin
 
+# NOTE: routed to Discord runtime log file
 log = get_logger("discord.commands.services", runtime="discord")
 
 

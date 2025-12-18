@@ -27,6 +27,7 @@ from typing import Optional, List
 from shared.logging.logger import get_logger
 from services.discord.client import DiscordClient
 from services.discord.status import DiscordStatusManager
+from services.discord.heartbeat import DiscordHeartbeat
 
 # NOTE: routed to Discord runtime log file
 log = get_logger("discord.supervisor", runtime="discord")
@@ -47,6 +48,7 @@ class DiscordSupervisor:
         self._running: bool = False
 
         self._status = DiscordStatusManager()
+        self._heartbeat = DiscordHeartbeat()
 
     # --------------------------------------------------
 
@@ -62,16 +64,26 @@ class DiscordSupervisor:
 
         self._client = DiscordClient()
 
+        # --------------------------------------------------
+        # Heartbeat lifecycle start
+        # --------------------------------------------------
+        self._heartbeat.start()
+
+        # --------------------------------------------------
         # Discord client main loop
+        # --------------------------------------------------
         client_task = asyncio.create_task(self._client.run())
         self._tasks.append(client_task)
 
-        # Wait for Discord to be ready before applying status
+        # --------------------------------------------------
+        # Post-ready initialization (status + heartbeat)
+        # --------------------------------------------------
         async def _post_ready_init():
             try:
                 await self._client._ready_event.wait()
                 bot = self._client.bot
                 if bot:
+                    self._heartbeat.set_connected(True)
                     await self._status.apply(bot)
                     log.info("Discord status applied by supervisor")
             except asyncio.CancelledError:
@@ -81,6 +93,19 @@ class DiscordSupervisor:
 
         init_task = asyncio.create_task(_post_ready_init())
         self._tasks.append(init_task)
+
+        # --------------------------------------------------
+        # Heartbeat tick loop (supervisor-owned)
+        # --------------------------------------------------
+        async def _heartbeat_loop():
+            try:
+                while True:
+                    self._heartbeat.tick()
+                    await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                raise
+
+        self._tasks.append(asyncio.create_task(_heartbeat_loop()))
 
         self._running = True
         log.info("Discord supervisor started")
@@ -96,14 +121,24 @@ class DiscordSupervisor:
 
         log.info("Shutting down Discord supervisor")
 
+        # --------------------------------------------------
+        # Heartbeat shutdown
+        # --------------------------------------------------
+        self._heartbeat.set_connected(False)
+        self._heartbeat.stop()
+
+        # --------------------------------------------------
         # Stop Discord client first
+        # --------------------------------------------------
         try:
             if self._client:
                 await self._client.shutdown()
         except Exception as e:
             log.warning(f"Discord client shutdown error ignored: {e}")
 
+        # --------------------------------------------------
         # Cancel remaining tasks
+        # --------------------------------------------------
         for task in self._tasks:
             if not task.done():
                 task.cancel()

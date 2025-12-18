@@ -7,6 +7,7 @@ It is intentionally minimal and lifecycle-focused.
 Responsibilities:
 - connect to Discord
 - handle ready / resume / disconnect events
+- load and register command surfaces
 - expose a clean async run() / shutdown() contract
 - emit structured logs for supervisor + dashboard use
 
@@ -24,8 +25,16 @@ import discord
 from discord.ext import commands
 
 from dotenv import load_dotenv
+
 from shared.logging.logger import get_logger
+
 from services.discord.status import DiscordStatusManager
+from services.discord.logging import DiscordLogAdapter
+from services.discord.permissions import DiscordPermissionResolver
+from services.discord.heartbeat import DiscordHeartbeat
+
+# Command modules (registration only)
+from services.discord.commands import services as service_commands
 
 # NOTE: routed to Discord runtime log file
 log = get_logger("discord.client", runtime="discord")
@@ -39,6 +48,7 @@ class DiscordClient:
     - async run() entrypoint
     - async shutdown()
     - lifecycle event logging
+    - command surface wiring
     """
 
     def __init__(self):
@@ -54,8 +64,13 @@ class DiscordClient:
         self._bot: Optional[commands.Bot] = None
         self._ready_event = asyncio.Event()
 
-        # Status manager (persisted presence)
-        self._status = DiscordStatusManager()
+        # --------------------------------------------------
+        # Shared Discord services (singletons)
+        # --------------------------------------------------
+        self.status = DiscordStatusManager()
+        self.logger = DiscordLogAdapter()
+        self.permissions = DiscordPermissionResolver()
+        self.heartbeat = DiscordHeartbeat()
 
     # --------------------------------------------------
 
@@ -64,8 +79,8 @@ class DiscordClient:
         Construct the discord.py Bot instance.
 
         NOTE:
-        - Commands and extensions are loaded later
-        - This is connection + lifecycle only
+        - Commands are registered here
+        - No runtime ownership beyond Discord itself
         """
 
         intents = discord.Intents.default()
@@ -80,6 +95,11 @@ class DiscordClient:
         )
 
         # --------------------------------------------------
+        # Command Registration
+        # --------------------------------------------------
+        service_commands.setup(bot)
+
+        # --------------------------------------------------
         # Lifecycle Events
         # --------------------------------------------------
 
@@ -91,27 +111,38 @@ class DiscordClient:
                 f"guilds={len(bot.guilds)}"
             )
 
-            # Apply persisted custom status (if any)
+            self.heartbeat.start()
+            self.heartbeat.set_connected(True)
+
+            # Apply persisted custom status
             try:
-                await self._status.apply(bot)
+                await self.status.apply(bot)
             except Exception as e:
                 log.warning(f"Failed to apply Discord status on ready: {e}")
+
+            # Sync slash commands
+            try:
+                await bot.tree.sync()
+                log.info("Discord command tree synced")
+            except Exception as e:
+                log.error(f"Failed to sync Discord commands: {e}")
 
             self._ready_event.set()
 
         @bot.event
         async def on_resumed():
             log.info("Discord connection resumed")
+            self.heartbeat.set_connected(True)
 
-            # Re-apply presence on resume (Discord clears it sometimes)
             try:
-                await self._status.apply(bot)
+                await self.status.apply(bot)
             except Exception as e:
                 log.warning(f"Failed to re-apply Discord status on resume: {e}")
 
         @bot.event
         async def on_disconnect():
             log.warning("Discord connection lost")
+            self.heartbeat.set_connected(False)
 
         @bot.event
         async def on_guild_join(guild: discord.Guild):
@@ -169,6 +200,8 @@ class DiscordClient:
         except Exception as e:
             log.warning(f"Discord close error ignored: {e}")
 
+        self.heartbeat.stop()
+
         self._bot = None
         self._ready_event.clear()
 
@@ -177,6 +210,6 @@ class DiscordClient:
     @property
     def bot(self) -> Optional[commands.Bot]:
         """
-        Expose bot instance (read-only) for supervisor / status hooks.
+        Expose bot instance (read-only) for supervisor hooks.
         """
         return self._bot

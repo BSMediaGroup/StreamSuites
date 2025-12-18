@@ -1,40 +1,44 @@
 """
 Discord Permissions Module (Control-Plane Runtime)
 
-INTENTIONAL SCAFFOLD — NO OPERATIONAL BEHAVIOR YET.
+INTENTIONAL SCAFFOLD — MINIMAL OPERATIONAL BEHAVIOR ENABLED.
 
-This module will define and enforce permission rules for the Discord
+This module defines and enforces permission rules for the Discord
 control-plane runtime.
 
-Planned responsibilities:
-- Resolve guild-specific configuration (admin roles, channels, overrides)
-- Validate whether a user may execute a given command
-- Centralize permission logic so commands remain declarative
-- Support dashboard-driven permission updates (future)
-- Support multi-guild installations safely
+Current behavior:
+- Provides an app_commands-compatible admin check
+- Uses Discord-native permission flags only
+- Resolver remains passive and future-ready
 
 IMPORTANT CONSTRAINTS:
-- This module MUST NOT register Discord commands
 - This module MUST NOT own a Discord client
-- This module MUST NOT perform Discord API calls directly
-- All Discord objects (Interaction, Member, Guild) must be passed in externally
+- This module MUST NOT perform network I/O
+- This module MUST remain centrally authoritative for permission logic
 """
 
 from __future__ import annotations
 
-from typing import Optional, Iterable, Dict, Any
+from typing import Optional, Iterable, Dict, Any, Callable, Awaitable
+
+import discord
+from discord import app_commands
 
 from shared.logging.logger import get_logger
 
 log = get_logger("discord.permissions", runtime="discord")
 
 
+# ==================================================
+# Structured Permission Result
+# ==================================================
+
 class PermissionResult:
     """
     Structured permission check result.
 
-    This allows commands and supervisors to handle permissions consistently
-    without duplicating messaging or logic.
+    Allows commands and supervisors to handle permissions
+    consistently without duplicating logic.
     """
 
     def __init__(
@@ -51,6 +55,10 @@ class PermissionResult:
     def __bool__(self) -> bool:
         return self.allowed
 
+
+# ==================================================
+# Passive Resolver (Future Dashboard / Config Use)
+# ==================================================
 
 class DiscordPermissionResolver:
     """
@@ -99,7 +107,7 @@ class DiscordPermissionResolver:
         """
         Determine whether a user may execute a command.
 
-        All logic is currently permissive and logged only.
+        Currently permissive (noop).
         """
 
         if not self._enabled:
@@ -164,3 +172,53 @@ class DiscordPermissionResolver:
             },
         )
         return PermissionResult(True, metadata={"mode": "noop"})
+
+
+# ==================================================
+# app_commands Decorators (ACTIVE LAYER)
+# ==================================================
+
+def require_admin() -> Callable[[Callable[..., Awaitable[Any]]], Any]:
+    """
+    Discord slash-command check: admin-only.
+
+    CURRENT IMPLEMENTATION:
+    - Uses Discord-native administrator permission
+    - Allows guild owner implicitly
+    - Emits clean ephemeral error on failure
+
+    FUTURE:
+    - Delegate to DiscordPermissionResolver
+    - Dashboard-configurable admin roles
+    """
+
+    async def predicate(interaction: discord.Interaction) -> bool:
+        if not interaction.guild or not interaction.user:
+            await interaction.response.send_message(
+                "❌ This command can only be used in a server.",
+                ephemeral=True,
+            )
+            return False
+
+        member = interaction.user
+        guild = interaction.guild
+
+        is_admin = (
+            guild.owner_id == member.id
+            or member.guild_permissions.administrator
+        )
+
+        if not is_admin:
+            log.warning(
+                f"Admin permission denied: "
+                f"user={member.id} guild={guild.id}"
+            )
+            await interaction.response.send_message(
+                "❌ You must be a server administrator to use this command.",
+                ephemeral=True,
+            )
+            return False
+
+        return True
+
+    return app_commands.check(predicate)
