@@ -1,8 +1,9 @@
 # StreamSuites
 
-StreamSuites is a modular, multi-platform livestream automation system
-designed to provide reliable, extensible tooling for creators operating
-across platforms such as Rumble, YouTube, Twitch, Discord, and others.
+StreamSuites is a modular, multi-platform livestream automation system. It is
+the single canonical runtime source for orchestrating streaming data-plane
+workers and control-plane automation across platforms such as Discord,
+YouTube, Twitch, Twitter/X, and Rumble.
 
 The project is built with a strong emphasis on:
 - deterministic behavior
@@ -10,35 +11,28 @@ The project is built with a strong emphasis on:
 - platform-specific correctness
 - future extensibility without architectural rewrites
 
-The first implemented and validated platform is **Rumble**.
-
----
-
-## Current Status
-
-**Beta Prebuild – Core Runtime Proven**
-
-The system currently supports:
-- Verified Rumble livestream chat reading via official livestream APIs
-- Verified Rumble chat message sending via browser automation
-- Clean startup synchronization with historical message cutoff
-- Controlled send rate limiting
-- Deterministic startup announcement
-- Persistent browser sessions
-- Clean Windows-safe shutdown behavior
-
-This milestone establishes the foundation upon which all future features
-and platforms will be built.
+The first implemented and validated platform was **Rumble**; Rumble support is
+currently paused (see status below) but all code remains intact for
+re-enablement.
 
 ---
 
 ## Architecture Overview
 
-StreamSuites is structured as a long-running asynchronous runtime,
-orchestrated by a central scheduler and composed of platform-specific
-workers.
+StreamSuites is evolving into a multi-runtime architecture while remaining a
+single repository:
 
-High-level flow:
+- `core/app.py` is the streaming runtime supervisor responsible for launching
+  ingestion workers, scheduling jobs, and coordinating graceful shutdown.
+- `core/discord_app.py` (new placeholder) is the Discord control-plane runtime
+  entrypoint. It will handle Discord commands and coordination separately from
+  streaming ingestion but will share the same shared configuration and
+  services.
+
+Both entrypoints are independent runtime processes that draw from `shared/`
+and `services/` for consistency across platforms.
+
+### High-level flow
 
 1. Application bootstraps environment and creator contexts
 2. Scheduler launches per-creator runtimes
@@ -46,17 +40,81 @@ High-level flow:
 4. Shared browser and job systems are centrally controlled
 5. Clean shutdown propagates through all active tasks
 
+### ASCII architecture diagram
+
+```
+              +-------------------+
+              |   shared/ config  |
+              +---------+---------+
+                        |
+                +-------+-------+
+                |   services/   |
+                +-------+-------+
+                        |
+        +---------------+---------------+
+        |                               |
+ +------+-------+                 +-----+------+
+ | core/app.py  |                 | core/      |
+ | (streaming   |                 | discord_   |
+ |  runtime)    |                 | app.py     |
+ +------+-------+                 | (Discord   |
+        |                         |  control   |
+        |                         |  plane)    |
+        |                         +-----+------+
+  +-----+------+                       |
+  | streaming  |                       | (no ingestion workers)
+  | workers    |                       |
+  +------------+                 +-----+------+
+                                Discord bots &
+                                control flows
+```
+
 ---
+
+## Streaming runtime orchestration
+
+The streaming runtime (`core/app.py`) continues to operate as a long-running
+asynchronous process orchestrated by a central scheduler and composed of
+platform-specific workers.
+
+High-level streaming flow:
+
+1. Application bootstraps environment and creator contexts
+2. Scheduler launches per-creator streaming runtimes
+3. Platform workers manage platform-specific ingestion and publishing logic
+4. Shared browser and job systems are centrally controlled
+5. Clean shutdown propagates through all active tasks
+
+---
+
+## Current Platform Status
+
+- Discord: **ACTIVE** (control-plane runtime and services scaffolded)
+- YouTube: **ACTIVE**
+- Twitch: **ACTIVE**
+- Twitter/X: **ACTIVE**
+- Rumble: **PAUSED** — upstream API protection/DDoS mitigation limits access;
+  all code is retained for reactivation when official access/whitelisting is
+  restored. No functionality has been removed.
+
+## Rumble integration (paused)
+
+All Rumble chat workers, models, and browser helpers remain in the repository.
+Execution is paused solely due to upstream API protection and DDoS mitigation.
+The architecture and code paths are intentionally preserved to allow rapid
+re-enablement once official API access or platform whitelisting is available.
 
 ## Repository Structure
 
 ```text
 StreamSuites/
 ├── core/
-│   ├── app.py                # Application entrypoint & lifecycle
+│   ├── README.md             # Core runtime boundaries and status
+│   ├── app.py                # Streaming runtime entrypoint & lifecycle
 │   ├── context.py            # Per-creator runtime context
 │   ├── jobs.py               # Job registry and dispatch
 │   ├── registry.py           # Creator loading and validation
+│   ├── discord_app.py        # Discord control-plane runtime placeholder
 │   ├── scheduler.py          # Task orchestration and shutdown control
 │   ├── shutdown.py           # Coordinated shutdown helpers
 │   └── signals.py            # Signal handling
@@ -65,6 +123,10 @@ StreamSuites/
 │   ├── discord/
 │   │   ├── client.py
 │   │   ├── permissions.py
+│   │   ├── runtime/
+│   │   │   ├── __init__.py   # Discord runtime scaffolding
+│   │   │   ├── lifecycle.py  # Placeholder lifecycle utilities
+│   │   │   └── supervisor.py # Placeholder runtime supervisor
 │   │   ├── commands/
 │   │   │   ├── admin.py
 │   │   │   ├── creators.py
