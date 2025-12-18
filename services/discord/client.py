@@ -27,7 +27,8 @@ from dotenv import load_dotenv
 from shared.logging.logger import get_logger
 from services.discord.status import DiscordStatusManager
 
-log = get_logger("discord.client")
+# NOTE: routed to Discord runtime log file
+log = get_logger("discord.client", runtime="discord")
 
 
 class DiscordClient:
