@@ -160,6 +160,22 @@ High-level streaming flow:
   paused due to upstream API changes. All code is retained and unmodified
   pending official support.
 
+### YouTube chat (scaffold)
+
+- Transport: **polling** via `liveChatMessages.list` (no push/webhook support)
+- Poll cadence: honor `pollingIntervalMillis`; default scaffold assumes ~2–3s
+  while API hints are wired
+- Rate limits: `liveChatMessages.list` costs 5 units/request against the
+  10,000 units/day default quota; keep intervals above 2s to avoid churn
+- Latency: expect a few seconds between message send and API availability;
+  downstream triggers must tolerate slight delays and deduplicate by message ID
+- Lifecycle: scheduler-owned workers will resolve `liveChatId` and poll chat;
+  implementation is deferred until the scaffold is validated
+
+Environment:
+- `YOUTUBE_API_KEY_DANIEL` — Data API key used for livestream discovery and
+  chat polling
+
 ## Rumble integration (paused)
 
 All Rumble chat workers, models, and browser helpers remain in the repository.
