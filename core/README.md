@@ -29,6 +29,10 @@ modules to enforce consistent behavior and configuration across platforms.
 - `core/app.py` must not contain Discord-specific logic; Discord behaviors live
   under `services/discord/` and are invoked through explicit orchestration
   rather than embedded imports.
+- Twitch chat foundations live under `services/twitch/`; the scheduler will own
+  lifecycle once the platform is feature-flagged for creators. The Twitch
+  worker remains idle until explicitly started, keeping parity with the
+  existing Discord separation.
 
 ## Rumble runtime status
 
