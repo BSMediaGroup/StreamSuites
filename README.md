@@ -34,6 +34,20 @@ started by a shared scheduler:
 Both entrypoints are independent runtime processes. The scheduler coordinates
 lifecycles while keeping control-plane behavior separate from streaming logic.
 
+## Dashboard state publishing
+
+The Discord control-plane runtime emits live snapshots for the dashboard under
+`shared/state/discord/runtime.json` (runtime + heartbeat state) and
+`shared/state/jobs.json` (job queue/timestamps). Snapshots are written
+atomically and can optionally be mirrored into the dashboard hosting root by
+setting `DASHBOARD_STATE_PUBLISH_ROOT` (or `STREAMSUITES_STATE_PUBLISH_ROOT`)
+to the Pages/bucket checkout path. A helper script is available for cron or CI
+runs when the runtime is not active:
+
+```bash
+python scripts/publish_state.py --target ../StreamSuites-Dashboard/docs
+```
+
 ### Discord control-plane runtime (overview)
 
 - Purpose: process-scoped control-plane runtime for operational commands,

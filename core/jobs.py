@@ -16,6 +16,9 @@ class Job:
         self.payload = payload
         self.status = "pending"
         self.created_at = int(time.time())
+        self.started_at = None
+        self.completed_at = None
+        self.updated_at = self.created_at
 
     async def run(self):
         raise NotImplementedError
@@ -124,6 +127,9 @@ class JobRegistry:
             "creator_id": ctx.creator_id,
             "status": job.status,
             "created_at": job.created_at,
+            "started_at": job.started_at,
+            "completed_at": job.completed_at,
+            "updated_at": job.updated_at,
             "payload": payload
         })
 
@@ -147,20 +153,40 @@ class JobRegistry:
     async def _run_job(self, job: Job):
         try:
             job.status = "running"
-            update_job(job.id, {"status": "running"})
+            job.started_at = int(time.time())
+            job.updated_at = job.started_at
+
+            update_job(job.id, {
+                "status": "running",
+                "started_at": job.started_at,
+                "updated_at": job.updated_at
+            })
 
             await job.run()
 
             job.status = "completed"
-            update_job(job.id, {"status": "completed"})
+            job.completed_at = int(time.time())
+            job.updated_at = job.completed_at
+
+            update_job(job.id, {
+                "status": "completed",
+                "completed_at": job.completed_at,
+                "finished_at": job.completed_at,
+                "updated_at": job.updated_at
+            })
 
             # Metrics: completed
             self._metrics["completed"] += 1
 
         except Exception as e:
             job.status = "failed"
+            job.completed_at = int(time.time())
+            job.updated_at = job.completed_at
             update_job(job.id, {
                 "status": "failed",
+                "completed_at": job.completed_at,
+                "finished_at": job.completed_at,
+                "updated_at": job.updated_at,
                 "error": str(e)
             })
 
