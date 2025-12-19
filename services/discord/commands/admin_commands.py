@@ -20,6 +20,8 @@ IMPORTANT DESIGN RULES:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -31,7 +33,9 @@ from services.discord.commands.admin import AdminCommandHandler
 from services.discord.logging import DiscordLogAdapter
 from services.discord.permissions import DiscordPermissionResolver
 from services.discord.status import DiscordStatusManager
-from services.discord.runtime.supervisor import DiscordSupervisor
+
+if TYPE_CHECKING:
+    from services.discord.runtime.supervisor import DiscordSupervisor
 
 # NOTE: routed to Discord runtime log file
 log = get_logger("discord.commands.admin.register", runtime="discord")
@@ -47,7 +51,7 @@ def setup(
     permissions: DiscordPermissionResolver,
     logger: DiscordLogAdapter,
     status: DiscordStatusManager,
-    supervisor: DiscordSupervisor,
+    supervisor: DiscordSupervisor | None = None,
 ):
     """
     Register all admin-level Discord slash commands.
