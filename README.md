@@ -149,9 +149,10 @@ High-level streaming flow:
 
 ## Current Platform Status
 
-- Discord: **ACTIVE** (optional control-plane runtime and services scaffolded)
+- Discord: **ACTIVE** (control-plane runtime and services scaffolded)
 - YouTube: **ACTIVE**
-- Twitch: **ACTIVE**
+- Twitch: **FOUNDATION** — IRC-over-TLS chat client + worker scaffold in place;
+  triggers, dashboards, and Helix integrations are planned.
 - Twitter/X: **ACTIVE**
 - Rumble: **PAUSED** — upstream API protection/DDoS mitigation limits access;
   all code is retained for reactivation when official access/whitelisting is
@@ -325,6 +326,7 @@ StreamSuites/
 │   └── __init__.py
 │
 ├── rumble_chat_poc.py        # Rumble chat validation script
+├── twitch_chat_poc.py        # Twitch chat IRC smoke test
 ├── test_rumble_api.py        # Rumble API probe
 ├── requirements.txt
 ├── .env.example
@@ -373,6 +375,43 @@ Planned scaffolding includes:
   chat event shapes without impacting current integrations
 
 No logging logic is implemented yet.
+
+---
+
+## Twitch chat foundation (IRC-over-TLS)
+
+Twitch connectivity uses the native IRC-over-TLS transport to keep behavior
+deterministic and scheduler-friendly. Foundational pieces live under:
+
+- `services/twitch/api/chat.py` — Twitch IRC client (connect/read/send, PING/PONG)
+- `services/twitch/workers/chat_worker.py` — worker lifecycle wrapper for
+  scheduler ownership (no side effects on import)
+- `services/twitch/models/message.py` — normalized chat message + trigger-ready
+  event shape
+
+### Environment
+
+Twitch tokens live in `.env`:
+
+- `TWITCH_OAUTH_TOKEN_DANIEL` (required for IRC chat)
+- `TWITCH_BOT_NICK_DANIEL` (chat nickname; defaults to channel name if omitted)
+- `TWITCH_CHANNEL_DANIEL` (channel to join without the `#` prefix)
+- `TWITCH_CLIENT_ID_DANIEL` / `TWITCH_CLIENT_SECRET_DANIEL` (documented for
+  future Helix usage; not required for IRC chat)
+
+### Smoke test (standalone)
+
+A minimal Twitch chat validation script lives at the repo root:
+
+```bash
+python twitch_chat_poc.py --channel <channel> --nick <bot-nick>
+# or rely on env vars: TWITCH_OAUTH_TOKEN_DANIEL, TWITCH_CHANNEL_DANIEL, TWITCH_BOT_NICK_DANIEL
+```
+
+The script connects to `irc.chat.twitch.tv:6697`, prints incoming messages, and
+responds to `!ping` with `pong`. Scheduler integration will attach the same
+worker/client lifecycle when Twitch is enabled for a creator. Discord and other
+runtimes remain unchanged.
 
 ---
 
