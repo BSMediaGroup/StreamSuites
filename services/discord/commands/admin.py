@@ -21,13 +21,15 @@ IMPORTANT CONSTRAINTS:
 
 from __future__ import annotations
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TYPE_CHECKING
 
 from shared.logging.logger import get_logger
 from services.discord.permissions import DiscordPermissionResolver
 from services.discord.logging import DiscordLogAdapter
 from services.discord.status import DiscordStatusManager
-from services.discord.runtime.supervisor import DiscordSupervisor
+
+if TYPE_CHECKING:
+    from services.discord.runtime.supervisor import DiscordSupervisor
 
 log = get_logger("discord.commands.admin", runtime="discord")
 
