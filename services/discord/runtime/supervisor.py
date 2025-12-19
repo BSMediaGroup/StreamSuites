@@ -22,13 +22,11 @@ IMPORTANT:
 from __future__ import annotations
 
 import asyncio
-import json
-import os
-import tempfile
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from shared.logging.logger import get_logger
+from shared.storage.state_publisher import DashboardStatePublisher
 from services.discord.client import DiscordClient
 from services.discord.status import DiscordStatusManager
 from services.discord.heartbeat import DiscordHeartbeat, DiscordHeartbeatState
@@ -45,25 +43,20 @@ class DiscordSnapshotWriter:
     authoritative output for dashboard consumption.
     """
 
-    def __init__(self, path: Optional[Path] = None):
-        self._path = Path(path) if path else Path("shared/state/discord/runtime.json")
-        self._path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(
+        self,
+        relative_path: Optional[Path] = None,
+        publisher: Optional[DashboardStatePublisher] = None,
+    ):
+        self._relative_path = relative_path or Path("discord/runtime.json")
+        self._publisher = publisher or DashboardStatePublisher()
 
     def write(self, payload: Dict[str, Any]) -> None:
         """
         Persist a snapshot atomically to avoid partial reads by consumers.
         """
         try:
-            serialized = json.dumps(payload, indent=2)
-            with tempfile.NamedTemporaryFile(
-                "w", dir=self._path.parent, delete=False, encoding="utf-8"
-            ) as tmp:
-                tmp.write(serialized)
-                tmp.flush()
-                os.fsync(tmp.fileno())
-                temp_path = Path(tmp.name)
-
-            temp_path.replace(self._path)
+            self._publisher.publish(self._relative_path, payload)
         except Exception as e:
             log.error(f"Failed to write Discord runtime snapshot: {e}")
 
@@ -98,6 +91,7 @@ class DiscordSupervisor:
     def _build_snapshot_payload(self) -> Dict[str, Any]:
         self._refresh_guild_count()
         heartbeat_state = self.heartbeat
+        status_snapshot = self.status
 
         return {
             "running": self._running,
@@ -110,7 +104,11 @@ class DiscordSupervisor:
             "task_count": self.task_count,
             "tasks": self.task_count,  # backward-compatible alias
             "guild_count": self._guild_count if self.connected else None,
-            "status": self.status,
+            "status": status_snapshot,
+            "presence": {
+                "status_text": status_snapshot.get("text"),
+                "status_emoji": status_snapshot.get("emoji"),
+            },
             "heartbeat": heartbeat_state.snapshot(),
         }
 

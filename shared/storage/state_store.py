@@ -1,25 +1,42 @@
 import json
-from pathlib import Path
-from typing import Dict, List, Any, Optional
-from threading import Lock
 import time
+from pathlib import Path
+from threading import Lock
+from typing import Any, Dict, List, Optional
 
-_STATE_PATH = Path("shared/state/jobs.json")
+from shared.logging.logger import get_logger
+from shared.storage.state_publisher import DashboardStatePublisher
+
+_STATE_DIR = Path("shared/state")
+_STATE_PATH = _STATE_DIR / "jobs.json"
 _LOCK = Lock()
+_PUBLISHER = DashboardStatePublisher(base_dir=_STATE_DIR)
+_log = get_logger("shared.state_store")
 
 
 def _load_state() -> Dict[str, Any]:
     if not _STATE_PATH.exists():
         return {"jobs": [], "triggers": {}}
     try:
-        return json.loads(_STATE_PATH.read_text(encoding="utf-8"))
-    except Exception:
+        state = json.loads(_STATE_PATH.read_text(encoding="utf-8"))
+        jobs = state.get("jobs", [])
+        for job in jobs:
+            job.setdefault("created_at", None)
+            job.setdefault("started_at", None)
+            job.setdefault("completed_at", None)
+            job.setdefault("finished_at", None)
+            job.setdefault("updated_at", None)
+        return state
+    except Exception as e:
+        _log.warning(f"Failed to load job state, returning defaults: {e}")
         return {"jobs": [], "triggers": {}}
 
 
 def _save_state(state: Dict[str, Any]) -> None:
-    _STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    try:
+        _PUBLISHER.publish("jobs.json", state)
+    except Exception as e:
+        _log.error(f"Failed to persist job state: {e}")
 
 
 # ------------------------------------------------------------
@@ -27,6 +44,11 @@ def _save_state(state: Dict[str, Any]) -> None:
 # ------------------------------------------------------------
 
 def append_job(job: Dict[str, Any]) -> None:
+    job.setdefault("updated_at", int(time.time()))
+    job.setdefault("started_at", None)
+    job.setdefault("completed_at", None)
+    job.setdefault("finished_at", None)
+
     with _LOCK:
         state = _load_state()
         state.setdefault("jobs", []).append(job)
@@ -34,6 +56,9 @@ def append_job(job: Dict[str, Any]) -> None:
 
 
 def update_job(job_id: str, updates: Dict[str, Any]) -> None:
+    updates = dict(updates)
+    updates.setdefault("updated_at", int(time.time()))
+
     with _LOCK:
         state = _load_state()
         for job in state.get("jobs", []):
