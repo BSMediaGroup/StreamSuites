@@ -17,6 +17,8 @@ IMPORTANT:
 - This client MUST NOT start streaming workers
 """
 
+from __future__ import annotations
+
 import os
 import asyncio
 from typing import Optional
@@ -52,7 +54,7 @@ class DiscordClient:
     - command surface wiring
     """
 
-    def __init__(self):
+    def __init__(self, supervisor=None):
         load_dotenv()
 
         token = os.getenv("DISCORD_BOT_TOKEN_DANIEL")
@@ -61,9 +63,12 @@ class DiscordClient:
                 "DISCORD_BOT_TOKEN_DANIEL not found in environment"
             )
 
+        log.info(f"Discord bot token present: {bool(token)}")
+
         self._token: str = token
         self._bot: Optional[commands.Bot] = None
         self._ready_event = asyncio.Event()
+        self._supervisor = supervisor
 
         # --------------------------------------------------
         # Shared Discord services (singletons)
@@ -108,6 +113,7 @@ class DiscordClient:
             permissions=self.permissions,
             logger=self.logger,
             status=self.status,
+            supervisor=self._supervisor,
         )
 
         # --------------------------------------------------

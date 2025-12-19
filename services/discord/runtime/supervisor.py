@@ -64,7 +64,7 @@ class DiscordSupervisor:
 
         log.info("Starting Discord supervisor")
 
-        self._client = DiscordClient()
+        self._client = DiscordClient(supervisor=self)
 
         # --------------------------------------------------
         # Heartbeat lifecycle start
