@@ -1,0 +1,24 @@
+{
+  "running": false,
+  "connected": false,
+  "last_heartbeat_ts": "2025-12-19T07:12:17+00:00",
+  "task_count": 0,
+  "tasks": 0,
+  "guild_count": null,
+  "status": {
+    "text": "Static snapshot published for dashboard fallback",
+    "emoji": "🛰️"
+  },
+  "presence": {
+    "status_text": "Static snapshot published for dashboard fallback",
+    "status_emoji": "🛰️"
+  },
+  "heartbeat": {
+    "started_at": "2025-12-19T07:07:17+00:00",
+    "last_tick_at": "2025-12-19T07:12:17+00:00",
+    "connected": false,
+    "metadata": {
+      "note": "Static snapshot from repository for dashboard fallback"
+    }
+  }
+}
