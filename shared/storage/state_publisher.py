@@ -39,16 +39,22 @@ class DashboardStatePublisher:
         self._base_dir.mkdir(parents=True, exist_ok=True)
 
         env_root = self._get_env_publish_root()
+        autodetect_root = self._auto_detect_publish_root()
+
         self._publish_root = (
             Path(publish_root)
             if publish_root
-            else (Path(env_root) if env_root else None)
+            else (
+                Path(env_root)
+                if env_root
+                else (Path(autodetect_root) if autodetect_root else None)
+            )
         )
 
         if self._publish_root:
-            (self._publish_root / "shared" / "state").mkdir(
-                parents=True, exist_ok=True
-            )
+            target = self._publish_root / "shared" / "state"
+            target.mkdir(parents=True, exist_ok=True)
+            log.info(f"Dashboard state publish root: {target}")
 
     # ------------------------------------------------------------------
     # Environment helpers
@@ -59,6 +65,27 @@ class DashboardStatePublisher:
             val = os.getenv(key)
             if val:
                 return val
+        return None
+
+    def _auto_detect_publish_root(self) -> Optional[str]:
+        """
+        Detect a nearby dashboard checkout for default mirroring.
+
+        Common local layout:
+            /workspace/StreamSuites
+            /workspace/StreamSuites-Dashboard
+        """
+        candidates = [
+            Path("../StreamSuites-Dashboard/docs"),
+            Path("../StreamSuites-Dashboard"),
+            Path("./StreamSuites-Dashboard/docs"),
+            Path("./StreamSuites-Dashboard"),
+        ]
+
+        for candidate in candidates:
+            if (candidate / "shared" / "state").exists():
+                return str(candidate)
+
         return None
 
     # ------------------------------------------------------------------

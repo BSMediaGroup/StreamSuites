@@ -41,8 +41,9 @@ The Discord control-plane runtime emits live snapshots for the dashboard under
 `shared/state/jobs.json` (job queue/timestamps). Snapshots are written
 atomically and can optionally be mirrored into the dashboard hosting root by
 setting `DASHBOARD_STATE_PUBLISH_ROOT` (or `STREAMSUITES_STATE_PUBLISH_ROOT`)
-to the Pages/bucket checkout path. A helper script is available for cron or CI
-runs when the runtime is not active:
+to the Pages/bucket checkout path. If unset, the runtime will auto-detect a
+local `../StreamSuites-Dashboard` checkout (docs root) when present. A helper
+script is available for cron or CI runs when the runtime is not active:
 
 ```bash
 python scripts/publish_state.py --target ../StreamSuites-Dashboard/docs
