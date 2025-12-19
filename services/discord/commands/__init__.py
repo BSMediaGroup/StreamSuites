@@ -36,6 +36,7 @@ def setup(
     permissions,
     logger,
     status,
+    supervisor=None,
 ):
     """
     Register all Discord command surfaces.
@@ -57,6 +58,7 @@ def setup(
         permissions=permissions,
         logger=logger,
         status=status,
+        supervisor=supervisor,
     )
 
     # --------------------------------------------------
