@@ -22,6 +22,10 @@ IMPORTANT:
 from __future__ import annotations
 
 import asyncio
+import json
+import os
+import tempfile
+from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 from shared.logging.logger import get_logger
@@ -31,6 +35,37 @@ from services.discord.heartbeat import DiscordHeartbeat, DiscordHeartbeatState
 
 # NOTE: routed to Discord runtime log file
 log = get_logger("discord.supervisor", runtime="discord")
+
+
+class DiscordSnapshotWriter:
+    """
+    Atomic JSON snapshot writer for Discord runtime state.
+
+    Owned exclusively by the DiscordSupervisor to guarantee a single
+    authoritative output for dashboard consumption.
+    """
+
+    def __init__(self, path: Optional[Path] = None):
+        self._path = Path(path) if path else Path("shared/state/discord/runtime.json")
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+
+    def write(self, payload: Dict[str, Any]) -> None:
+        """
+        Persist a snapshot atomically to avoid partial reads by consumers.
+        """
+        try:
+            serialized = json.dumps(payload, indent=2)
+            with tempfile.NamedTemporaryFile(
+                "w", dir=self._path.parent, delete=False, encoding="utf-8"
+            ) as tmp:
+                tmp.write(serialized)
+                tmp.flush()
+                os.fsync(tmp.fileno())
+                temp_path = Path(tmp.name)
+
+            temp_path.replace(self._path)
+        except Exception as e:
+            log.error(f"Failed to write Discord runtime snapshot: {e}")
 
 
 class DiscordSupervisor:
@@ -46,9 +81,54 @@ class DiscordSupervisor:
         self._client: Optional[DiscordClient] = None
         self._tasks: List[asyncio.Task] = []
         self._running: bool = False
+        self._guild_count: Optional[int] = None
 
         self._status = DiscordStatusManager()
         self._heartbeat = DiscordHeartbeat()
+        self._snapshot_writer = DiscordSnapshotWriter()
+
+    # --------------------------------------------------
+    # Snapshot helpers (supervisor-owned)
+    # --------------------------------------------------
+
+    def _refresh_guild_count(self):
+        bot = self._client.bot if self._client and self._client.bot else None
+        self._guild_count = len(bot.guilds) if bot else None
+
+    def _build_snapshot_payload(self) -> Dict[str, Any]:
+        self._refresh_guild_count()
+        heartbeat_state = self.heartbeat
+
+        return {
+            "running": self._running,
+            "connected": self.connected,
+            "last_heartbeat_ts": (
+                heartbeat_state.last_tick_at.isoformat()
+                if heartbeat_state.last_tick_at
+                else None
+            ),
+            "task_count": self.task_count,
+            "tasks": self.task_count,  # backward-compatible alias
+            "guild_count": self._guild_count if self.connected else None,
+            "status": self.status,
+            "heartbeat": heartbeat_state.snapshot(),
+        }
+
+    def _write_snapshot(self):
+        self._snapshot_writer.write(self._build_snapshot_payload())
+
+    def notify_connected(self):
+        self._heartbeat.set_connected(True)
+        self._refresh_guild_count()
+        self._write_snapshot()
+
+    def notify_disconnected(self):
+        self._heartbeat.set_connected(False)
+        self._refresh_guild_count()
+        self._write_snapshot()
+
+    def notify_heartbeat_tick(self):
+        self._write_snapshot()
 
     # --------------------------------------------------
     # Lifecycle
@@ -85,7 +165,7 @@ class DiscordSupervisor:
                 await self._client._ready_event.wait()
                 bot = self._client.bot
                 if bot:
-                    self._heartbeat.set_connected(True)
+                    self.notify_connected()
                     await self._status.apply(bot)
                     log.info("Discord status applied by supervisor")
             except asyncio.CancelledError:
@@ -103,6 +183,7 @@ class DiscordSupervisor:
             try:
                 while True:
                     self._heartbeat.tick()
+                    self.notify_heartbeat_tick()
                     await asyncio.sleep(30)
             except asyncio.CancelledError:
                 raise
@@ -111,6 +192,7 @@ class DiscordSupervisor:
 
         self._running = True
         log.info("Discord supervisor started")
+        self._write_snapshot()
 
     # --------------------------------------------------
     # Shutdown
@@ -128,7 +210,7 @@ class DiscordSupervisor:
         # --------------------------------------------------
         # Heartbeat shutdown
         # --------------------------------------------------
-        self._heartbeat.set_connected(False)
+        self.notify_disconnected()
         self._heartbeat.stop()
 
         # --------------------------------------------------
@@ -156,6 +238,8 @@ class DiscordSupervisor:
         self._tasks.clear()
         self._client = None
         self._running = False
+
+        self._write_snapshot()
 
         log.info("Discord supervisor shutdown complete")
 
@@ -202,10 +286,4 @@ class DiscordSupervisor:
         """
         Full supervisor state snapshot for diagnostics / dashboard use.
         """
-        return {
-            "running": self._running,
-            "connected": self.connected,
-            "tasks": self.task_count,
-            "heartbeat": self.heartbeat.snapshot(),
-            "status": self.status,
-        }
+        return self._build_snapshot_payload()
