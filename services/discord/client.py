@@ -137,6 +137,9 @@ class DiscordClient:
             except Exception as e:
                 log.warning(f"Failed to apply Discord status on ready: {e}")
 
+            if self._supervisor:
+                self._supervisor.notify_connected()
+
             # Sync slash commands
             try:
                 await bot.tree.sync()
@@ -156,10 +159,16 @@ class DiscordClient:
             except Exception as e:
                 log.warning(f"Failed to re-apply Discord status on resume: {e}")
 
+            if self._supervisor:
+                self._supervisor.notify_connected()
+
         @bot.event
         async def on_disconnect():
             log.warning("Discord connection lost")
             self.heartbeat.set_connected(False)
+
+            if self._supervisor:
+                self._supervisor.notify_disconnected()
 
         @bot.event
         async def on_guild_join(guild: discord.Guild):
