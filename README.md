@@ -49,6 +49,22 @@ script is available for cron or CI runs when the runtime is not active:
 python scripts/publish_state.py --target ../StreamSuites-Dashboard/docs
 ```
 
+### Dashboard lookup order
+
+The dashboard now resolves state roots in the following order:
+
+1) `stateRoot` query parameter (persisted to `localStorage` as
+   `streamsuites.stateRootOverride` for future loads)
+2) The published `./shared/state/` directory within the dashboard hosting root
+3) Fallback to the runtime repository's raw URL:
+   `https://raw.githubusercontent.com/BSMediaGroup/StreamSuites/main/shared/state/`
+
+To serve snapshots from another host or bucket, open the dashboard with
+`?stateRoot=<your-url>/` (ensure the trailing slash) and the override will be
+remembered. The fallback works only when this repository publishes current
+snapshots under `shared/state/discord/runtime.json` (and optional
+`shared/state/jobs.json`) so the raw GitHub URL always contains valid data.
+
 ### Discord control-plane runtime (overview)
 
 - Purpose: process-scoped control-plane runtime for operational commands,

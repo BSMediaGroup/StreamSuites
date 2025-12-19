@@ -12,3 +12,9 @@ Design goals:
   surface without divergence.
 - Potential for hot-reload of configuration in the future; file formats should
   remain declarative to make this feasible without code changes.
+
+The control-plane runtime publishes a live snapshot for the dashboard at
+`shared/state/discord/runtime.json`. The dashboard will fall back to the raw
+GitHub URL for this repository if a local `shared/state/` is not available, so
+the snapshot is committed here to guarantee a default source of truth even when
+the runtime is not actively mirroring to the dashboard checkout.
