@@ -1,7 +1,8 @@
-
 import asyncio
 from datetime import datetime, timezone
-from typing import AsyncGenerator, Dict, Optional
+from typing import AsyncGenerator, Dict, Optional, Set
+
+import httpx
 
 from services.youtube.models.message import YouTubeChatMessage
 from shared.logging.logger import get_logger
@@ -11,10 +12,14 @@ log = get_logger("youtube.chat", runtime="streamsuites")
 
 class YouTubeChatClient:
     """
-    Scaffold for polling YouTube live chat via the Data API.
+    Polling client for YouTube Live Chat via the Data API v3.
 
-    Implementation is intentionally deferred; this class encodes the contract
-    and normalization expectations used by workers and future trigger routing.
+    Responsibilities:
+    - Poll liveChat/messages endpoint
+    - Respect server-provided polling intervals
+    - Dedife deduplicate messages
+    - Normalize payloads into YouTubeChatMessage
+    - Remain cancellation-safe and deterministic
     """
 
     BASE_URL = "https://www.googleapis.com/youtube/v3/liveChat/messages"
@@ -37,6 +42,7 @@ class YouTubeChatClient:
 
         self._page_token: Optional[str] = None
         self._stop_event = asyncio.Event()
+        self._seen_ids: Set[str] = set()
 
     # ------------------------------------------------------------------ #
     # Lifecycle
@@ -46,28 +52,80 @@ class YouTubeChatClient:
         """
         Poll YouTube live chat and yield normalized messages.
 
-        The Data API returns `pollingIntervalMillis` to suggest backoff; this
-        scaffold stores the page token and interval hints but intentionally
-        defers the network implementation.
+        Uses nextPageToken and pollingIntervalMillis as advised
+        by the YouTube Data API.
         """
         self._stop_event.clear()
+
+        params = {
+            "part": "snippet,authorDetails",
+            "liveChatId": self.live_chat_id,
+            "key": self.api_key,
+        }
+
         log.info(
-            f"[YouTube] Polling live chat {self.live_chat_id} "
-            f"(interval={self.poll_interval}s) — implementation pending"
+            f"[YouTube] Starting live chat polling "
+            f"(liveChatId={self.live_chat_id})"
         )
-        raise NotImplementedError(
-            "YouTube chat polling is scaffolded only; implement API calls later."
-        )
-        yield  # pragma: no cover (generator form placeholder)
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            while not self._stop_event.is_set():
+                if self._page_token:
+                    params["pageToken"] = self._page_token
+
+                try:
+                    response = await client.get(self.BASE_URL, params=params)
+                    response.raise_for_status()
+                    data = response.json()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    log.warning(f"YouTube chat poll error: {e}")
+                    await asyncio.sleep(self.poll_interval)
+                    continue
+
+                self._page_token = data.get("nextPageToken")
+
+                items = data.get("items", [])
+                for item in items:
+                    msg_id = item.get("id")
+                    if not msg_id or msg_id in self._seen_ids:
+                        continue
+
+                    self._seen_ids.add(msg_id)
+                    yield self._normalize_message(item)
+
+                # Respect server-recommended polling interval
+                interval_ms = data.get("pollingIntervalMillis")
+                sleep_seconds = (
+                    interval_ms / 1000.0
+                    if isinstance(interval_ms, (int, float))
+                    else self.poll_interval
+                )
+
+                log.debug(
+                    f"[YouTube] Poll cycle complete "
+                    f"(messages={len(items)}, sleep={sleep_seconds}s)"
+                )
+
+                try:
+                    await asyncio.wait_for(
+                        self._stop_event.wait(),
+                        timeout=sleep_seconds,
+                    )
+                except asyncio.TimeoutError:
+                    pass
+
+        log.info("[YouTube] Live chat polling stopped")
 
     async def close(self) -> None:
         """
-        Placeholder close hook for parity with other platform clients.
+        Signal polling loop to stop.
         """
         self._stop_event.set()
 
     # ------------------------------------------------------------------ #
-    # Normalization helpers (placeholders)
+    # Normalization helpers
     # ------------------------------------------------------------------ #
 
     def _normalize_message(self, payload: Dict) -> YouTubeChatMessage:
