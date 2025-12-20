@@ -9,6 +9,8 @@ from shared.storage.state_publisher import DashboardStatePublisher
 
 _STATE_DIR = Path("shared/state")
 _STATE_PATH = _STATE_DIR / "jobs.json"
+_QUOTA_PATH = _STATE_DIR / "quotas.json"
+
 _LOCK = Lock()
 _PUBLISHER = DashboardStatePublisher(base_dir=_STATE_DIR)
 _log = get_logger("shared.state_store")
@@ -154,3 +156,36 @@ def record_trigger_fire(
         state["triggers"].setdefault(creator_id, {})
         state["triggers"][creator_id][trigger_key] = ts
         _save_state(state)
+
+
+# ------------------------------------------------------------
+# ADDITIVE — QUOTA SNAPSHOT PUBLISHING (READ-ONLY)
+# ------------------------------------------------------------
+
+def publish_quota_snapshot(snapshot: Dict[str, Any]) -> None:
+    """
+    Publish a read-only quota snapshot for dashboard consumption.
+
+    Expected shape (not enforced here):
+
+    {
+      "creator_id": "...",
+      "platform": "youtube",
+      "date": "YYYY-MM-DD",
+      "used": int,
+      "max": int,
+      "buffer": int,
+      "remaining": int,
+      "status": "ok" | "buffer" | "exhausted",
+      "updated_at": epoch_seconds
+    }
+    """
+    try:
+        snapshot = dict(snapshot)
+        snapshot.setdefault("updated_at", int(time.time()))
+
+        with _LOCK:
+            _PUBLISHER.publish("quotas.json", snapshot)
+
+    except Exception as e:
+        _log.error(f"Failed to publish quota snapshot: {e}")

@@ -3,12 +3,14 @@ from pathlib import Path
 from typing import Dict, Any
 
 from core.context import CreatorContext
+from core.ratelimits import merge_ratelimits
 from shared.logging.logger import get_logger
 
 log = get_logger("core.registry")
 
 CREATORS_PATH = Path("shared/config/creators.json")
 TIERS_PATH = Path("shared/config/tiers.json")
+RATELIMITS_SCHEMA_PATH = Path("shared/config/ratelimits.schema.json")
 
 
 class CreatorRegistry:
@@ -21,6 +23,25 @@ class CreatorRegistry:
         self.tiers_path = tiers_path
 
         self._tiers = self._load_tiers()
+        self._ratelimits_schema = self._load_ratelimits_schema()
+
+    # ------------------------------------------------------------------
+    # RATE LIMIT SCHEMA (INTENT, NOT ENFORCEMENT)
+    # ------------------------------------------------------------------
+
+    def _load_ratelimits_schema(self) -> Dict[str, Any]:
+        if not RATELIMITS_SCHEMA_PATH.exists():
+            log.warning("Rate limits schema not found — proceeding without it")
+            return {}
+
+        try:
+            return json.loads(
+                RATELIMITS_SCHEMA_PATH.read_text(encoding="utf-8")
+            )
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to load ratelimits schema: {e}"
+            ) from e
 
     # ------------------------------------------------------------------
     # TIERS (POLICY LOADING)
@@ -114,12 +135,45 @@ class CreatorRegistry:
 
             tier_name = c.get("tier", "open")
             features = self._resolve_tier(tier_name)
+
+            # --------------------------------------------------
+            # Tier-derived runtime limits
+            # --------------------------------------------------
+
             runtime_limits = self._compile_runtime_limits(features)
+
+            # --------------------------------------------------
+            # Rate limit schema merge (GLOBAL → PLATFORM → CREATOR)
+            # --------------------------------------------------
+
+            platform_name = None
+            platforms = c.get("platforms", {})
+
+            if platforms.get("youtube"):
+                platform_name = "youtube"
+            elif platforms.get("twitch"):
+                platform_name = "twitch"
+            elif platforms.get("rumble"):
+                platform_name = "rumble"
+
+            schema_limits = merge_ratelimits(
+                schema=self._ratelimits_schema,
+                creator_id=creator_id,
+                platform=platform_name,
+                creator_limits=c.get("limits"),
+            )
+
+            # Schema overrides tier-derived limits
+            runtime_limits.update(schema_limits)
+
+            # --------------------------------------------------
+            # Creator context (RUNTIME OBJECT)
+            # --------------------------------------------------
 
             ctx = CreatorContext(
                 creator_id=creator_id,
                 display_name=c.get("display_name", creator_id),
-                platforms=c.get("platforms", {}),
+                platforms=platforms,
                 limits=runtime_limits,
 
                 rumble_channel_url=c.get("rumble_channel_url"),

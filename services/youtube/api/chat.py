@@ -6,6 +6,11 @@ import httpx
 
 from services.youtube.models.message import YouTubeChatMessage
 from shared.logging.logger import get_logger
+from shared.runtime.quotas import (
+    quota_registry,
+    QuotaExceeded,
+    QuotaBufferWarning,
+)
 
 log = get_logger("youtube.chat", runtime="streamsuites")
 
@@ -17,28 +22,61 @@ class YouTubeChatClient:
     Responsibilities:
     - Poll liveChat/messages endpoint
     - Respect server-provided polling intervals
-    - Dedife deduplicate messages
+    - Deduplicate messages
     - Normalize payloads into YouTubeChatMessage
+    - Enforce YouTube API quota limits (runtime-authoritative)
     - Remain cancellation-safe and deterministic
     """
 
     BASE_URL = "https://www.googleapis.com/youtube/v3/liveChat/messages"
+
+    # YouTube Data API v3 cost
+    QUOTA_COST_PER_CALL = 5
 
     def __init__(
         self,
         *,
         api_key: str,
         live_chat_id: str,
+        creator_id: str,
+        limits: Dict[str, int],
         poll_interval: float = 2.5,
     ):
         if not api_key:
             raise RuntimeError("YouTube API key is required")
         if not live_chat_id:
             raise RuntimeError("YouTube live_chat_id is required")
+        if not creator_id:
+            raise RuntimeError("creator_id is required for quota enforcement")
 
         self.api_key = api_key
         self.live_chat_id = live_chat_id
+        self.creator_id = creator_id
         self.poll_interval = poll_interval
+
+        # --------------------------------------------------
+        # Quota registration (AUTHORITATIVE)
+        # --------------------------------------------------
+
+        max_units = limits.get("youtube_daily_units_max", 0)
+        buffer_units = limits.get("youtube_daily_units_buffer", 0)
+
+        self.quota_tracker = None
+
+        if max_units:
+            self.quota_tracker = quota_registry.register(
+                creator_id=creator_id,
+                platform="youtube",
+                max_units=max_units,
+                buffer_units=buffer_units,
+            )
+        else:
+            log.warning(
+                f"[YouTube][{self.creator_id}] "
+                "youtube_daily_units_max not set — quota enforcement disabled"
+            )
+
+        # --------------------------------------------------
 
         self._page_token: Optional[str] = None
         self._stop_event = asyncio.Event()
@@ -64,12 +102,29 @@ class YouTubeChatClient:
         }
 
         log.info(
-            f"[YouTube] Starting live chat polling "
-            f"(liveChatId={self.live_chat_id})"
+            f"[YouTube][{self.creator_id}] "
+            f"Starting live chat polling (liveChatId={self.live_chat_id})"
         )
 
         async with httpx.AsyncClient(timeout=15.0) as client:
             while not self._stop_event.is_set():
+
+                # -------------------------------
+                # QUOTA ENFORCEMENT (PRE-CALL)
+                # -------------------------------
+                if self.quota_tracker:
+                    try:
+                        self.quota_tracker.consume(self.QUOTA_COST_PER_CALL)
+                    except QuotaBufferWarning as warn:
+                        log.warning(
+                            f"[YouTube][{self.creator_id}] {warn}"
+                        )
+                    except QuotaExceeded as fatal:
+                        log.error(
+                            f"[YouTube][{self.creator_id}] {fatal} — polling halted"
+                        )
+                        return
+
                 if self._page_token:
                     params["pageToken"] = self._page_token
 
@@ -77,10 +132,13 @@ class YouTubeChatClient:
                     response = await client.get(self.BASE_URL, params=params)
                     response.raise_for_status()
                     data = response.json()
+
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
-                    log.warning(f"YouTube chat poll error: {e}")
+                    log.warning(
+                        f"[YouTube][{self.creator_id}] chat poll error: {e}"
+                    )
                     await asyncio.sleep(self.poll_interval)
                     continue
 
@@ -103,9 +161,17 @@ class YouTubeChatClient:
                     else self.poll_interval
                 )
 
+                snapshot = (
+                    self.quota_tracker.snapshot()
+                    if self.quota_tracker
+                    else None
+                )
+
                 log.debug(
-                    f"[YouTube] Poll cycle complete "
-                    f"(messages={len(items)}, sleep={sleep_seconds}s)"
+                    f"[YouTube][{self.creator_id}] Poll complete "
+                    f"(messages={len(items)}, "
+                    f"quota={snapshot}, "
+                    f"sleep={sleep_seconds}s)"
                 )
 
                 try:
@@ -116,7 +182,9 @@ class YouTubeChatClient:
                 except asyncio.TimeoutError:
                     pass
 
-        log.info("[YouTube] Live chat polling stopped")
+        log.info(
+            f"[YouTube][{self.creator_id}] Live chat polling stopped"
+        )
 
     async def close(self) -> None:
         """
