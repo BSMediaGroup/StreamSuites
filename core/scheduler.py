@@ -1,9 +1,11 @@
 import asyncio
+import os
 from typing import Dict, List, Optional
 
 from core.context import CreatorContext
 from services.rumble.workers.livestream_worker import RumbleLivestreamWorker
 from services.rumble.browser.browser_client import RumbleBrowserClient
+from services.twitch.workers.chat_worker import TwitchChatWorker
 from services.discord.runtime.supervisor import DiscordSupervisor
 from shared.logging.logger import get_logger
 from shared.config.services import get_services_config
@@ -24,6 +26,13 @@ class Scheduler:
 
         # Discord control-plane supervisor (process-scoped)
         self._discord_supervisor: Optional[DiscordSupervisor] = None
+
+        # --------------------------------------------------
+        # Twitch runtime credentials (resolved once)
+        # --------------------------------------------------
+        self._twitch_oauth_token = os.getenv("TWITCH_OAUTH_TOKEN_DANIEL")
+        self._twitch_channel = os.getenv("TWITCH_CHANNEL_DANIEL")
+        self._twitch_nickname = os.getenv("TWITCH_BOT_NICK_DANIEL")
 
     # ------------------------------------------------------------
 
@@ -54,6 +63,32 @@ class Scheduler:
                 jobs=self._get_job_registry()
             )
             task = asyncio.create_task(livestream_worker.run())
+            self._tasks[ctx.creator_id].append(task)
+
+        # --------------------------------------------------
+        # Twitch chat orchestration (per-creator)
+        #
+        # NOTE:
+        # - Per-creator platform gate ONLY
+        # - Global platform gate intentionally deferred
+        # --------------------------------------------------
+        if ctx.platform_enabled("twitch"):
+            if not self._twitch_oauth_token or not self._twitch_channel:
+                raise RuntimeError(
+                    "Twitch platform enabled but required env vars are missing "
+                    "(TWITCH_OAUTH_TOKEN_DANIEL, TWITCH_CHANNEL_DANIEL)"
+                )
+
+            self._platforms_started.add("twitch")
+
+            twitch_worker = TwitchChatWorker(
+                ctx=ctx,
+                oauth_token=self._twitch_oauth_token,
+                channel=self._twitch_channel,
+                nickname=self._twitch_nickname,
+            )
+
+            task = asyncio.create_task(twitch_worker.run())
             self._tasks[ctx.creator_id].append(task)
 
         # --------------------------------------------------
@@ -146,9 +181,6 @@ class Scheduler:
                 return_exceptions=True
             )
 
-            # --------------------------------------------------
-            # LOG ABNORMAL EXITS
-            # --------------------------------------------------
             for result in results:
                 if isinstance(result, Exception) and not isinstance(
                     result, asyncio.CancelledError
