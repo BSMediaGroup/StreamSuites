@@ -73,9 +73,11 @@ docs/node_modules/
 # ====================================
 shared/state/**
 !shared/state/jobs.json
+!shared/state/quotas.json
 !shared/state/discord/
 shared/state/discord/**
 !shared/state/discord/runtime.json
+
 
 # ====================================
 # Windows Build Artifacts
