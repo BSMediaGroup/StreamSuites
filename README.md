@@ -34,6 +34,20 @@ started by a shared scheduler:
 Both entrypoints are independent runtime processes. The scheduler coordinates
 lifecycles while keeping control-plane behavior separate from streaming logic.
 
+### Trigger System (design-locked)
+
+- Platform-agnostic trigger registry lives under `services/triggers/`.
+- Triggers evaluate **normalized chat events** and emit **action descriptors**
+  (pure data). Execution of any action is intentionally **deferred** to a
+  later phase.
+- Trigger types are design-locked, even when partially scaffolded:
+  - Command triggers (e.g., `!clip`, `!ping`)
+  - Regex-based triggers
+  - Keyword-based triggers
+  - Cooldowns across user / creator / global scopes
+- The registry is creator-scoped and platform-neutral so chat workers can
+  publish uniformly shaped events without embedding business logic.
+
 ## Dashboard state publishing
 
 The Discord control-plane runtime emits live snapshots for the dashboard under
@@ -134,6 +148,16 @@ High-level streaming flow:
 4. Shared browser and job systems are centrally controlled
 5. Clean shutdown propagates through all active tasks
 
+### Chat worker responsibilities (current state)
+
+- Twitch and YouTube chat workers connect to their respective platforms,
+  normalize incoming messages, and pass normalized events into the
+  `TriggerRegistry` for evaluation.
+- Workers log emitted trigger actions for observability. **They do not execute
+  actions**, dispatch jobs, or persist cooldowns.
+- Business logic is intentionally deferred; workers remain limited to transport
+  ownership, normalization, and trigger evaluation.
+
 ---
 
 ## Control-plane and ownership boundaries
@@ -147,30 +171,43 @@ High-level streaming flow:
 - Dashboard integration is planned (GitHub Pages first, Wix Studio later) and
   will share interfaces with the Discord control-plane for parity.
 
+### Scheduler role (clarified)
+
+- Owns lifecycle of platform workers per creator, based on platform flags in
+  `shared/config/creators.json`.
+- Starts chat workers; **does not evaluate triggers** and **does not execute
+  trigger actions**.
+- Coordinates shutdown and resource cleanup across runtimes.
+
 ## Current Platform Status
 
-- Discord: **ACTIVE** (control-plane runtime and services scaffolded)
-- YouTube: **ACTIVE**
-- Twitch: **FOUNDATION** — IRC-over-TLS chat client + worker scaffold in place;
-  triggers, dashboards, and Helix integrations are planned.
-- Twitter/X: **ACTIVE**
-- Rumble: **PAUSED** — upstream API protection/DDoS mitigation limits access;
-  all code is retained for reactivation when official access/whitelisting is
-  restored. No functionality has been removed. Rumble chat bot is temporarily
-  paused due to upstream API changes. All code is retained and unmodified
-  pending official support.
+- Discord: **ACTIVE** — control-plane only, separate runtime, not part of the
+  chat-trigger pipeline.
+- YouTube: **SCAFFOLDED** — polling-based chat worker is trigger-ready; API
+  calls and livestream discovery are deferred pending credentials/quota.
+- Twitch: **FOUNDATION** — IRC-based chat worker implemented, architecture is
+  complete and trigger-ready; temporarily untestable due to external account
+  issues.
+- Twitter/X: **PLANNED** — control-plane tasks exist; runtime worker scaffold is
+  not yet implemented.
+- Rumble: **PAUSED** — browser/DOM-based approach retained and documented; execution is paused
+  due to upstream API protection. Architecture remains intact for reactivation.
 
 ### YouTube chat (scaffold)
 
 - Transport: **polling** via `liveChatMessages.list` (no push/webhook support)
 - Poll cadence: honor `pollingIntervalMillis`; default scaffold assumes ~2–3s
   while API hints are wired
-- Rate limits: `liveChatMessages.list` costs 5 units/request against the
-  10,000 units/day default quota; keep intervals above 2s to avoid churn
+- Rate limits: `liveChatMessages.list` costs 5 units/request; current quota is
+  200,000 units/day with ~50,000 reserved for overhead/other tasks, so keep
+  intervals above 2s to avoid churn
 - Latency: expect a few seconds between message send and API availability;
   downstream triggers must tolerate slight delays and deduplicate by message ID
 - Lifecycle: scheduler-owned workers will resolve `liveChatId` and poll chat;
   implementation is deferred until the scaffold is validated
+- Normalization: chat messages are normalized into platform-agnostic events,
+  evaluated by the `TriggerRegistry`, and any emitted trigger actions are
+  logged only (execution deferred)
 
 Environment:
 - `YOUTUBE_API_KEY_DANIEL` — Data API key used for livestream discovery and
@@ -225,6 +262,10 @@ StreamSuites/
 │   │       ├── twitch_live.py
 │   │       ├── twitter_posting.py
 │   │       └── youtube_live.py
+│   ├── triggers/             # Platform-agnostic trigger registry
+│   │   ├── __init__.py
+│   │   ├── base.py           # Trigger interface (matches + build_action)
+│   │   └── registry.py       # Creator-scoped trigger evaluation (emit actions)
 │   ├── pilled/
 │   │   └── api/
 │   │       ├── chat.py
@@ -291,6 +332,10 @@ StreamSuites/
 │   │   ├── file_lock.py
 │   │   ├── paths.py
 │   │   ├── state_store.py
+│   │   ├── state_publisher.py
+│   │   ├── state/              # Shared runtime state cache
+│   │   │   └── discord/
+│   │   │       └── discord_status.json
 │   │   └── chat_events/        # Placeholder for chat event persistence
 │   │       ├── __init__.py
 │   │       ├── index.py
@@ -401,7 +446,9 @@ deterministic and scheduler-friendly. Foundational pieces live under:
 
 - `services/twitch/api/chat.py` — Twitch IRC client (connect/read/send, PING/PONG)
 - `services/twitch/workers/chat_worker.py` — worker lifecycle wrapper for
-  scheduler ownership (no side effects on import)
+  scheduler ownership (no side effects on import); normalizes chat events and
+  routes them into the platform-agnostic `TriggerRegistry`, logging emitted
+  trigger actions without executing them.
 - `services/twitch/models/message.py` — normalized chat message + trigger-ready
   event shape
 
@@ -465,6 +512,13 @@ runtimes remain unchanged.
 - Persistent livestream chat logging
 - Historical chat replay tooling
 - External consumers (dashboard, browser extensions)
+
+### Explicit non-goals (current phase)
+- Trigger execution
+- Job dispatch from triggers
+- Dashboard trigger editing
+- Chat replay UI
+- Persistent trigger cooldown storage
 
 ---
 
