@@ -6,6 +6,8 @@ from core.context import CreatorContext
 from services.rumble.workers.livestream_worker import RumbleLivestreamWorker
 from services.rumble.browser.browser_client import RumbleBrowserClient
 from services.twitch.workers.chat_worker import TwitchChatWorker
+from services.youtube.workers.chat_worker import YouTubeChatWorker
+from services.youtube.api.livestream import YouTubeLivestreamAPI
 from services.discord.runtime.supervisor import DiscordSupervisor
 from shared.logging.logger import get_logger
 from shared.config.services import get_services_config
@@ -33,6 +35,11 @@ class Scheduler:
         self._twitch_oauth_token = os.getenv("TWITCH_OAUTH_TOKEN_DANIEL")
         self._twitch_channel = os.getenv("TWITCH_CHANNEL_DANIEL")
         self._twitch_nickname = os.getenv("TWITCH_BOT_NICK_DANIEL")
+
+        # --------------------------------------------------
+        # YouTube runtime credentials (resolved once)
+        # --------------------------------------------------
+        self._youtube_api_key = os.getenv("YOUTUBE_API_KEY_DANIEL")
 
     # ------------------------------------------------------------
 
@@ -67,10 +74,6 @@ class Scheduler:
 
         # --------------------------------------------------
         # Twitch chat orchestration (per-creator)
-        #
-        # NOTE:
-        # - Per-creator platform gate ONLY
-        # - Global platform gate intentionally deferred
         # --------------------------------------------------
         if ctx.platform_enabled("twitch"):
             if not self._twitch_oauth_token or not self._twitch_channel:
@@ -90,6 +93,40 @@ class Scheduler:
 
             task = asyncio.create_task(twitch_worker.run())
             self._tasks[ctx.creator_id].append(task)
+
+        # --------------------------------------------------
+        # YouTube chat orchestration (dynamic livestream)
+        # --------------------------------------------------
+        if ctx.platform_enabled("youtube"):
+            if not self._youtube_api_key:
+                raise RuntimeError(
+                    "YouTube platform enabled but YOUTUBE_API_KEY_DANIEL is missing"
+                )
+
+            youtube_api = YouTubeLivestreamAPI(
+                api_key=self._youtube_api_key
+            )
+
+            livestream = await youtube_api.get_active_livestream(
+                channel_id=ctx.creator_id  # channel/@handle resolution handled upstream
+            )
+
+            if not livestream:
+                log.info(
+                    f"[{ctx.creator_id}] No active YouTube livestream detected; "
+                    "chat worker not started"
+                )
+            else:
+                self._platforms_started.add("youtube")
+
+                youtube_worker = YouTubeChatWorker(
+                    ctx=ctx,
+                    api_key=self._youtube_api_key,
+                    live_chat_id=livestream.live_chat_id,
+                )
+
+                task = asyncio.create_task(youtube_worker.run())
+                self._tasks[ctx.creator_id].append(task)
 
         # --------------------------------------------------
         # Discord control-plane runtime (start once, feature-gated)
@@ -116,9 +153,6 @@ class Scheduler:
     # ------------------------------------------------------------
 
     def can_start_job(self, ctx: CreatorContext, job_type: str) -> bool:
-        """
-        Enforce per-creator concurrency limits.
-        """
         limits = ctx.limits or {}
 
         if job_type == "clip":
@@ -161,60 +195,35 @@ class Scheduler:
     async def shutdown(self):
         log.info("Scheduler shutdown initiated")
 
-        # Flatten all tasks
         all_tasks: List[asyncio.Task] = [
-            task
-            for group in self._tasks.values()
-            for task in group
+            task for group in self._tasks.values() for task in group
         ]
 
-        # --------------------------------------------------
-        # CANCEL TASKS FIRST
-        # --------------------------------------------------
         for task in all_tasks:
             if not task.done():
                 task.cancel()
 
         if all_tasks:
-            results = await asyncio.gather(
-                *all_tasks,
-                return_exceptions=True
-            )
-
-            for result in results:
-                if isinstance(result, Exception) and not isinstance(
-                    result, asyncio.CancelledError
-                ):
-                    log.debug(
-                        f"Task exited with exception during shutdown: {result}"
-                    )
+            await asyncio.gather(*all_tasks, return_exceptions=True)
 
         self._tasks.clear()
         self._job_counts.clear()
 
-        # --------------------------------------------------
-        # DISCORD CONTROL-PLANE SHUTDOWN
-        # --------------------------------------------------
         if self._discord_supervisor:
             try:
                 await self._discord_supervisor.shutdown()
-            except Exception as e:
-                log.warning(f"Discord supervisor shutdown error ignored: {e}")
+            except Exception:
+                pass
             self._discord_supervisor = None
 
-        # --------------------------------------------------
-        # PLATFORM-SPECIFIC CLEANUP (OWNED HERE)
-        # --------------------------------------------------
         if "rumble" in self._platforms_started:
             try:
                 browser = RumbleBrowserClient.instance()
                 await browser.shutdown()
-                log.info("Rumble browser shutdown complete")
-            except Exception as e:
-                log.warning(f"Rumble browser shutdown error ignored: {e}")
+            except Exception:
+                pass
 
         self._platforms_started.clear()
-
         log.info("Scheduler shutdown complete")
 
     # ------------------------------------------------------------
