@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, date, timezone
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
-from shared.storage.state_store import publish_quota_snapshot
+from shared.storage.state_store import (
+    publish_quota_snapshot,                # legacy / transitional
+    publish_quota_snapshot_payload,        # authoritative
+)
 
 
 # ======================================================================
@@ -59,17 +62,17 @@ class QuotaPolicy:
 
 
 # ======================================================================
-# Quota Tracker (AUTHORITATIVE)
+# Quota Tracker (ENFORCEMENT ONLY)
 # ======================================================================
 
 class QuotaTracker:
     """
-    Runtime-authoritative quota tracker.
+    Runtime quota tracker.
 
     - Tracks cumulative usage
     - Enforces buffer + hard caps
     - Resets automatically on UTC day rollover
-    - Emits dashboard snapshots
+    - Does NOT write files
     """
 
     def __init__(
@@ -88,26 +91,15 @@ class QuotaTracker:
         )
 
     # --------------------------------------------------
-    # Core operations
-    # --------------------------------------------------
 
     def consume(self, units: int) -> None:
-        """
-        Consume quota units.
-
-        Raises:
-        - QuotaBufferWarning when entering buffer zone
-        - QuotaExceeded when hard limit is exceeded
-        """
         if units <= 0:
             return
 
         self.state.reset_if_new_day()
-
         projected = self.state.used + units
 
         if projected > self.policy.hard_limit:
-            self._publish(status="exhausted")
             raise QuotaExceeded(
                 f"Quota exceeded: {projected} / {self.policy.hard_limit}"
             )
@@ -117,73 +109,38 @@ class QuotaTracker:
             and projected >= self.policy.buffer_threshold
         ):
             self.state.used = projected
-            self._publish(status="buffer")
             raise QuotaBufferWarning(
                 f"Quota buffer entered: {projected} / {self.policy.hard_limit}"
             )
 
         self.state.used = projected
-        self._publish(status=self._status())
 
     # --------------------------------------------------
-    # Introspection
-    # --------------------------------------------------
-
-    def remaining(self) -> int:
-        self.state.reset_if_new_day()
-        return max(0, self.policy.hard_limit - self.state.used)
 
     def snapshot(self) -> Dict[str, int]:
-        """
-        Safe snapshot for dashboards or exporters.
-        """
         self.state.reset_if_new_day()
         return {
             "used": self.state.used,
-            "remaining": self.remaining(),
+            "remaining": max(0, self.policy.hard_limit - self.state.used),
             "max": self.policy.hard_limit,
             "buffer": self.policy.buffer_units,
         }
 
-    # --------------------------------------------------
-    # Internal helpers
-    # --------------------------------------------------
-
-    def _status(self) -> str:
+    def status(self) -> str:
         if self.state.used >= self.policy.hard_limit:
             return "exhausted"
         if self.state.used >= self.policy.buffer_threshold:
             return "buffer"
         return "ok"
 
-    def _publish(self, status: Optional[str] = None) -> None:
-        """
-        Publish a quota snapshot for dashboard consumption.
-        """
-        snap = self.snapshot()
-        publish_quota_snapshot({
-            "creator_id": self.creator_id,
-            "platform": self.platform,
-            "date": self.state.day.isoformat(),
-            "used": snap["used"],
-            "remaining": snap["remaining"],
-            "max": snap["max"],
-            "buffer": snap["buffer"],
-            "status": status or self._status(),
-        })
-
 
 # ======================================================================
-# Registry (Shared, In-Memory)
+# Registry (AUTHORITATIVE IN-MEMORY)
 # ======================================================================
 
 class QuotaRegistry:
     """
-    Global in-memory registry of quota trackers.
-
-    Keyed by:
-    - creator_id
-    - platform
+    Global registry of quota trackers.
     """
 
     def __init__(self):
@@ -200,29 +157,62 @@ class QuotaRegistry:
         max_units: int,
         buffer_units: int,
     ) -> QuotaTracker:
-        policy = QuotaPolicy(
-            max_units=max_units,
-            buffer_units=buffer_units,
-        )
         tracker = QuotaTracker(
             creator_id=creator_id,
             platform=platform,
-            policy=policy,
+            policy=QuotaPolicy(
+                max_units=max_units,
+                buffer_units=buffer_units,
+            ),
         )
         self._trackers[self._key(creator_id, platform)] = tracker
         return tracker
 
-    def get(
-        self,
-        *,
-        creator_id: str,
-        platform: str,
-    ) -> Optional[QuotaTracker]:
-        return self._trackers.get(self._key(creator_id, platform))
+    def all(self) -> List[QuotaTracker]:
+        return list(self._trackers.values())
 
-
-# ======================================================================
-# Singleton (Runtime-Authoritative)
-# ======================================================================
 
 quota_registry = QuotaRegistry()
+
+
+# ======================================================================
+# Snapshot Aggregator (AUTHORITATIVE SINGLE WRITER)
+# ======================================================================
+
+class QuotaSnapshotAggregator:
+    """
+    Collects all quota trackers and emits a single
+    schema-compliant quota snapshot.
+    """
+
+    def publish(self) -> None:
+        records: List[Dict[str, object]] = []
+
+        for tracker in quota_registry.all():
+            snap = tracker.snapshot()
+
+            records.append({
+                "platform": tracker.platform,
+                "scope": "creator",
+                "window": "daily",
+                "used": snap["used"],
+                "max": snap["max"],
+                "remaining": snap["remaining"],
+                "reset_at": (
+                    datetime.now(timezone.utc)
+                    .replace(hour=0, minute=0, second=0, microsecond=0)
+                    .isoformat()
+                ),
+                "status": tracker.status(),
+            })
+
+        payload = {
+            "schema_version": "v1",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "platforms": records,
+        }
+
+        publish_quota_snapshot_payload(payload)
+
+
+quota_snapshot_aggregator = QuotaSnapshotAggregator()

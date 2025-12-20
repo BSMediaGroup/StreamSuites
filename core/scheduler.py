@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 from typing import Dict, List, Optional
 
 from core.context import CreatorContext
@@ -12,10 +13,18 @@ from services.discord.runtime.supervisor import DiscordSupervisor
 from shared.logging.logger import get_logger
 from shared.config.services import get_services_config
 
+from shared.runtime.quotas import quota_snapshot_aggregator
+
 log = get_logger("core.scheduler")
 
 
 class Scheduler:
+    # --------------------------------------------------
+    # QUOTA SNAPSHOT CADENCE (PROCESS-WIDE, SINGLE WRITER)
+    # --------------------------------------------------
+    _last_quota_publish_ts: float = 0.0
+    _quota_publish_interval: float = 60.0  # seconds
+
     def __init__(self):
         # creator_id -> list[asyncio.Task]
         self._tasks: Dict[str, List[asyncio.Task]] = {}
@@ -239,6 +248,19 @@ class Scheduler:
         try:
             while True:
                 log.debug(f"[{ctx.creator_id}] runtime heartbeat")
+
+                # --------------------------------------------------
+                # QUOTA SNAPSHOT CADENCE (GLOBAL THROTTLE)
+                # Only one publish per interval, regardless of creators.
+                # --------------------------------------------------
+                now = time.time()
+                if now - Scheduler._last_quota_publish_ts >= Scheduler._quota_publish_interval:
+                    try:
+                        quota_snapshot_aggregator.publish()
+                        Scheduler._last_quota_publish_ts = now
+                    except Exception as e:
+                        log.warning(f"[quota] Snapshot publish failed: {e}")
+
                 await asyncio.sleep(10)
         except asyncio.CancelledError:
             log.debug(f"[{ctx.creator_id}] heartbeat cancelled")

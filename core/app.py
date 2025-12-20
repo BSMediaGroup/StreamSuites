@@ -10,6 +10,10 @@ from core.jobs import JobRegistry
 from shared.logging.logger import get_logger
 from media.jobs.clip_job import ClipJob
 
+# >>> ADDITIVE: quota snapshot aggregation
+from shared.runtime.quotas import quota_snapshot_aggregator
+# <<< END ADDITIVE
+
 log = get_logger("core.app")
 
 _GLOBAL_JOB_REGISTRY: JobRegistry | None = None
@@ -64,6 +68,24 @@ async def main(stop_event: asyncio.Event):
                 f"[{ctx.creator_id}] Failed to start creator runtime: {e}"
             )
 
+    # ==================================================
+    # ADDITIVE — GLOBAL QUOTA SNAPSHOT LOOP (READ-ONLY)
+    # ==================================================
+
+    async def _quota_snapshot_loop():
+        log.info("Quota snapshot loop started (15s cadence)")
+        try:
+            while not stop_event.is_set():
+                try:
+                    quota_snapshot_aggregator.publish()
+                except Exception as e:
+                    log.warning(f"Quota snapshot publish failed: {e}")
+                await asyncio.sleep(15)
+        finally:
+            log.info("Quota snapshot loop stopped")
+
+    quota_task = asyncio.create_task(_quota_snapshot_loop())
+
     # --------------------------------------------------
     # BLOCK UNTIL SHUTDOWN SIGNAL
     # --------------------------------------------------
@@ -78,6 +100,15 @@ async def main(stop_event: asyncio.Event):
         await scheduler.shutdown()
     except Exception as e:
         log.warning(f"Scheduler shutdown error ignored: {e}")
+
+    # --------------------------------------------------
+    # STOP QUOTA SNAPSHOT LOOP
+    # --------------------------------------------------
+    quota_task.cancel()
+    try:
+        await quota_task
+    except asyncio.CancelledError:
+        pass
 
     log.info("StreamSuites stopped")
 

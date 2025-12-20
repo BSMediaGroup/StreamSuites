@@ -16,6 +16,10 @@ _PUBLISHER = DashboardStatePublisher(base_dir=_STATE_DIR)
 _log = get_logger("shared.state_store")
 
 
+# ======================================================================
+# INTERNAL LOAD / SAVE — JOB STATE
+# ======================================================================
+
 def _load_state() -> Dict[str, Any]:
     if not _STATE_PATH.exists():
         return {"jobs": [], "triggers": {}}
@@ -41,9 +45,9 @@ def _save_state(state: Dict[str, Any]) -> None:
         _log.error(f"Failed to persist job state: {e}")
 
 
-# ------------------------------------------------------------
-# EXISTING FUNCTIONS (UNCHANGED)
-# ------------------------------------------------------------
+# ======================================================================
+# JOB STATE — PUBLIC API (UNCHANGED)
+# ======================================================================
 
 def append_job(job: Dict[str, Any]) -> None:
     job.setdefault("updated_at", int(time.time()))
@@ -69,10 +73,6 @@ def update_job(job_id: str, updates: Dict[str, Any]) -> None:
                 break
         _save_state(state)
 
-
-# ------------------------------------------------------------
-# ADDITIVE — READ-ONLY METRICS (SAFE)
-# ------------------------------------------------------------
 
 def get_all_jobs() -> List[Dict[str, Any]]:
     with _LOCK:
@@ -118,17 +118,14 @@ def get_job_metrics() -> Dict[str, Any]:
     return metrics
 
 
-# ------------------------------------------------------------
-# ADDITIVE — TRIGGER COOLDOWN STATE (AUTHORITATIVE)
-# ------------------------------------------------------------
+# ======================================================================
+# TRIGGER COOLDOWN STATE (AUTHORITATIVE)
+# ======================================================================
 
 def get_last_trigger_time(
     creator_id: str,
     trigger_key: str,
 ) -> float | None:
-    """
-    Returns epoch seconds of last trigger fire, or None.
-    """
     with _LOCK:
         state = _load_state()
         return (
@@ -144,10 +141,6 @@ def record_trigger_fire(
     trigger_key: str,
     now: Optional[float] = None,
 ) -> None:
-    """
-    Records the current time as last trigger fire.
-    If 'now' is provided, it is used (for deterministic callers).
-    """
     ts = now if now is not None else time.time()
 
     with _LOCK:
@@ -158,34 +151,75 @@ def record_trigger_fire(
         _save_state(state)
 
 
-# ------------------------------------------------------------
-# ADDITIVE — QUOTA SNAPSHOT PUBLISHING (READ-ONLY)
-# ------------------------------------------------------------
+# ======================================================================
+# QUOTA SNAPSHOT STATE (READ-ONLY, DASHBOARD-FACING)
+# ======================================================================
 
-def publish_quota_snapshot(snapshot: Dict[str, Any]) -> None:
-    """
-    Publish a read-only quota snapshot for dashboard consumption.
-
-    Expected shape (not enforced here):
-
-    {
-      "creator_id": "...",
-      "platform": "youtube",
-      "date": "YYYY-MM-DD",
-      "used": int,
-      "max": int,
-      "buffer": int,
-      "remaining": int,
-      "status": "ok" | "buffer" | "exhausted",
-      "updated_at": epoch_seconds
-    }
-    """
+def _load_quota_state() -> Dict[str, Any]:
+    if not _QUOTA_PATH.exists():
+        return {
+            "schema_version": "v1",
+            "generated_at": None,
+            "platforms": [],
+        }
     try:
-        snapshot = dict(snapshot)
-        snapshot.setdefault("updated_at", int(time.time()))
-
-        with _LOCK:
-            _PUBLISHER.publish("quotas.json", snapshot)
-
+        return json.loads(_QUOTA_PATH.read_text(encoding="utf-8"))
     except Exception as e:
-        _log.error(f"Failed to publish quota snapshot: {e}")
+        _log.warning(f"Failed to load quota state, resetting: {e}")
+        return {
+            "schema_version": "v1",
+            "generated_at": None,
+            "platforms": [],
+        }
+
+
+def publish_quota_snapshot(record: Dict[str, Any]) -> None:
+    """
+    LEGACY / TRANSITIONAL.
+
+    Merge a single quota record into the snapshot.
+    Prefer publish_quota_snapshot_payload() for new code.
+    """
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    with _LOCK:
+        state = _load_quota_state()
+        platforms = state.setdefault("platforms", [])
+
+        def _same(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+            return (
+                a.get("platform") == b.get("platform")
+                and a.get("scope") == b.get("scope")
+                and a.get("window") == b.get("window")
+            )
+
+        replaced = False
+        for idx, existing in enumerate(platforms):
+            if _same(existing, record):
+                platforms[idx] = record
+                replaced = True
+                break
+
+        if not replaced:
+            platforms.append(record)
+
+        state["schema_version"] = "v1"
+        state["generated_at"] = now_iso
+
+        try:
+            _PUBLISHER.publish("quotas.json", state)
+        except Exception as e:
+            _log.error(f"Failed to publish quota snapshot: {e}")
+
+
+def publish_quota_snapshot_payload(payload: Dict[str, Any]) -> None:
+    """
+    Authoritative full snapshot writer.
+
+    Expects payload matching quotas.schema.json exactly.
+    """
+    with _LOCK:
+        try:
+            _PUBLISHER.publish("quotas.json", payload)
+        except Exception as e:
+            _log.error(f"Failed to publish quota snapshot payload: {e}")
