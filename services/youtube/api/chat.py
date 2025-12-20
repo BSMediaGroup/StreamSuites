@@ -6,8 +6,8 @@ import httpx
 
 from services.youtube.models.message import YouTubeChatMessage
 from shared.logging.logger import get_logger
-from shared.runtime.quotas import (
-    quota_registry,
+from runtime.quotas import (
+    QuotaTracker,
     QuotaExceeded,
     QuotaBufferWarning,
 )
@@ -24,8 +24,13 @@ class YouTubeChatClient:
     - Respect server-provided polling intervals
     - Deduplicate messages
     - Normalize payloads into YouTubeChatMessage
-    - Enforce YouTube API quota limits (runtime-authoritative)
+    - Consume YouTube API quota (tracker injected by worker)
     - Remain cancellation-safe and deterministic
+
+    IMPORTANT:
+    - This class does NOT register quotas
+    - This class does NOT read limits
+    - This class only CONSUMES quota units
     """
 
     BASE_URL = "https://www.googleapis.com/youtube/v3/liveChat/messages"
@@ -39,7 +44,7 @@ class YouTubeChatClient:
         api_key: str,
         live_chat_id: str,
         creator_id: str,
-        limits: Dict[str, int],
+        quota_tracker: Optional[QuotaTracker],
         poll_interval: float = 2.5,
     ):
         if not api_key:
@@ -47,36 +52,13 @@ class YouTubeChatClient:
         if not live_chat_id:
             raise RuntimeError("YouTube live_chat_id is required")
         if not creator_id:
-            raise RuntimeError("creator_id is required for quota enforcement")
+            raise RuntimeError("creator_id is required")
 
         self.api_key = api_key
         self.live_chat_id = live_chat_id
         self.creator_id = creator_id
         self.poll_interval = poll_interval
-
-        # --------------------------------------------------
-        # Quota registration (AUTHORITATIVE)
-        # --------------------------------------------------
-
-        max_units = limits.get("youtube_daily_units_max", 0)
-        buffer_units = limits.get("youtube_daily_units_buffer", 0)
-
-        self.quota_tracker = None
-
-        if max_units:
-            self.quota_tracker = quota_registry.register(
-                creator_id=creator_id,
-                platform="youtube",
-                max_units=max_units,
-                buffer_units=buffer_units,
-            )
-        else:
-            log.warning(
-                f"[YouTube][{self.creator_id}] "
-                "youtube_daily_units_max not set — quota enforcement disabled"
-            )
-
-        # --------------------------------------------------
+        self.quota_tracker = quota_tracker
 
         self._page_token: Optional[str] = None
         self._stop_event = asyncio.Event()
@@ -109,9 +91,9 @@ class YouTubeChatClient:
         async with httpx.AsyncClient(timeout=15.0) as client:
             while not self._stop_event.is_set():
 
-                # -------------------------------
+                # --------------------------------------------------
                 # QUOTA ENFORCEMENT (PRE-CALL)
-                # -------------------------------
+                # --------------------------------------------------
                 if self.quota_tracker:
                     try:
                         self.quota_tracker.consume(self.QUOTA_COST_PER_CALL)
@@ -153,7 +135,6 @@ class YouTubeChatClient:
                     self._seen_ids.add(msg_id)
                     yield self._normalize_message(item)
 
-                # Respect server-recommended polling interval
                 interval_ms = data.get("pollingIntervalMillis")
                 sleep_seconds = (
                     interval_ms / 1000.0
@@ -187,9 +168,6 @@ class YouTubeChatClient:
         )
 
     async def close(self) -> None:
-        """
-        Signal polling loop to stop.
-        """
         self._stop_event.set()
 
     # ------------------------------------------------------------------ #
@@ -197,9 +175,6 @@ class YouTubeChatClient:
     # ------------------------------------------------------------------ #
 
     def _normalize_message(self, payload: Dict) -> YouTubeChatMessage:
-        """
-        Convert a YouTube liveChatMessage resource into a normalized shape.
-        """
         snippet = payload.get("snippet", {})
         author_details = payload.get("authorDetails", {})
 
