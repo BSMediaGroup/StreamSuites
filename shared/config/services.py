@@ -7,8 +7,8 @@ This module provides access to deployment-level service toggles
 Design rules:
 - Import-safe (no side effects)
 - JSON-only configuration
-- Defensive defaults
-- Runtime is authoritative; missing keys disable features
+- Runtime is authoritative
+- Missing services default to disabled
 """
 
 from __future__ import annotations
@@ -37,42 +37,51 @@ def get_services_config() -> Dict[str, Any]:
     """
     Load and return the services configuration.
 
-    Expected shape (minimal):
+    Expected shape:
     {
-        "discord": {
-            "enabled": true
-        }
+        "youtube": { "enabled": true },
+        "twitch":  { "enabled": false },
+        "rumble":  { "enabled": false },
+        "twitter": { "enabled": true },
+        "discord": { "enabled": false }
     }
 
-    Missing files or keys are treated as disabled services.
+    Rules:
+    - Missing services default to enabled=False
+    - Unknown services are preserved
+    - Invalid shapes are ignored per-key, not globally
     """
 
-    data: Dict[str, Any] = {}
+    raw: Dict[str, Any] = {}
 
     try:
         if _CONFIG_PATH.exists():
             with _CONFIG_PATH.open("r", encoding="utf-8") as f:
-                raw = json.load(f)
-                if isinstance(raw, dict):
-                    data = raw
+                loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    raw = loaded
                 else:
                     log.warning(
-                        "services.json root is not an object; ignoring"
+                        "services.json root is not an object; ignoring file"
                     )
         else:
-            log.debug("services.json not found; using defaults")
+            log.debug("services.json not found; all services disabled")
     except Exception as e:
-        log.warning(f"Failed to load services.json; using defaults: {e}")
-
-    # --------------------------------------------------------
-    # Defensive defaults (authoritative)
-    # --------------------------------------------------------
+        log.warning(f"Failed to load services.json; all services disabled: {e}")
 
     services: Dict[str, Any] = {}
 
-    discord_cfg = data.get("discord", {})
-    services["discord"] = {
-        "enabled": bool(discord_cfg.get("enabled", False))
-    }
+    for service_name, cfg in raw.items():
+        if isinstance(cfg, dict):
+            services[service_name] = {
+                "enabled": bool(cfg.get("enabled", False))
+            }
+        else:
+            log.warning(
+                f"Service '{service_name}' config is not an object; disabling"
+            )
+            services[service_name] = {
+                "enabled": False
+            }
 
     return services

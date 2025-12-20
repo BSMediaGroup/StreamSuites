@@ -6,7 +6,7 @@ import httpx
 
 from services.youtube.models.message import YouTubeChatMessage
 from shared.logging.logger import get_logger
-from runtime.quotas import (
+from shared.runtime.quotas import (
     QuotaTracker,
     QuotaExceeded,
     QuotaBufferWarning,

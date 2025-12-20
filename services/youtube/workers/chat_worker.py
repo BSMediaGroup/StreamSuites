@@ -5,11 +5,12 @@ from services.youtube.models.message import YouTubeChatMessage
 from services.triggers.registry import TriggerRegistry
 from shared.logging.logger import get_logger
 
-from runtime.quotas import (
+from shared.runtime.quotas import (
     quota_registry,
     QuotaExceeded,
     QuotaBufferWarning,
 )
+
 
 log = get_logger("youtube.chat_worker", runtime="streamsuites")
 

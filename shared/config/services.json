@@ -1,1 +1,17 @@
-{}
+{
+  "youtube": {
+    "enabled": true
+  },
+  "twitch": {
+    "enabled": false
+  },
+  "rumble": {
+    "enabled": false
+  },
+  "twitter": {
+    "enabled": true
+  },
+  "discord": {
+    "enabled": false
+  }
+}

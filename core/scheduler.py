@@ -30,24 +30,48 @@ class Scheduler:
         self._discord_supervisor: Optional[DiscordSupervisor] = None
 
         # --------------------------------------------------
+        # Load global service configuration ONCE
+        # --------------------------------------------------
+        self._services_cfg = get_services_config()
+        log.info(f"[BOOT] Loaded services configuration: {self._services_cfg}")
+
+        for svc in ["youtube", "twitch", "rumble", "twitter", "discord"]:
+            enabled = self._services_cfg.get(svc, {}).get("enabled", True)
+            log.info(
+                f"[BOOT] Service '{svc}': "
+                f"{'ENABLED' if enabled else 'DISABLED'}"
+            )
+
+        # --------------------------------------------------
         # Twitch runtime credentials (resolved once)
         # --------------------------------------------------
         self._twitch_oauth_token = os.getenv("TWITCH_OAUTH_TOKEN_DANIEL")
         self._twitch_channel = os.getenv("TWITCH_CHANNEL_DANIEL")
         self._twitch_nickname = os.getenv("TWITCH_BOT_NICK_DANIEL")
 
+        log.debug(
+            "[BOOT] Twitch credentials resolved: "
+            f"token={'SET' if self._twitch_oauth_token else 'MISSING'}, "
+            f"channel={'SET' if self._twitch_channel else 'MISSING'}, "
+            f"nickname={'SET' if self._twitch_nickname else 'MISSING'}"
+        )
+
         # --------------------------------------------------
         # YouTube runtime credentials (resolved once)
         # --------------------------------------------------
         self._youtube_api_key = os.getenv("YOUTUBE_API_KEY_DANIEL")
+        log.debug(
+            "[BOOT] YouTube API key resolved: "
+            f"{'SET' if self._youtube_api_key else 'MISSING'}"
+        )
 
     # ------------------------------------------------------------
 
     async def start_creator(self, ctx: CreatorContext):
-        log.info(f"Starting creator runtime: {ctx.creator_id}")
+        log.info(f"[{ctx.creator_id}] Starting creator runtime")
 
         if ctx.creator_id in self._tasks:
-            log.warning(f"[{ctx.creator_id}] runtime already started")
+            log.warning(f"[{ctx.creator_id}] Runtime already started — skipping")
             return
 
         self._tasks[ctx.creator_id] = []
@@ -56,13 +80,19 @@ class Scheduler:
         # --------------------------------------------------
         # Heartbeat (always on)
         # --------------------------------------------------
+        log.debug(f"[{ctx.creator_id}] Scheduling heartbeat task")
         heartbeat = asyncio.create_task(self._heartbeat(ctx))
         self._tasks[ctx.creator_id].append(heartbeat)
 
         # --------------------------------------------------
         # Rumble livestream + chat orchestration
         # --------------------------------------------------
-        if ctx.platform_enabled("rumble"):
+        if not self._services_cfg.get("rumble", {}).get("enabled", True):
+            log.info(f"[{ctx.creator_id}] Rumble skipped (disabled by services.json)")
+        elif not ctx.platform_enabled("rumble"):
+            log.info(f"[{ctx.creator_id}] Rumble skipped (disabled for creator)")
+        else:
+            log.info(f"[{ctx.creator_id}] Rumble ENABLED — starting worker")
             self._platforms_started.add("rumble")
 
             livestream_worker = RumbleLivestreamWorker(
@@ -73,12 +103,18 @@ class Scheduler:
             self._tasks[ctx.creator_id].append(task)
 
         # --------------------------------------------------
-        # Twitch chat orchestration (per-creator)
+        # Twitch chat orchestration
         # --------------------------------------------------
-        if ctx.platform_enabled("twitch"):
+        if not self._services_cfg.get("twitch", {}).get("enabled", True):
+            log.info(f"[{ctx.creator_id}] Twitch skipped (disabled by services.json)")
+        elif not ctx.platform_enabled("twitch"):
+            log.info(f"[{ctx.creator_id}] Twitch skipped (disabled for creator)")
+        else:
+            log.info(f"[{ctx.creator_id}] Twitch ENABLED — starting worker")
+
             if not self._twitch_oauth_token or not self._twitch_channel:
                 raise RuntimeError(
-                    "Twitch platform enabled but required env vars are missing "
+                    "Twitch enabled but required env vars are missing "
                     "(TWITCH_OAUTH_TOKEN_DANIEL, TWITCH_CHANNEL_DANIEL)"
                 )
 
@@ -95,12 +131,18 @@ class Scheduler:
             self._tasks[ctx.creator_id].append(task)
 
         # --------------------------------------------------
-        # YouTube chat orchestration (dynamic livestream)
+        # YouTube chat orchestration
         # --------------------------------------------------
-        if ctx.platform_enabled("youtube"):
+        if not self._services_cfg.get("youtube", {}).get("enabled", True):
+            log.info(f"[{ctx.creator_id}] YouTube skipped (disabled by services.json)")
+        elif not ctx.platform_enabled("youtube"):
+            log.info(f"[{ctx.creator_id}] YouTube skipped (disabled for creator)")
+        else:
+            log.info(f"[{ctx.creator_id}] YouTube ENABLED — checking livestream")
+
             if not self._youtube_api_key:
                 raise RuntimeError(
-                    "YouTube platform enabled but YOUTUBE_API_KEY_DANIEL is missing"
+                    "YouTube enabled but YOUTUBE_API_KEY_DANIEL is missing"
                 )
 
             youtube_api = YouTubeLivestreamAPI(
@@ -108,15 +150,19 @@ class Scheduler:
             )
 
             livestream = await youtube_api.get_active_livestream(
-                channel_id=ctx.creator_id  # channel/@handle resolution handled upstream
+                channel_id=ctx.creator_id
             )
 
             if not livestream:
                 log.info(
-                    f"[{ctx.creator_id}] No active YouTube livestream detected; "
-                    "chat worker not started"
+                    f"[{ctx.creator_id}] No active YouTube livestream — worker not started"
                 )
             else:
+                log.info(
+                    f"[{ctx.creator_id}] Active YouTube livestream detected — "
+                    f"liveChatId={livestream.live_chat_id}"
+                )
+
                 self._platforms_started.add("youtube")
 
                 youtube_worker = YouTubeChatWorker(
@@ -129,26 +175,22 @@ class Scheduler:
                 self._tasks[ctx.creator_id].append(task)
 
         # --------------------------------------------------
-        # Discord control-plane runtime (start once, feature-gated)
+        # Discord control-plane runtime
         # --------------------------------------------------
-        await self._ensure_discord_runtime_started()
+        log.info(
+            f"[{ctx.creator_id}] Discord control-plane is "
+            "INTENTIONALLY DISABLED in main runtime"
+        )
 
     # ------------------------------------------------------------
 
     async def _ensure_discord_runtime_started(self):
-        if self._discord_supervisor:
-            return
-
-        services_cfg = get_services_config()
-        discord_cfg = services_cfg.get("discord", {})
-
-        if not discord_cfg.get("enabled", False):
-            return
-
-        log.info("Starting Discord control-plane runtime")
-
-        self._discord_supervisor = DiscordSupervisor()
-        await self._discord_supervisor.start()
+        """
+        Discord is a separate runtime and must not start from core.app.
+        This method is intentionally unreachable.
+        """
+        log.debug("Discord supervisor start blocked by design")
+        return
 
     # ------------------------------------------------------------
 
@@ -161,6 +203,10 @@ class Scheduler:
                 return True
 
             active = self._job_counts.get(ctx.creator_id, {}).get(job_type, 0)
+            log.debug(
+                f"[{ctx.creator_id}] Clip job check: "
+                f"{active}/{max_jobs} active"
+            )
             return active < max_jobs
 
         return True
@@ -170,10 +216,18 @@ class Scheduler:
         self._job_counts[ctx.creator_id][job_type] = (
             self._job_counts[ctx.creator_id].get(job_type, 0) + 1
         )
+        log.debug(
+            f"[{ctx.creator_id}] Job started: {job_type} "
+            f"(count={self._job_counts[ctx.creator_id][job_type]})"
+        )
 
     def register_job_end(self, ctx: CreatorContext, job_type: str):
         try:
             self._job_counts[ctx.creator_id][job_type] -= 1
+            log.debug(
+                f"[{ctx.creator_id}] Job ended: {job_type} "
+                f"(count={self._job_counts[ctx.creator_id].get(job_type, 0)})"
+            )
             if self._job_counts[ctx.creator_id][job_type] <= 0:
                 del self._job_counts[ctx.creator_id][job_type]
         except Exception:
@@ -194,6 +248,8 @@ class Scheduler:
 
     async def shutdown(self):
         log.info("Scheduler shutdown initiated")
+
+        log.info(f"Platforms started during session: {sorted(self._platforms_started)}")
 
         all_tasks: List[asyncio.Task] = [
             task for group in self._tasks.values() for task in group
@@ -218,6 +274,7 @@ class Scheduler:
 
         if "rumble" in self._platforms_started:
             try:
+                log.info("Shutting down Rumble browser client")
                 browser = RumbleBrowserClient.instance()
                 await browser.shutdown()
             except Exception:
