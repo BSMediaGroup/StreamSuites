@@ -15,6 +15,12 @@ The first implemented and validated platform was **Rumble**; Rumble support is
 currently paused (see status below) but all code remains intact for
 re-enablement.
 
+## Project Status
+
+- **Stabilization milestone**: quota enforcement and quota snapshot export are
+  complete. Runtimes are focused on hardening, observability, and boundary
+  cleanup before expanding feature surface area.
+
 ---
 
 ## Architecture Overview
@@ -47,6 +53,29 @@ lifecycles while keeping control-plane behavior separate from streaming logic.
   - Cooldowns across user / creator / global scopes
 - The registry is creator-scoped and platform-neutral so chat workers can
   publish uniformly shaped events without embedding business logic.
+
+### Quota architecture (runtime only)
+
+- **QuotaTracker** (enforcement only): in-process daily quota enforcement with
+  buffer + hard-cap handling; tracks usage per creator/platform without writing
+  files or persisting state.
+- **QuotaRegistry** (authoritative, in-memory): global registry that owns all
+  QuotaTrackers for the running process; exposes snapshots for aggregation.
+- **Snapshot merge**: runtime cadence aggregates all registered trackers via
+  `shared/runtime/quotas_snapshot.py` and writes a single
+  `shared/state/quotas.json` document through `DashboardStatePublisher`
+  (optionally mirrored to the dashboard publish root).
+
+### Runtime vs dashboard boundary
+
+- **Runtime ownership**: control-plane + streaming runtimes own authoritative
+  state generation (jobs, triggers, quotas) under `shared/state/` and publish
+  via `DashboardStatePublisher`. Quota enforcement and cadence loops live only
+  in the runtime.
+- **Dashboard consumption**: the dashboard is read-only; it reads published
+  state snapshots (jobs, runtime status, quotas) and never mutates runtime
+  state. Overrides are handled through query parameters and static hosting
+  roots without changing runtime behavior.
 
 ## Dashboard state publishing
 
@@ -228,9 +257,10 @@ StreamSuites/
 │   ├── README.md             # Core runtime boundaries and status
 │   ├── app.py                # Streaming runtime entrypoint & lifecycle
 │   ├── context.py            # Per-creator runtime context
-│   ├── jobs.py               # Job registry and dispatch
-│   ├── registry.py           # Creator loading and validation
 │   ├── discord_app.py        # Discord control-plane runtime entrypoint
+│   ├── jobs.py               # Job registry and dispatch
+│   ├── ratelimits.py         # Shared ratelimit helpers
+│   ├── registry.py           # Creator loading and validation
 │   ├── scheduler.py          # Task orchestration and shutdown control
 │   ├── shutdown.py           # Coordinated shutdown helpers
 │   └── signals.py            # Signal handling
@@ -238,7 +268,18 @@ StreamSuites/
 ├── services/
 │   ├── discord/
 │   │   ├── README.md         # Discord control-plane runtime architecture
+│   │   ├── announcements.py  # Control-plane notifications
 │   │   ├── client.py         # DiscordClient connection + command surface
+│   │   ├── commands/
+│   │   │   ├── README.md     # Command layering rules
+│   │   │   ├── __init__.py
+│   │   │   ├── admin.py      # Admin handlers (pure logic)
+│   │   │   ├── admin_commands.py
+│   │   │   ├── creators.py   # Creator-scoped handler scaffold
+│   │   │   ├── public.py     # Public handler scaffold
+│   │   │   └── services.py   # Service-level handler scaffold
+│   │   ├── heartbeat.py      # Heartbeat loop for liveness
+│   │   ├── logging.py        # Logging adapters
 │   │   ├── permissions.py    # Admin gating via Discord-native flags
 │   │   ├── runtime/
 │   │   │   ├── README.md     # Discord lifecycle ownership & supervision
@@ -246,15 +287,6 @@ StreamSuites/
 │   │   │   ├── lifecycle.py  # Lifecycle hooks for Discord control-plane
 │   │   │   └── supervisor.py # Supervisor for control-plane runtime
 │   │   ├── status.py         # Shared-state status persistence
-│   │   ├── heartbeat.py      # Heartbeat loop for liveness
-│   │   ├── logging.py        # Logging adapters
-│   │   ├── announcements.py  # Control-plane notifications
-│   │   ├── commands/
-│   │   │   ├── README.md     # Command layering rules
-│   │   │   ├── admin.py      # Admin handlers (pure logic)
-│   │   │   ├── creators.py   # Creator-scoped handler scaffold
-│   │   │   ├── public.py     # Public handler scaffold
-│   │   │   └── services.py   # Service-level handler scaffold
 │   │   └── tasks/
 │   │       ├── README.md     # Control-plane task constraints
 │   │       ├── pilled_live.py
@@ -262,10 +294,6 @@ StreamSuites/
 │   │       ├── twitch_live.py
 │   │       ├── twitter_posting.py
 │   │       └── youtube_live.py
-│   ├── triggers/             # Platform-agnostic trigger registry
-│   │   ├── __init__.py
-│   │   ├── base.py           # Trigger interface (matches + build_action)
-│   │   └── registry.py       # Creator-scoped trigger evaluation (emit actions)
 │   ├── pilled/
 │   │   └── api/
 │   │       ├── chat.py
@@ -280,6 +308,7 @@ StreamSuites/
 │   │   ├── chat/
 │   │   │   ├── rest_client.py
 │   │   │   └── ws_listener.py
+│   │   ├── chat_client.py
 │   │   ├── models/
 │   │   │   ├── chat_event.py
 │   │   │   ├── message.py
@@ -287,7 +316,12 @@ StreamSuites/
 │   │   └── workers/
 │   │       ├── chat_worker.py      # Chat read/write logic
 │   │       └── livestream_worker.py
+│   ├── triggers/                   # Platform-agnostic trigger registry
+│   │   ├── __init__.py
+│   │   ├── base.py                 # Trigger interface (matches + build_action)
+│   │   └── registry.py             # Creator-scoped trigger evaluation (emit actions)
 │   ├── twitch/
+│   │   ├── README.md
 │   │   ├── api/
 │   │   │   ├── chat.py
 │   │   │   └── livestream.py
@@ -302,6 +336,7 @@ StreamSuites/
 │   │   └── workers/
 │   │       └── posting_worker.py
 │   └── youtube/
+│       ├── README.md
 │       ├── api/
 │       │   ├── chat.py
 │       │   └── livestream.py
@@ -321,6 +356,7 @@ StreamSuites/
 │   │   ├── posting_rules.json
 │   │   ├── ratelimits.json
 │   │   ├── services.json
+│   │   ├── services.py
 │   │   ├── system.json
 │   │   └── tiers.json
 │   ├── logging/
@@ -328,36 +364,42 @@ StreamSuites/
 │   │   └── logger.py
 │   ├── ratelimiter/
 │   │   └── governor.py
+│   ├── runtime/
+│   │   ├── __init__.py
+│   │   ├── quotas.py
+│   │   └── quotas_snapshot.py
+│   ├── state/
+│   │   ├── chat_logs/
+│   │   │   ├── .gitkeep
+│   │   │   └── rumble/
+│   │   │       └── .gitkeep
+│   │   ├── creators/
+│   │   │   └── daniel.json
+│   │   ├── discord/
+│   │   │   ├── README.md
+│   │   │   └── guilds/
+│   │   │       └── .gitkeep
+│   │   ├── jobs.json
+│   │   └── system.json
 │   ├── storage/
+│   │   ├── chat_events/        # Placeholder for chat event persistence
+│   │   │   ├── __init__.py
+│   │   │   ├── index.py
+│   │   │   ├── reader.py
+│   │   │   ├── schema.json
+│   │   │   └── writer.py
 │   │   ├── file_lock.py
 │   │   ├── paths.py
-│   │   ├── state_store.py
-│   │   ├── state_publisher.py
-│   │   ├── state/              # Shared runtime state cache
+│   │   ├── state/
 │   │   │   └── discord/
 │   │   │       └── discord_status.json
-│   │   └── chat_events/        # Placeholder for chat event persistence
-│   │       ├── __init__.py
-│   │       ├── index.py
-│   │       ├── reader.py
-│   │       ├── schema.json
-│   │       └── writer.py
-│   ├── utils/
-│   │   ├── files.py
-│   │   ├── hashing.py
-│   │   ├── retry.py
-│   │   └── time.py
-│   └── state/
-│       ├── creators/
-│       │   └── daniel.json
-│       ├── discord/
-│       │   ├── README.md
-│       │   └── guilds/
-│       │       └── .gitkeep
-│       ├── jobs.json
-│       ├── system.json
-│       └── chat_logs/          # Runtime-generated chat logs (gitignored)
-│           └── rumble/
+│   │   ├── state_publisher.py
+│   │   └── state_store.py
+│   └── utils/
+│       ├── files.py
+│       ├── hashing.py
+│       ├── retry.py
+│       └── time.py
 │
 ├── media/
 │   ├── capture/
@@ -379,11 +421,10 @@ StreamSuites/
 │
 ├── scripts/
 │   ├── bootstrap.py
+│   ├── publish_state.py
 │   └── validate_config.py
 │
-├── logs/                    # Runtime logs (gitignored)
-├── .browser/                # Playwright persistent profile (gitignored)
-├── tests/                    # Test harness placeholder
+├── tests/
 │   └── __init__.py
 │
 ├── rumble_chat_poc.py        # Rumble chat validation script
@@ -478,47 +519,32 @@ runtimes remain unchanged.
 
 ---
 
-## Roadmap (High-Level)
-### Phase 1 — Core Stabilization (current)
-- Rumble chat read/write
-- Clean lifecycle
-- Rate limiting
-- Startup sync control
+## Roadmap
 
-### Phase 2 — Configuration Externalization
-- Chat behavior configuration (JSON)
-- Rate limit configuration
-- Trigger definitions
+### Implemented
+- Quota enforcement (per-creator/platform, daily, buffer + hard cap)
+- Quota snapshot export (runtime cadence → `shared/state/quotas.json`)
+- Discord control-plane runtime scaffolding + dashboard state publish
+- Twitch and YouTube chat trigger scaffolds (evaluation-only)
+- Rumble chat workers (paused, preserved)
 
-### Phase 3 — Dashboard Tooling
-- HTML-based dashboard (GitHub Pages compatible)
-- Creator configuration UI
-- Job visibility and status
-- Schema-driven validation
+### Short-term
+- Harden quota registry wiring across platform workers
+- Expand dashboard quota surface for observability only
+- Tighten shutdown ordering across runtimes
+- Validate YouTube/Twitch trigger scaffolds with live credentials
 
-### Phase 4 — Multi-Platform Expansion
-- Discord integration
-- YouTube integration
-- Twitch integration
-- Shared user identity where feasible
+### Medium-term
+- Config-driven trigger definitions and cooldown persistence
+- Dashboard tooling for creator config introspection (read-only first)
+- Additional platform workers (Twitter/X control-plane parity)
+- Scheduler telemetry + alert surfaces
 
-### Phase 5 — Operator Tooling
-- Windows desktop control application
-- Runtime start/stop
-- Configuration management
-- Log inspection
-
-### Optional Add-On Features
-- Persistent livestream chat logging
-- Historical chat replay tooling
-- External consumers (dashboard, browser extensions)
-
-### Explicit non-goals (current phase)
-- Trigger execution
-- Job dispatch from triggers
-- Dashboard trigger editing
-- Chat replay UI
-- Persistent trigger cooldown storage
+### Long-term
+- Trigger action execution + job dispatch
+- Operator tooling (desktop control, runtime start/stop)
+- Historical chat logging + replay (opt-in)
+- Dashboard trigger editing and live controls
 
 ---
 
