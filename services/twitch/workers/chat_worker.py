@@ -3,6 +3,7 @@ from typing import Optional
 
 from services.twitch.api.chat import TwitchChatClient
 from services.twitch.models.message import TwitchChatMessage
+from services.triggers.registry import TriggerRegistry
 from shared.logging.logger import get_logger
 
 log = get_logger("twitch.chat_worker", runtime="streamsuites")
@@ -34,6 +35,7 @@ class TwitchChatWorker:
         self.ctx = ctx
         self.channel = channel
         self.nickname = nickname or channel
+
         self._client = TwitchChatClient(
             token=oauth_token,
             nickname=self.nickname,
@@ -41,6 +43,11 @@ class TwitchChatWorker:
         )
 
         self._stop_event = asyncio.Event()
+
+        # --------------------------------------------------
+        # Trigger registry (per-creator, per-platform)
+        # --------------------------------------------------
+        self._triggers = TriggerRegistry(creator_id=ctx.creator_id)
 
     # ------------------------------------------------------------------ #
 
@@ -83,8 +90,7 @@ class TwitchChatWorker:
 
     async def _handle_message(self, message: TwitchChatMessage) -> None:
         """
-        Internal routing hook for chat messages. Keeps the logic minimal to
-        avoid overlapping with future trigger registries.
+        Internal routing hook for chat messages.
         """
         event = message.to_event()
 
@@ -93,8 +99,18 @@ class TwitchChatWorker:
             f"{message.username}: {message.text}"
         )
 
-        # Placeholder for central trigger routing
-        # TODO: integrate with trigger registry when available
+        # --------------------------------------------------
+        # Trigger evaluation (no execution yet)
+        # --------------------------------------------------
+        actions = self._triggers.process(event)
+        for action in actions:
+            log.debug(
+                f"[{self.ctx.creator_id}] Trigger action emitted: {action}"
+            )
+
+        # --------------------------------------------------
+        # Built-in safety triggers (temporary)
+        # --------------------------------------------------
         await self._handle_builtin_triggers(event, message)
 
     async def _handle_builtin_triggers(

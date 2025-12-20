@@ -1,8 +1,8 @@
-
 from typing import Optional
 
 from services.youtube.api.chat import YouTubeChatClient
 from services.youtube.models.message import YouTubeChatMessage
+from services.triggers.registry import TriggerRegistry
 from shared.logging.logger import get_logger
 
 log = get_logger("youtube.chat_worker", runtime="streamsuites")
@@ -33,11 +33,17 @@ class YouTubeChatWorker:
 
         self.ctx = ctx
         self.live_chat_id = live_chat_id
+
         self._client = YouTubeChatClient(
             api_key=api_key,
             live_chat_id=live_chat_id,
             poll_interval=poll_interval or 2.5,
         )
+
+        # --------------------------------------------------
+        # Trigger registry (per-creator, per-platform)
+        # --------------------------------------------------
+        self._triggers = TriggerRegistry(creator_id=ctx.creator_id)
 
     # ------------------------------------------------------------------ #
 
@@ -61,10 +67,20 @@ class YouTubeChatWorker:
 
     async def _handle_message(self, message: YouTubeChatMessage):
         """
-        Placeholder routing hook for chat messages.
+        Routing hook for chat messages.
         """
+        event = message.to_event()
+
         log.debug(
             f"[{self.ctx.creator_id}] [YouTube liveChat={message.live_chat_id}] "
             f"{message.author_name}: {message.text}"
         )
-        # TODO: integrate with trigger registry when available
+
+        # --------------------------------------------------
+        # Trigger evaluation (no execution yet)
+        # --------------------------------------------------
+        actions = self._triggers.process(event)
+        for action in actions:
+            log.debug(
+                f"[{self.ctx.creator_id}] Trigger action emitted: {action}"
+            )
