@@ -1,0 +1,49 @@
+{
+  "schema_version": "v1",
+  "platforms": [
+    {
+      "platform": "twitch",
+      "placeholder_patterns": {
+        "paid": ["(?i)PLACEHOLDER_TWITCH_PAID"],
+        "gift": ["(?i)PLACEHOLDER_TWITCH_GIFT"],
+        "subscription": ["(?i)PLACEHOLDER_TWITCH_SUB"]
+      },
+      "flags": {
+        "supports_rants": false,
+        "supports_superchats": false
+      },
+      "notes": "Detection is placeholder only; no regex guarantees."
+    },
+    {
+      "platform": "youtube",
+      "placeholder_patterns": {
+        "paid": ["(?i)PLACEHOLDER_YOUTUBE_SUPERCHAT"],
+        "gift": ["(?i)PLACEHOLDER_YOUTUBE_GIFT"],
+        "subscription": ["(?i)PLACEHOLDER_YOUTUBE_MEMBER"]
+      },
+      "flags": {
+        "supports_rants": false,
+        "supports_superchats": true
+      },
+      "notes": "Intended to align with dashboard wording; actual detection TBD."
+    },
+    {
+      "platform": "rumble",
+      "placeholder_patterns": {
+        "paid": ["(?i)PLACEHOLDER_RUMBLE_RANT"],
+        "gift": ["(?i)PLACEHOLDER_RUMBLE_GIFT"],
+        "subscription": ["(?i)PLACEHOLDER_RUMBLE_SUB"]
+      },
+      "flags": {
+        "supports_rants": true,
+        "supports_superchats": false
+      },
+      "notes": "Patterns are illustrative only; runtime logic not implemented."
+    }
+  ],
+  "disclaimers": [
+    "Monetization detection is not yet implemented; these patterns are placeholders.",
+    "Runtime remains authoritative for any future paid interaction handling.",
+    "Dashboard consumers should treat all values as provisional."
+  ]
+}
