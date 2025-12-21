@@ -319,6 +319,7 @@ StreamSuites/
 │   ├── triggers/                   # Platform-agnostic trigger registry
 │   │   ├── __init__.py
 │   │   ├── base.py                 # Trigger interface (matches + build_action)
+│   │   ├── README.md               # Trigger pipeline concepts and score event notes
 │   │   └── registry.py             # Creator-scoped trigger evaluation (emit actions)
 │   ├── twitch/
 │   │   ├── README.md
@@ -353,6 +354,7 @@ StreamSuites/
 │   │   ├── clip_rules.json
 │   │   ├── creators.json
 │   │   ├── logging.json
+│   │   ├── monetization.json
 │   │   ├── posting_rules.json
 │   │   ├── ratelimits.json
 │   │   ├── services.json
@@ -367,7 +369,14 @@ StreamSuites/
 │   ├── runtime/
 │   │   ├── __init__.py
 │   │   ├── quotas.py
-│   │   └── quotas_snapshot.py
+│   │   ├── quotas_snapshot.py
+│   │   └── scoreboards_snapshot.py
+│   ├── scoreboards/
+│   │   ├── README.md
+│   │   ├── placeholders.py
+│   │   ├── registry.py
+│   │   ├── schema.json
+│   │   └── snapshot.py
 │   ├── state/
 │   │   ├── chat_logs/
 │   │   │   ├── .gitkeep
@@ -380,6 +389,12 @@ StreamSuites/
 │   │   │   └── guilds/
 │   │   │       └── .gitkeep
 │   │   ├── jobs.json
+│   │   ├── scoreboards/
+│   │   │   ├── .gitkeep
+│   │   │   ├── creators/
+│   │   │   │   └── .gitkeep
+│   │   │   └── snapshots/
+│   │   │       └── .gitkeep
 │   │   └── system.json
 │   ├── storage/
 │   │   ├── chat_events/        # Placeholder for chat event persistence
@@ -393,6 +408,10 @@ StreamSuites/
 │   │   ├── state/
 │   │   │   └── discord/
 │   │   │       └── discord_status.json
+│   │   ├── scoreboards/
+│   │   │   ├── README.md
+│   │   │   ├── exporter.py
+│   │   │   └── importer.py
 │   │   ├── state_publisher.py
 │   │   └── state_store.py
 │   └── utils/
