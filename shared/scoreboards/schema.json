@@ -1,0 +1,138 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "StreamSuites Scoreboard Snapshot",
+  "description": "Dashboard-safe, forward-compatible scoreboard snapshot contract (per creator).",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Schema version identifier (e.g., v1)."
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp when the snapshot was produced."
+    },
+    "creator_id": {
+      "type": "string",
+      "description": "Creator context for this scoreboard snapshot."
+    },
+    "period": {
+      "type": "object",
+      "description": "Optional period context for the snapshot (e.g., monthly).",
+      "properties": {
+        "period_kind": {
+          "type": "string",
+          "description": "Period class such as monthly, weekly, or seasonal."
+        },
+        "period_id": {
+          "type": "string",
+          "description": "Identifier for the period (e.g., 2024-08)."
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Period start timestamp (UTC)."
+        },
+        "ends_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Period end timestamp (UTC)."
+        }
+      },
+      "additionalProperties": true
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Snapshot-level metadata for forward-compatible extensions.",
+      "additionalProperties": true
+    },
+    "entries": {
+      "type": "array",
+      "description": "Flattened scoreboard rows scoped to the creator.",
+      "items": {
+        "$ref": "#/definitions/scoreboard_entry"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "generated_at",
+    "creator_id",
+    "entries"
+  ],
+  "additionalProperties": true,
+  "definitions": {
+    "period_ref": {
+      "type": "object",
+      "properties": {
+        "period_kind": {
+          "type": "string",
+          "description": "Aggregation window identifier (e.g., monthly)."
+        },
+        "period_id": {
+          "type": "string",
+          "description": "Opaque period key (e.g., 2024-08)."
+        }
+      },
+      "required": [
+        "period_kind"
+      ],
+      "additionalProperties": true
+    },
+    "scoreboard_entry": {
+      "type": "object",
+      "properties": {
+        "module_id": {
+          "type": "string",
+          "description": "Module that emitted the score event."
+        },
+        "user_id": {
+          "type": "string",
+          "description": "Stable user identifier within the creator context."
+        },
+        "display_name": {
+          "type": "string",
+          "description": "User-presentable name to show on dashboards."
+        },
+        "score_value": {
+          "type": [
+            "integer",
+            "number"
+          ],
+          "description": "Opaque numeric score determined by runtime policy."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Open metadata bag for platform or module specific fields.",
+          "additionalProperties": true
+        },
+        "period": {
+          "$ref": "#/definitions/period_ref"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the score entry was first recorded (UTC)."
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the score entry was last updated (UTC)."
+        },
+        "last_event_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Most recent contributing event timestamp (UTC)."
+        }
+      },
+      "required": [
+        "module_id",
+        "user_id",
+        "display_name",
+        "score_value"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
