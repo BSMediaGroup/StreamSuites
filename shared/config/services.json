@@ -6,7 +6,7 @@
     "enabled": false
   },
   "rumble": {
-    "enabled": false
+    "enabled": true
   },
   "twitter": {
     "enabled": true
