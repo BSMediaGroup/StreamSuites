@@ -1,9 +1,10 @@
 import asyncio
 import os
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from core.context import CreatorContext
+from core.state_exporter import runtime_state
 from services.rumble.workers.livestream_worker import RumbleLivestreamWorker
 from services.rumble.browser.browser_client import RumbleBrowserClient
 from services.twitch.workers.chat_worker import TwitchChatWorker
@@ -25,15 +26,18 @@ class Scheduler:
     _last_quota_publish_ts: float = 0.0
     _quota_publish_interval: float = 60.0  # seconds
 
-    def __init__(self):
+    def __init__(self, platforms_config: Optional[Dict[str, Dict[str, bool]]] = None):
         # creator_id -> list[asyncio.Task]
         self._tasks: Dict[str, List[asyncio.Task]] = {}
 
         # creator_id -> active job counts by type
         self._job_counts: Dict[str, Dict[str, int]] = {}
 
+        # creator_id -> set[platform] actually started
+        self._creator_platforms_started: Dict[str, Set[str]] = {}
+
         # Track which platforms were started (global, not per-creator)
-        self._platforms_started: set[str] = set()
+        self._platforms_started: Set[str] = set()
 
         # Discord control-plane supervisor (process-scoped)
         self._discord_supervisor: Optional[DiscordSupervisor] = None
@@ -41,14 +45,17 @@ class Scheduler:
         # --------------------------------------------------
         # Load global service configuration ONCE
         # --------------------------------------------------
-        self._services_cfg = get_services_config()
+        self._services_cfg = self._normalize_platform_config(platforms_config or get_services_config())
         log.info(f"[BOOT] Loaded services configuration: {self._services_cfg}")
 
         for svc in ["youtube", "twitch", "rumble", "twitter", "discord"]:
-            enabled = self._services_cfg.get(svc, {}).get("enabled", True)
+            cfg = self._services_cfg.get(svc, {})
+            enabled = cfg.get("enabled", True)
+            telemetry_enabled = cfg.get("telemetry_enabled", enabled)
             log.info(
                 f"[BOOT] Service '{svc}': "
-                f"{'ENABLED' if enabled else 'DISABLED'}"
+                f"{'ENABLED' if enabled else 'DISABLED'} | "
+                f"telemetry={'ON' if telemetry_enabled else 'OFF'}"
             )
 
         # --------------------------------------------------
@@ -74,6 +81,20 @@ class Scheduler:
             f"{'SET' if self._youtube_api_key else 'MISSING'}"
         )
 
+    @staticmethod
+    def _normalize_platform_config(cfg: Dict[str, Dict[str, bool]]) -> Dict[str, Dict[str, bool]]:
+        normalized: Dict[str, Dict[str, bool]] = {}
+        for name, entry in cfg.items():
+            if isinstance(entry, dict):
+                enabled = bool(entry.get("enabled", False))
+                normalized[name] = {
+                    "enabled": enabled,
+                    "telemetry_enabled": bool(entry.get("telemetry_enabled", enabled)),
+                }
+            else:
+                normalized[name] = {"enabled": False, "telemetry_enabled": False}
+        return normalized
+
     # ------------------------------------------------------------
 
     async def start_creator(self, ctx: CreatorContext):
@@ -85,6 +106,7 @@ class Scheduler:
 
         self._tasks[ctx.creator_id] = []
         self._job_counts[ctx.creator_id] = {}
+        self._creator_platforms_started[ctx.creator_id] = set()
 
         # --------------------------------------------------
         # Heartbeat (always on)
@@ -96,92 +118,113 @@ class Scheduler:
         # --------------------------------------------------
         # Rumble livestream + chat orchestration
         # --------------------------------------------------
-        if not self._services_cfg.get("rumble", {}).get("enabled", True):
-            log.info(f"[{ctx.creator_id}] Rumble skipped (disabled by services.json)")
-        elif not ctx.platform_enabled("rumble"):
-            log.info(f"[{ctx.creator_id}] Rumble skipped (disabled for creator)")
-        else:
-            log.info(f"[{ctx.creator_id}] Rumble ENABLED — starting worker")
-            self._platforms_started.add("rumble")
+        rumble_cfg = self._services_cfg.get("rumble", {})
+        try:
+            if not rumble_cfg.get("enabled", True):
+                log.info(f"[{ctx.creator_id}] Rumble skipped (disabled by services.json)")
+            elif not ctx.platform_enabled("rumble"):
+                log.info(f"[{ctx.creator_id}] Rumble skipped (disabled for creator)")
+            else:
+                log.info(f"[{ctx.creator_id}] Rumble ENABLED — starting worker")
+                self._platforms_started.add("rumble")
+                self._creator_platforms_started[ctx.creator_id].add("rumble")
+                runtime_state.record_platform_started("rumble", ctx.creator_id)
 
-            livestream_worker = RumbleLivestreamWorker(
-                ctx=ctx,
-                jobs=self._get_job_registry()
-            )
-            task = asyncio.create_task(livestream_worker.run())
-            self._tasks[ctx.creator_id].append(task)
+                livestream_worker = RumbleLivestreamWorker(
+                    ctx=ctx,
+                    jobs=self._get_job_registry()
+                )
+                task = asyncio.create_task(livestream_worker.run())
+                self._tasks[ctx.creator_id].append(task)
+        except Exception as e:
+            runtime_state.record_platform_error("rumble", str(e), ctx.creator_id)
+            raise
 
         # --------------------------------------------------
         # Twitch chat orchestration
         # --------------------------------------------------
-        if not self._services_cfg.get("twitch", {}).get("enabled", True):
-            log.info(f"[{ctx.creator_id}] Twitch skipped (disabled by services.json)")
-        elif not ctx.platform_enabled("twitch"):
-            log.info(f"[{ctx.creator_id}] Twitch skipped (disabled for creator)")
-        else:
-            log.info(f"[{ctx.creator_id}] Twitch ENABLED — starting worker")
+        twitch_cfg = self._services_cfg.get("twitch", {})
+        try:
+            if not twitch_cfg.get("enabled", True):
+                log.info(f"[{ctx.creator_id}] Twitch skipped (disabled by services.json)")
+            elif not ctx.platform_enabled("twitch"):
+                log.info(f"[{ctx.creator_id}] Twitch skipped (disabled for creator)")
+            else:
+                log.info(f"[{ctx.creator_id}] Twitch ENABLED — starting worker")
 
-            if not self._twitch_oauth_token or not self._twitch_channel:
-                raise RuntimeError(
-                    "Twitch enabled but required env vars are missing "
-                    "(TWITCH_OAUTH_TOKEN_DANIEL, TWITCH_CHANNEL_DANIEL)"
+                if not self._twitch_oauth_token or not self._twitch_channel:
+                    raise RuntimeError(
+                        "Twitch enabled but required env vars are missing "
+                        "(TWITCH_OAUTH_TOKEN_DANIEL, TWITCH_CHANNEL_DANIEL)"
+                    )
+
+                self._platforms_started.add("twitch")
+                self._creator_platforms_started[ctx.creator_id].add("twitch")
+                runtime_state.record_platform_started("twitch", ctx.creator_id)
+
+                twitch_worker = TwitchChatWorker(
+                    ctx=ctx,
+                    oauth_token=self._twitch_oauth_token,
+                    channel=self._twitch_channel,
+                    nickname=self._twitch_nickname,
                 )
 
-            self._platforms_started.add("twitch")
-
-            twitch_worker = TwitchChatWorker(
-                ctx=ctx,
-                oauth_token=self._twitch_oauth_token,
-                channel=self._twitch_channel,
-                nickname=self._twitch_nickname,
-            )
-
-            task = asyncio.create_task(twitch_worker.run())
-            self._tasks[ctx.creator_id].append(task)
+                task = asyncio.create_task(twitch_worker.run())
+                self._tasks[ctx.creator_id].append(task)
+        except Exception as e:
+            runtime_state.record_platform_error("twitch", str(e), ctx.creator_id)
+            raise
 
         # --------------------------------------------------
         # YouTube chat orchestration
         # --------------------------------------------------
-        if not self._services_cfg.get("youtube", {}).get("enabled", True):
-            log.info(f"[{ctx.creator_id}] YouTube skipped (disabled by services.json)")
-        elif not ctx.platform_enabled("youtube"):
-            log.info(f"[{ctx.creator_id}] YouTube skipped (disabled for creator)")
-        else:
-            log.info(f"[{ctx.creator_id}] YouTube ENABLED — checking livestream")
-
-            if not self._youtube_api_key:
-                raise RuntimeError(
-                    "YouTube enabled but YOUTUBE_API_KEY_DANIEL is missing"
-                )
-
-            youtube_api = YouTubeLivestreamAPI(
-                api_key=self._youtube_api_key
-            )
-
-            livestream = await youtube_api.get_active_livestream(
-                channel_id=ctx.creator_id
-            )
-
-            if not livestream:
-                log.info(
-                    f"[{ctx.creator_id}] No active YouTube livestream — worker not started"
-                )
+        youtube_cfg = self._services_cfg.get("youtube", {})
+        try:
+            if not youtube_cfg.get("enabled", True):
+                log.info(f"[{ctx.creator_id}] YouTube skipped (disabled by services.json)")
+            elif not ctx.platform_enabled("youtube"):
+                log.info(f"[{ctx.creator_id}] YouTube skipped (disabled for creator)")
             else:
-                log.info(
-                    f"[{ctx.creator_id}] Active YouTube livestream detected — "
-                    f"liveChatId={livestream.live_chat_id}"
+                log.info(f"[{ctx.creator_id}] YouTube ENABLED — checking livestream")
+
+                if not self._youtube_api_key:
+                    raise RuntimeError(
+                        "YouTube enabled but YOUTUBE_API_KEY_DANIEL is missing"
+                    )
+
+                youtube_api = YouTubeLivestreamAPI(
+                    api_key=self._youtube_api_key
                 )
 
-                self._platforms_started.add("youtube")
-
-                youtube_worker = YouTubeChatWorker(
-                    ctx=ctx,
-                    api_key=self._youtube_api_key,
-                    live_chat_id=livestream.live_chat_id,
+                livestream = await youtube_api.get_active_livestream(
+                    channel_id=ctx.creator_id
                 )
 
-                task = asyncio.create_task(youtube_worker.run())
-                self._tasks[ctx.creator_id].append(task)
+                if not livestream:
+                    log.info(
+                        f"[{ctx.creator_id}] No active YouTube livestream — worker not started"
+                    )
+                else:
+                    log.info(
+                        f"[{ctx.creator_id}] Active YouTube livestream detected — "
+                        f"liveChatId={livestream.live_chat_id}"
+                    )
+
+                    self._platforms_started.add("youtube")
+                    self._creator_platforms_started[ctx.creator_id].add("youtube")
+                    runtime_state.record_platform_started("youtube", ctx.creator_id)
+
+                    youtube_worker = YouTubeChatWorker(
+                        ctx=ctx,
+                        api_key=self._youtube_api_key,
+                        live_chat_id=livestream.live_chat_id,
+                    )
+
+                    task = asyncio.create_task(youtube_worker.run())
+                    self._tasks[ctx.creator_id].append(task)
+        except Exception as e:
+            runtime_state.record_platform_error("youtube", str(e), ctx.creator_id)
+            raise
 
         # --------------------------------------------------
         # Discord control-plane runtime
@@ -249,6 +292,10 @@ class Scheduler:
             while True:
                 log.debug(f"[{ctx.creator_id}] runtime heartbeat")
 
+                runtime_state.record_creator_heartbeat(ctx.creator_id)
+                for platform in self._creator_platforms_started.get(ctx.creator_id, set()):
+                    runtime_state.record_platform_heartbeat(platform)
+
                 # --------------------------------------------------
                 # QUOTA SNAPSHOT CADENCE (GLOBAL THROTTLE)
                 # Only one publish per interval, regardless of creators.
@@ -286,6 +333,7 @@ class Scheduler:
 
         self._tasks.clear()
         self._job_counts.clear()
+        self._creator_platforms_started.clear()
 
         if self._discord_supervisor:
             try:
