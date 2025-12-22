@@ -1,7 +1,8 @@
 import json
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
+from core.config_loader import ConfigLoader
 from core.context import CreatorContext
 from core.ratelimits import merge_ratelimits
 from shared.logging.logger import get_logger
@@ -18,9 +19,11 @@ class CreatorRegistry:
         self,
         creators_path: Path = CREATORS_PATH,
         tiers_path: Path = TIERS_PATH,
+        config_loader: Optional[ConfigLoader] = None,
     ):
         self.creators_path = creators_path
         self.tiers_path = tiers_path
+        self._config_loader = config_loader or ConfigLoader()
 
         self._tiers = self._load_tiers()
         self._ratelimits_schema = self._load_ratelimits_schema()
@@ -119,22 +122,66 @@ class CreatorRegistry:
     # CREATORS
     # ------------------------------------------------------------------
 
-    def load(self) -> Dict[str, CreatorContext]:
-        raw = json.loads(self.creators_path.read_text(encoding="utf-8"))
-        creators = raw.get("creators", [])
+    @staticmethod
+    def _normalize_platforms(raw: Any, known_platforms: Optional[Dict[str, Any]] = None) -> Dict[str, bool]:
+        platforms: Dict[str, bool] = {}
+
+        if isinstance(raw, dict):
+            for name, cfg in raw.items():
+                if isinstance(cfg, dict):
+                    platforms[name] = bool(cfg.get("enabled", cfg.get("active", False) or cfg.get("value", False)))
+                else:
+                    platforms[name] = bool(cfg)
+        elif isinstance(raw, list):
+            for cfg in raw:
+                if isinstance(cfg, str):
+                    platforms[cfg] = True
+                elif isinstance(cfg, dict):
+                    name = cfg.get("name") or cfg.get("platform")
+                    if name:
+                        platforms[name] = bool(cfg.get("enabled", True))
+
+        if known_platforms:
+            for name in known_platforms.keys():
+                platforms.setdefault(name, False)
+
+        return platforms
+
+    def load(
+        self,
+        creators_data: Optional[List[Dict[str, Any]]] = None,
+        platform_defaults: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, CreatorContext]:
+        if creators_data is not None:
+            raw_creators = creators_data
+        elif self.creators_path != CREATORS_PATH:
+            try:
+                raw = json.loads(self.creators_path.read_text(encoding="utf-8"))
+                raw_creators = raw.get("creators", [])
+            except Exception as e:
+                log.warning(f"Failed to load creators from {self.creators_path}: {e}")
+                raw_creators = []
+        else:
+            raw_creators = self._config_loader.load_creators_config()
 
         out: Dict[str, CreatorContext] = {}
 
-        for c in creators:
-            if not c.get("enabled", True):
-                continue
-
+        for c in raw_creators:
             creator_id = c.get("creator_id")
             if not creator_id:
+                log.warning("Skipping creator without creator_id in creators.json")
+                continue
+
+            if not c.get("enabled", True):
+                log.info(f"[{creator_id}] Creator disabled — excluded from runtime")
                 continue
 
             tier_name = c.get("tier", "open")
-            features = self._resolve_tier(tier_name)
+            try:
+                features = self._resolve_tier(tier_name)
+            except Exception as e:
+                log.warning(f"[{creator_id}] Invalid tier '{tier_name}': {e}")
+                continue
 
             # --------------------------------------------------
             # Tier-derived runtime limits
@@ -147,7 +194,7 @@ class CreatorRegistry:
             # --------------------------------------------------
 
             platform_name = None
-            platforms = c.get("platforms", {})
+            platforms = self._normalize_platforms(c.get("platforms", {}), platform_defaults)
 
             if platforms.get("youtube"):
                 platform_name = "youtube"
@@ -169,20 +216,24 @@ class CreatorRegistry:
             # --------------------------------------------------
             # Creator context (RUNTIME OBJECT)
             # --------------------------------------------------
+            try:
+                ctx = CreatorContext(
+                    creator_id=creator_id,
+                    display_name=c.get("display_name", creator_id),
+                    platforms=platforms,
+                    limits=runtime_limits,
 
-            ctx = CreatorContext(
-                creator_id=creator_id,
-                display_name=c.get("display_name", creator_id),
-                platforms=platforms,
-                limits=runtime_limits,
+                    rumble_channel_url=c.get("rumble_channel_url"),
+                    rumble_manual_watch_url=c.get("rumble_manual_watch_url"),
 
-                rumble_channel_url=c.get("rumble_channel_url"),
-                rumble_manual_watch_url=c.get("rumble_manual_watch_url"),
-                rumble_livestream_api_env_key=c.get("rumble_livestream_api_env_key"),
+                    rumble_livestream_api_env_key=c.get("rumble_livestream_api_env_key"),
 
-                rumble_chat_channel_id=c.get("rumble_chat_channel_id"),
-                rumble_dom_chat_enabled=c.get("rumble_dom_chat_enabled", True),
-            )
+                    rumble_chat_channel_id=c.get("rumble_chat_channel_id"),
+                    rumble_dom_chat_enabled=c.get("rumble_dom_chat_enabled", True),
+                )
+            except Exception as e:
+                log.warning(f"[{creator_id}] Creator skipped due to invalid config: {e}")
+                continue
 
             # Attach features explicitly (read-only intent)
             ctx.features = features  # type: ignore[attr-defined]

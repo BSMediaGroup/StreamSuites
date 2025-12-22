@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "StreamSuites Creators Configuration",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "creators": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["creator_id"],
+        "additionalProperties": true,
+        "properties": {
+          "creator_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "tier": {
+            "type": "string"
+          },
+          "platforms": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "telemetry_enabled": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "required": ["name"],
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "telemetry_enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "limits": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

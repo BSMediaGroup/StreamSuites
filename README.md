@@ -20,6 +20,10 @@ re-enablement.
 - **Stabilization milestone**: quota enforcement and quota snapshot export are
   complete. Runtimes are focused on hardening, observability, and boundary
   cleanup before expanding feature surface area.
+- **Dashboard compatibility**: dashboard-generated `creators.json` and
+  `platforms.json` are ingested via `core/config_loader.py` with schema
+  validation, and the streaming runtime publishes `shared/state/runtime_snapshot.json`
+  for dashboard telemetry.
 
 ---
 
@@ -81,7 +85,10 @@ lifecycles while keeping control-plane behavior separate from streaming logic.
 
 The Discord control-plane runtime emits live snapshots for the dashboard under
 `shared/state/discord/runtime.json` (runtime + heartbeat state) and
-`shared/state/jobs.json` (job queue/timestamps). Snapshots are written
+`shared/state/jobs.json` (job queue/timestamps). The streaming runtime exports
+`shared/state/runtime_snapshot.json` via `core/state_exporter.py`, reflecting
+platform enablement, telemetry toggles, creator registry status, and recent
+heartbeats. Snapshots are written
 atomically and can optionally be mirrored into the dashboard hosting root by
 setting `DASHBOARD_STATE_PUBLISH_ROOT` (or `STREAMSUITES_STATE_PUBLISH_ROOT`)
 to the Pages/bucket checkout path. If unset, the runtime will auto-detect a
@@ -256,12 +263,14 @@ StreamSuites/
 ├── core/
 │   ├── README.md             # Core runtime boundaries and status
 │   ├── app.py                # Streaming runtime entrypoint & lifecycle
+│   ├── config_loader.py      # Dashboard-compatible config ingestion + validation
 │   ├── context.py            # Per-creator runtime context
 │   ├── discord_app.py        # Discord control-plane runtime entrypoint
 │   ├── jobs.py               # Job registry and dispatch
 │   ├── ratelimits.py         # Shared ratelimit helpers
 │   ├── registry.py           # Creator loading and validation
 │   ├── scheduler.py          # Task orchestration and shutdown control
+│   ├── state_exporter.py     # Runtime snapshot export (platform + creators)
 │   ├── shutdown.py           # Coordinated shutdown helpers
 │   └── signals.py            # Signal handling
 │
@@ -419,6 +428,10 @@ StreamSuites/
 │       ├── hashing.py
 │       ├── retry.py
 │       └── time.py
+├── schemas/
+│   ├── creators.schema.json
+│   ├── platforms.schema.json
+│   └── ...                   # Additional dashboard schemas (chat, jobs, quotas, etc.)
 │
 ├── media/
 │   ├── capture/
