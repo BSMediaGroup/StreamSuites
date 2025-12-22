@@ -39,8 +39,8 @@ def get_services_config() -> Dict[str, Any]:
 
     Expected shape:
     {
-        "youtube": { "enabled": true },
-        "twitch":  { "enabled": false },
+        "youtube": { "enabled": true, "telemetry_enabled": true },
+        "twitch":  { "enabled": false, "telemetry_enabled": false },
         "rumble":  { "enabled": false },
         "twitter": { "enabled": true },
         "discord": { "enabled": false }
@@ -48,6 +48,7 @@ def get_services_config() -> Dict[str, Any]:
 
     Rules:
     - Missing services default to enabled=False
+    - telemetry_enabled defaults to the enabled value
     - Unknown services are preserved
     - Invalid shapes are ignored per-key, not globally
     """
@@ -73,15 +74,18 @@ def get_services_config() -> Dict[str, Any]:
 
     for service_name, cfg in raw.items():
         if isinstance(cfg, dict):
+            enabled = bool(cfg.get("enabled", False))
             services[service_name] = {
-                "enabled": bool(cfg.get("enabled", False))
+                "enabled": enabled,
+                "telemetry_enabled": bool(cfg.get("telemetry_enabled", enabled)),
             }
         else:
             log.warning(
                 f"Service '{service_name}' config is not an object; disabling"
             )
             services[service_name] = {
-                "enabled": False
+                "enabled": False,
+                "telemetry_enabled": False,
             }
 
     return services

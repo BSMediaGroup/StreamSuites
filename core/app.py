@@ -4,9 +4,11 @@ import sys
 
 from dotenv import load_dotenv
 
+from core.config_loader import ConfigLoader
 from core.registry import CreatorRegistry
 from core.scheduler import Scheduler
 from core.jobs import JobRegistry
+from core.state_exporter import runtime_snapshot_exporter, runtime_state
 from shared.logging.logger import get_logger
 from media.jobs.clip_job import ClipJob
 
@@ -17,6 +19,7 @@ from shared.runtime.quotas import quota_snapshot_aggregator
 log = get_logger("core.app")
 
 _GLOBAL_JOB_REGISTRY: JobRegistry | None = None
+RUNTIME_SNAPSHOT_INTERVAL = 10
 
 
 async def main(stop_event: asyncio.Event):
@@ -30,15 +33,29 @@ async def main(stop_event: asyncio.Event):
     log.info("StreamSuites booting")
 
     # --------------------------------------------------
-    # LOAD CREATORS
+    # CONFIG INGESTION (DASHBOARD-COMPATIBLE)
     # --------------------------------------------------
-    creators = CreatorRegistry().load()
+    config_loader = ConfigLoader()
+    platform_config = config_loader.load_platforms_config()
+    creators_config = config_loader.load_creators_config()
+
+    # Seed runtime state for snapshot export (includes disabled creators)
+    runtime_state.apply_platform_config(platform_config)
+    runtime_state.apply_creators_config(creators_config)
+
+    # --------------------------------------------------
+    # LOAD CREATORS (runtime-enabled only)
+    # --------------------------------------------------
+    creators = CreatorRegistry(config_loader=config_loader).load(
+        creators_data=creators_config,
+        platform_defaults=platform_config,
+    )
     log.info(f"Loaded {len(creators)} creator(s)")
 
     # --------------------------------------------------
     # CORE SYSTEMS
     # --------------------------------------------------
-    scheduler = Scheduler()
+    scheduler = Scheduler(platforms_config=platform_config)
     jobs = JobRegistry()
     _GLOBAL_JOB_REGISTRY = jobs
 
@@ -57,6 +74,11 @@ async def main(stop_event: asyncio.Event):
         log.info("Clip job NOT registered (no tier permits clips)")
 
     # --------------------------------------------------
+    # INITIAL SNAPSHOT EXPORT
+    # --------------------------------------------------
+    runtime_snapshot_exporter.publish()
+
+    # --------------------------------------------------
     # START CREATOR RUNTIMES
     # --------------------------------------------------
     for ctx in creators.values():
@@ -64,6 +86,7 @@ async def main(stop_event: asyncio.Event):
             await scheduler.start_creator(ctx)
             log.info(f"[{ctx.creator_id}] Creator runtime started")
         except Exception as e:
+            runtime_state.record_creator_error(ctx.creator_id, str(e))
             log.error(
                 f"[{ctx.creator_id}] Failed to start creator runtime: {e}"
             )
@@ -86,6 +109,24 @@ async def main(stop_event: asyncio.Event):
 
     quota_task = asyncio.create_task(_quota_snapshot_loop())
 
+    # ==================================================
+    # RUNTIME SNAPSHOT LOOP (DASHBOARD READ-ONLY)
+    # ==================================================
+
+    async def _runtime_snapshot_loop():
+        log.info(f"Runtime snapshot loop started ({RUNTIME_SNAPSHOT_INTERVAL}s cadence)")
+        try:
+            while not stop_event.is_set():
+                try:
+                    runtime_snapshot_exporter.publish()
+                except Exception as e:
+                    log.warning(f"Runtime snapshot publish failed: {e}")
+                await asyncio.sleep(RUNTIME_SNAPSHOT_INTERVAL)
+        finally:
+            log.info("Runtime snapshot loop stopped")
+
+    runtime_snapshot_task = asyncio.create_task(_runtime_snapshot_loop())
+
     # --------------------------------------------------
     # BLOCK UNTIL SHUTDOWN SIGNAL
     # --------------------------------------------------
@@ -102,11 +143,16 @@ async def main(stop_event: asyncio.Event):
         log.warning(f"Scheduler shutdown error ignored: {e}")
 
     # --------------------------------------------------
-    # STOP QUOTA SNAPSHOT LOOP
+    # STOP BACKGROUND LOOPS
     # --------------------------------------------------
     quota_task.cancel()
+    runtime_snapshot_task.cancel()
     try:
         await quota_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await runtime_snapshot_task
     except asyncio.CancelledError:
         pass
 
