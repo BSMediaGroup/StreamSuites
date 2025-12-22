@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from core.jobs import JobRegistry
 from services.rumble.browser.browser_client import RumbleBrowserClient
+from services.rumble.chat.sse_client import RumbleChatSSEClient
 from shared.logging.logger import get_logger
 
 # ------------------------------------------------------------
@@ -76,7 +77,7 @@ class RumbleChatWorker:
     """
     MODEL A — CHAT WORKER (POC-FAITHFUL, HARDENED)
 
-    READ: Livestream API (authoritative)
+    READ: SSE endpoint (authoritative, replaces livestream API polling)
     SEND: DOM injection (Playwright keyboard)
 
     HARD RULES:
@@ -96,6 +97,10 @@ class RumbleChatWorker:
         self.watch_url = watch_url
 
         self.browser: Optional[RumbleBrowserClient] = None
+
+        # SSE client (authoritative chat ingest). We keep it None until
+        # run() to ensure we only connect once the browser/session is ready.
+        self._sse_client: Optional[RumbleChatSSEClient] = None
 
         # De-dup key: (username, text, created_on_raw_str)
         self._seen: Set[Tuple[str, str, str]] = set()
@@ -130,6 +135,11 @@ class RumbleChatWorker:
         self._trigger_last_fired: Dict[str, float] = {}
 
         self._poll_count = 0
+
+        # Keep track of the last SSE message id we processed to avoid dupes
+        # across reconnects. The SSE client also manages Last-Event-ID, but
+        # we guard downstream handling to remain idempotent.
+        self._last_sse_id: Optional[str] = None
 
     # ------------------------------------------------------------
 
@@ -182,8 +192,16 @@ class RumbleChatWorker:
         # Load external behavior config
         self._load_config()
 
-        # Ensure browser + chat iframe locked
+        # Ensure browser + chat iframe locked (retained for DOM send path)
         await self._ensure_browser()
+
+        # Initialize SSE ingest client. We defer creation until here to avoid
+        # building HTTP clients before the runtime is fully started.
+        chat_id = self.ctx.rumble_chat_channel_id
+        if not chat_id:
+            raise RuntimeError(f"[{self.ctx.creator_id}] rumble_chat_channel_id is required for SSE ingest")
+
+        self._sse_client = RumbleChatSSEClient(chat_id)
 
         # 1) Establish baseline cutoff FIRST (prevents historic spam on boot)
         await self._establish_startup_baseline()
@@ -192,19 +210,12 @@ class RumbleChatWorker:
         if self._enable_startup_announcement and self._startup_announcement.strip():
             await self._send_text(self._startup_announcement.strip(), reason="startup_announcement")
 
-        log.info(f"[{self.ctx.creator_id}] Chat ready — entering API poll loop")
+        log.info(f"[{self.ctx.creator_id}] Chat ready — entering SSE ingest loop")
 
-        while True:
-            try:
-                await self._poll_api_chat()
-                await asyncio.sleep(self._poll_seconds)
-
-            except asyncio.CancelledError:
-                raise
-
-            except Exception as e:
-                log.error(f"[{self.ctx.creator_id}] Chat poll error: {e}")
-                await asyncio.sleep(5)
+        try:
+            await self._run_sse_loop()
+        finally:
+            await self._shutdown_sse()
 
     # ------------------------------------------------------------
 
@@ -281,68 +292,102 @@ class RumbleChatWorker:
 
     # ------------------------------------------------------------
 
-    async def _poll_api_chat(self) -> None:
-        if not self.browser or not self.browser._context:
-            log.warning(f"[{self.ctx.creator_id}] Browser context not ready yet")
-            return
+    async def _run_sse_loop(self) -> None:
+        if not self._sse_client:
+            raise RuntimeError("SSE client not initialized")
 
         if not self._baseline_ready or not self._baseline_cutoff:
-            log.warning(f"[{self.ctx.creator_id}] Baseline not ready; skipping poll cycle")
+            log.warning(f"[{self.ctx.creator_id}] Baseline not ready; SSE loop waiting")
+            await asyncio.sleep(1)
+
+        async for event in self._sse_client.iter_events():
+            try:
+                await self._handle_sse_event(event)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                log.error(f"[{self.ctx.creator_id}] SSE event handling error: {e}")
+
+    # ------------------------------------------------------------
+
+    async def _handle_sse_event(self, event) -> None:
+        # Basic idempotency guard: if the SSE server replays an event id we
+        # already processed (e.g., after reconnect), skip it. We store the
+        # last seen id and expect monotonic progression from the backend.
+        if event.event_id and event.event_id == self._last_sse_id:
             return
 
-        self._poll_count += 1
+        self._last_sse_id = event.event_id or self._last_sse_id
 
-        data = await self._api_get_data()
+        # The SSE payload is JSON per the confirmed Rumble endpoint contract.
+        try:
+            payload = json.loads(event.data)
+        except Exception:
+            log.warning(f"[{self.ctx.creator_id}] SSE payload not JSON; ignored")
+            return
 
-        streams = data.get("livestreams", []) or []
-        if not isinstance(streams, list):
-            raise RuntimeError("Livestream API JSON missing/invalid 'livestreams'")
+        if not isinstance(payload, dict):
+            return
 
-        live_streams = [s for s in streams if s.get("is_live")]
+        event_type = payload.get("type") or event.event
 
-        log.info(f"[{self.ctx.creator_id}] API poll #{self._poll_count} → livestreams={len(streams)} live={len(live_streams)}")
+        # The stream emits "init" then "messages" batches. We process both
+        # through the same handler because "init" carries the initial data
+        # sets (messages/users/channels/config/pinned_message).
+        if event_type not in {"init", "messages"}:
+            return
 
-        total_msgs = 0
+        messages = payload.get("messages") or []
+        if not isinstance(messages, list):
+            return
 
-        for stream in live_streams:
-            chat = stream.get("chat", {}) or {}
-            recent = chat.get("recent_messages", []) or []
-            if not isinstance(recent, list):
+        for msg in messages:
+            if not isinstance(msg, dict):
                 continue
 
-            total_msgs += len(recent)
+            await self._handle_message_record(msg)
 
-            for msg in recent:
-                created_raw = msg.get("created_on")
-                if created_raw is None:
-                    continue
+    # ------------------------------------------------------------
 
-                created_raw_str = str(created_raw)
+    async def _handle_message_record(self, msg: Dict[str, Any]) -> None:
+        created_raw = msg.get("created_on") or msg.get("created_at")
+        if created_raw is None:
+            return
 
-                key = (msg.get("username"), msg.get("text"), created_raw_str)
-                if key in self._seen:
-                    continue
-                self._seen.add(key)
+        created_raw_str = str(created_raw)
 
-                created_ts = _parse_created_on(created_raw)
-                if not created_ts:
-                    continue
+        key = (msg.get("user_id") or msg.get("username"), msg.get("text"), created_raw_str)
+        if key in self._seen:
+            return
+        self._seen.add(key)
 
-                # HARD RULE: ignore anything at/before baseline cutoff
-                if created_ts <= self._baseline_cutoff:
-                    continue
+        created_ts = _parse_created_on(created_raw)
+        if not created_ts:
+            return
 
-                user = (msg.get("username") or "").strip()
-                text = (msg.get("text") or "").strip()
-                if not user or not text:
-                    continue
+        # HARD RULE: ignore anything at/before baseline cutoff
+        if self._baseline_cutoff and created_ts <= self._baseline_cutoff:
+            return
 
-                log.info(f"💬 {user}: {text} (created_on={created_raw_str})")
+        user = (msg.get("user_name") or msg.get("username") or "").strip()
+        text = (msg.get("text") or "").strip()
+        if not user or not text:
+            return
 
-                # Trigger evaluation
-                await self._handle_triggers(user=user, text=text)
+        log.info(f"💬 {user}: {text} (created_on={created_raw_str})")
 
-        log.info(f"[{self.ctx.creator_id}] API poll #{self._poll_count} → recent_messages_total={total_msgs}")
+        # Trigger evaluation
+        await self._handle_triggers(user=user, text=text)
+
+    # ------------------------------------------------------------
+
+    async def _shutdown_sse(self) -> None:
+        if self._sse_client:
+            try:
+                await self._sse_client.aclose()
+            except Exception:
+                pass
+            self._sse_client = None
 
     # ------------------------------------------------------------
 
