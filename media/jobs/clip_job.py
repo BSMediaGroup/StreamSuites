@@ -2,6 +2,8 @@ import asyncio
 import time
 
 from core.jobs import Job
+from services.clips.manager import clip_manager
+from services.clips.models import ClipDestination, ClipRequest
 from shared.logging.logger import get_logger
 
 log = get_logger("media.clip_job")
@@ -17,16 +19,26 @@ class ClipJob(Job):
 
     async def run(self):
         creator_id = self.ctx.creator_id
-        limits = self.ctx.limits.get("clips", {})
+        limits = self.ctx.limits or {}
+        feature_clips = getattr(self.ctx, "features", {}).get("clips", {}) if isinstance(getattr(self.ctx, "features", {}), dict) else {}
 
         # --------------------------------------------------
         # LIMITS (RESOLVED, AUTHORITATIVE)
         # --------------------------------------------------
 
-        enabled = limits.get("enabled", False)
-        max_duration = limits.get("max_duration_seconds", 0)
-        min_cooldown = limits.get("min_cooldown_seconds", 0)
-        max_concurrent = limits.get("max_concurrent_jobs", 0)
+        enabled = bool(feature_clips.get("enabled", False))
+        max_duration = limits.get(
+            "clip_max_duration_seconds",
+            feature_clips.get("max_duration_seconds", 0)
+        )
+        min_cooldown = limits.get(
+            "clip_min_cooldown_seconds",
+            feature_clips.get("min_cooldown_seconds", 0)
+        )
+        max_concurrent = limits.get(
+            "max_concurrent_clip_jobs",
+            feature_clips.get("max_concurrent_jobs", 0)
+        )
 
         # --------------------------------------------------
         # BASIC ENABLE CHECK
@@ -83,16 +95,39 @@ class ClipJob(Job):
         _ = time.time()   # placeholder to keep imports stable
 
         # --------------------------------------------------
-        # EXECUTION (SIMULATED)
+        # EXECUTION
         # --------------------------------------------------
 
-        log.info(
-            f"[{creator_id}] Starting clip job ({effective_length}s)"
+        source_path = self.payload.get("source_path")
+        if not source_path:
+            log.warning(f"[{creator_id}] Clip job rejected: source_path missing")
+            return
+
+        start_seconds = float(self.payload.get("start_seconds", 0.0))
+        clipper_username = str(self.payload.get("clipper_username", "anonymous"))
+        source_title = str(self.payload.get("source_title", "Livestream"))
+
+        destination_override = ClipDestination.from_dict(
+            self.payload.get("destination_override")
+        ) if self.payload.get("destination_override") else None
+
+        request = ClipRequest(
+            creator_id=creator_id,
+            source_title=source_title,
+            clipper_username=clipper_username,
+            source_path=source_path,
+            start_seconds=start_seconds,
+            duration_seconds=effective_length,
+            requested_by=self.payload.get("requested_by"),
+            destination_override=destination_override,
         )
 
-        # Simulate capture + processing
-        await asyncio.sleep(2)
-
+        # Enqueue clip for background processing
+        record = clip_manager.enqueue_clip(request)
         log.info(
-            f"[{creator_id}] Clip job complete ({effective_length}s)"
+            f"[{creator_id}] Clip queued ({record.clip_id}) for {record.duration_seconds}s "
+            f"starting at {start_seconds}s"
         )
+
+        # Yield control to let the background worker start
+        await asyncio.sleep(0)

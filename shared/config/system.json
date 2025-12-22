@@ -1,1 +1,16 @@
-{}
+{
+  "clips": {
+    "default_destination": {
+      "platform": "rumble",
+      "channel_url": "https://rumble.com/c/StreamSuites"
+    },
+    "encoding": {
+      "concurrency": 2,
+      "ffmpeg_path": "X:\\\\ffmpeg\\\\bin\\\\ffmpeg.exe"
+    },
+    "export": {
+      "state_path": "clips.json",
+      "interval_seconds": 30
+    }
+  }
+}

@@ -44,6 +44,33 @@ started by a shared scheduler:
 Both entrypoints are independent runtime processes. The scheduler coordinates
 lifecycles while keeping control-plane behavior separate from streaming logic.
 
+## Clipping module (runtime)
+
+The runtime owns a deterministic, SQLite-backed clipping module that runs in
+the background with bounded concurrency. Core properties:
+
+- **Purpose**: accept clip requests, encode with FFmpeg, upload to a default
+  Rumble destination, and export state for the dashboard.
+- **Lifecycle states** (persisted and exported): `queued`, `encoding`,
+  `encoded`, `uploading`, `published`, `failed`.
+- **Encoding model**: background worker (`services/clips/worker.py`) with
+  default concurrency of `2` (configurable via `shared/config/system.json`).
+  Output naming is deterministic: `clips/output/{clip_id}.mp4` with
+  `clip_id` as a 6-character alphanumeric token.
+- **SQLite usage**: tables `clips`, `clip_jobs`, and `clip_state_history` live
+  in `data/streamsuites.db` and are created on boot if missing. State changes
+  are recorded atomically for observability.
+- **FFmpeg dependency**: the runtime defaults to
+  `X:\\ffmpeg\\bin\\ffmpeg.exe` (Windows-first) and falls back to `ffmpeg` on
+  PATH if that path does not exist locally. No auto-installation is attempted.
+- **Export surface**: snapshots are written to `shared/state/clips.json` every
+  30 seconds **and** immediately on state changes, mirroring to the dashboard
+  publish root when configured.
+- **Destination resolution**: the default upload target is read dynamically
+  from `shared/config/system.json` (`clips.default_destination.channel_url`)
+  and currently points to `https://rumble.com/c/StreamSuites`. Architecture
+  permits future per-creator overrides without changing the runtime contract.
+
 ### Trigger System (design-locked)
 
 - Platform-agnostic trigger registry lives under `services/triggers/`.
@@ -275,6 +302,14 @@ StreamSuites/
 │   └── signals.py            # Signal handling
 │
 ├── services/
+│   ├── clips/
+│   │   ├── __init__.py
+│   │   ├── encoder.py         # FFmpeg wiring + deterministic outputs
+│   │   ├── exporter.py        # Clip state snapshot publisher
+│   │   ├── manager.py         # Clip runtime facade (queue + worker + export)
+│   │   ├── models.py          # Clip identifiers, title formatting, states
+│   │   ├── storage.py         # SQLite-backed clip persistence
+│   │   └── worker.py          # Background worker + concurrency guardrails
 │   ├── discord/
 │   │   ├── README.md         # Discord control-plane runtime architecture
 │   │   ├── announcements.py  # Control-plane notifications
@@ -369,6 +404,7 @@ StreamSuites/
 │   │   ├── services.json
 │   │   ├── services.py
 │   │   ├── system.json
+│   │   ├── system.py
 │   │   └── tiers.json
 │   ├── logging/
 │   │   ├── levels.py
@@ -432,6 +468,13 @@ StreamSuites/
 │   ├── creators.schema.json
 │   ├── platforms.schema.json
 │   └── ...                   # Additional dashboard schemas (chat, jobs, quotas, etc.)
+│
+├── clips/
+│   └── output/                # Deterministic clip outputs (clip_id).mp4
+│       └── .gitkeep
+│
+├── data/
+│   └── streamsuites.db        # SQLite runtime store (auto-created)
 │
 ├── media/
 │   ├── capture/

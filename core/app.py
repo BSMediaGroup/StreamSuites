@@ -11,6 +11,7 @@ from core.jobs import JobRegistry
 from core.state_exporter import runtime_snapshot_exporter, runtime_state
 from shared.logging.logger import get_logger
 from media.jobs.clip_job import ClipJob
+from services.clips.manager import clip_manager
 
 # >>> ADDITIVE: quota snapshot aggregation
 from shared.runtime.quotas import quota_snapshot_aggregator
@@ -24,6 +25,7 @@ RUNTIME_SNAPSHOT_INTERVAL = 10
 
 async def main(stop_event: asyncio.Event):
     global _GLOBAL_JOB_REGISTRY
+    clip_runtime_started = False
 
     # --------------------------------------------------
     # ENV
@@ -70,6 +72,11 @@ async def main(stop_event: asyncio.Event):
     if clip_enabled:
         jobs.register("clip", ClipJob)
         log.info("Clip job registered (tier feature enabled)")
+        try:
+            await clip_manager.start()
+            clip_runtime_started = True
+        except Exception as e:
+            log.error(f"Clip runtime failed to start: {e}")
     else:
         log.info("Clip job NOT registered (no tier permits clips)")
 
@@ -155,6 +162,15 @@ async def main(stop_event: asyncio.Event):
         await runtime_snapshot_task
     except asyncio.CancelledError:
         pass
+
+    # --------------------------------------------------
+    # CLIP RUNTIME SHUTDOWN
+    # --------------------------------------------------
+    if clip_runtime_started:
+        try:
+            await clip_manager.shutdown()
+        except Exception as e:
+            log.warning(f"Clip manager shutdown failed: {e}")
 
     log.info("StreamSuites stopped")
 
