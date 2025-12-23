@@ -3,7 +3,9 @@
 StreamSuites is a modular, multi-platform livestream automation system. It is
 the single canonical runtime source for orchestrating streaming data-plane
 workers and control-plane automation across platforms such as Discord,
-YouTube, Twitch, Twitter/X, and Rumble.
+YouTube, Twitch, Twitter/X, and Rumble. Tallies are now tracked as a
+first-class runtime concept alongside polls and clips, with schema-only
+scaffolding in place for future dashboard/public visibility.
 
 The project is built with a strong emphasis on:
 - deterministic behavior
@@ -26,7 +28,9 @@ re-enablement.
   for dashboard telemetry.
 - **Public export readiness**: read-only snapshot builders for public clips and
   polls galleries are available under `shared/public_exports/` with a static
-  export root at `exports/public/` for future publishing.
+  export root at `exports/public/` for future publishing. Tallies are prepared
+  as a distinct schema for future read-only snapshots without sharing poll
+  logic or storage.
 
 ---
 
@@ -302,7 +306,11 @@ StreamSuites/
 │   ├── scheduler.py          # Task orchestration and shutdown control
 │   ├── state_exporter.py     # Runtime snapshot export (platform + creators)
 │   ├── shutdown.py           # Coordinated shutdown helpers
-│   └── signals.py            # Signal handling
+│   ├── signals.py            # Signal handling
+│   └── tallies/              # Tally schema-only runtime concept (no execution)
+│       ├── README.md         # Scope and future readiness for tallies
+│       ├── __init__.py       # Export surface for tally dataclasses
+│       └── models.py         # Tally, category, option dataclasses + serialization
 │
 ├── services/
 │   ├── clips/
