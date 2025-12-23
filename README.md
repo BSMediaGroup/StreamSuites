@@ -24,6 +24,9 @@ re-enablement.
   `platforms.json` are ingested via `core/config_loader.py` with schema
   validation, and the streaming runtime publishes `shared/state/runtime_snapshot.json`
   for dashboard telemetry.
+- **Public export readiness**: read-only snapshot builders for public clips and
+  polls galleries are available under `shared/public_exports/` with a static
+  export root at `exports/public/` for future publishing.
 
 ---
 
@@ -409,6 +412,11 @@ StreamSuites/
 │   ├── logging/
 │   │   ├── levels.py
 │   │   └── logger.py
+│   ├── public_exports/       # Read-only builders for public gallery exports
+│   │   ├── __init__.py
+│   │   ├── clips.py
+│   │   ├── polls.py
+│   │   └── publisher.py
 │   ├── ratelimiter/
 │   │   └── governor.py
 │   ├── runtime/
@@ -471,6 +479,9 @@ StreamSuites/
 │
 ├── clips/
 │   └── output/                # Deterministic clip outputs (clip_id).mp4
+│       └── .gitkeep
+├── exports/
+│   └── public/                # Static snapshot root for public gallery exports
 │       └── .gitkeep
 │
 ├── data/
