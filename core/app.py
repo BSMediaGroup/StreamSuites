@@ -1,3 +1,11 @@
+"""
+======================================================================
+ StreamSuites Runtime — Version v0.2.0-alpha (Build 2025.01)
+ Owner: Daniel Clancy
+ Copyright © 2025 Brainstream Media Group
+======================================================================
+"""
+
 import asyncio
 import signal
 import sys

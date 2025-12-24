@@ -1,4 +1,12 @@
 """
+======================================================================
+ StreamSuites Runtime — Version v0.2.0-alpha (Build 2025.01)
+ Owner: Daniel Clancy
+ Copyright © 2025 Brainstream Media Group
+======================================================================
+"""
+
+"""
 Utility script to mirror runtime/job snapshots into the dashboard
 hosting root (GitHub Pages checkout or bucket mount).
 

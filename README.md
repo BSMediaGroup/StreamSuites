@@ -7,6 +7,15 @@ YouTube, Twitch, Twitter/X, and Rumble. Tallies are now tracked as a
 first-class runtime concept alongside polls and clips, with schema-only
 scaffolding in place for future dashboard/public visibility.
 
+## Version & Release Authority
+
+- **Current version**: v0.2.0-alpha (Build 2025.01)
+- **Development stage**: Late Alpha — features are present but still undergoing hardening, observability work, and lifecycle tightening before beta stabilization.
+- **Versioning policy**: Semantic Versioning with pre-release tags (e.g., `-alpha`, `-beta`) to signal stability and readiness. Pre-release identifiers reflect runtime maturity and do not guarantee API permanence.
+- **Authoritative runtime**: This repository is the authoritative runtime source of truth for StreamSuites. Dashboard and external consumers are strictly read-only and must not mutate runtime-managed state.
+- **Licensing notice**: Proprietary / All Rights Reserved. Redistribution or reuse outside authorized channels is not permitted.
+- **Production readiness**: Not production ready. Expect breaking changes, schema adjustments, and operational refinements during the late alpha cycle.
+
 The project is built with a strong emphasis on:
 - deterministic behavior
 - clean lifecycle management
