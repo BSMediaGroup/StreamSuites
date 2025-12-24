@@ -1,0 +1,20 @@
+{
+  "meta": {
+    "generated_at": "2024-01-01T00:00:00Z",
+    "source": "StreamSuites runtime",
+    "visibility": "dashboard-only",
+    "scope": "creators"
+  },
+  "creators": [
+    {
+      "creator_id": "example-creator",
+      "display_name": "Example Creator",
+      "platforms": {
+        "twitch": {"enabled": true},
+        "youtube": {"enabled": false}
+      },
+      "created_at": "2024-01-01T00:00:00Z",
+      "updated_at": "2024-01-01T00:00:00Z"
+    }
+  ]
+}

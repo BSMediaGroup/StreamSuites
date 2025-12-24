@@ -1,0 +1,18 @@
+{
+  "meta": {
+    "captured_at": "2024-01-01T00:00:00Z",
+    "source": "StreamSuites runtime",
+    "visibility": "dashboard-only",
+    "scope": "score-events"
+  },
+  "events": [
+    {
+      "event_id": "score-evt-000001",
+      "scoreboard_id": "scoreboard-000001",
+      "creator": "example-creator",
+      "label": "Example participant",
+      "score_delta": 10,
+      "scored_at": "2024-01-01T00:20:00Z"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "generated_at": "2024-01-01T00:00:00Z",
+    "source": "StreamSuites runtime",
+    "visibility": "dashboard-only",
+    "scope": "chat-triggers"
+  },
+  "triggers": [
+    {
+      "trigger_id": "trigger-clip",
+      "creator": "example-creator",
+      "type": "command",
+      "command": "!clip",
+      "cooldown_seconds": 30,
+      "description": "Request a clip from the last 30 seconds",
+      "updated_at": "2024-01-01T00:00:00Z"
+    }
+  ]
+}

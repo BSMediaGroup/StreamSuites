@@ -1,0 +1,17 @@
+{
+  "meta": {
+    "generated_at": "2024-01-01T00:00:00Z",
+    "source": "StreamSuites runtime",
+    "visibility": "public",
+    "scope": "tallies"
+  },
+  "tallies": [
+    {
+      "tally_id": "tally-000001",
+      "creator": "example-creator",
+      "label": "Example tally",
+      "count": 27,
+      "last_updated_at": "2024-01-01T00:10:00Z"
+    }
+  ]
+}

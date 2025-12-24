@@ -1,0 +1,18 @@
+{
+  "meta": {
+    "generated_at": "2024-01-01T00:00:00Z",
+    "source": "StreamSuites runtime",
+    "visibility": "dashboard-only",
+    "scope": "rate-limits"
+  },
+  "rate_limits": [
+    {
+      "rate_limit_id": "default-chat",
+      "creator": "example-creator",
+      "platform": "twitch",
+      "window_seconds": 30,
+      "max_events": 90,
+      "updated_at": "2024-01-01T00:00:00Z"
+    }
+  ]
+}

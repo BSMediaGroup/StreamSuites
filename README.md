@@ -32,6 +32,55 @@ re-enablement.
   as a distinct schema for future read-only snapshots without sharing poll
   logic or storage.
 
+## Runtime data, signals, and exports (Data & Signals readiness)
+
+The runtime is the **authoritative data source**, **signal processor**, and
+**export generator** for the Data & Signals dashboard. It owns raw events and
+controls how they are shaped for consumption while keeping dashboard access
+strictly read-only. Snapshot files under `runtime/exports/`, `runtime/signals/`,
+and `runtime/admin/` are deterministic, timestamped JSON documents that can be
+mirrored into the dashboard repository or any static host. The dashboard never
+mutates runtime state; it only reads the published snapshots.
+
+- **Authoritative data source**: runtime workers own the canonical state for
+  clips, polls, tallies, scoreboards, creators, and quotas.
+- **Signal processor**: normalized chat, poll, tally, and score events are
+  captured for dashboard inspection without enabling writes or action
+  execution.
+- **Export generator**: deterministic JSON snapshots are produced for public
+  galleries, dashboard-only operations, and internal integration surfaces.
+
+### Data & Signals integration contract
+
+- Dashboard consumption is **read-only**. Snapshots are written by the runtime
+  and optionally mirrored into the dashboard `docs/data/` root or another
+  hosting path.
+- Snapshots include a `meta` block with timestamps, source identifiers, and
+  visibility tags (`public`, `dashboard-only`, `internal-only`) so the
+  dashboard can filter without relying on file placement alone.
+- Future sync paths (e.g., file-based or HTTP) must continue to respect the
+  read-only boundary; no live mutation from dashboard surfaces is permitted.
+
+### Export visibility reference
+
+| File | Location | Visibility | Notes |
+| --- | --- | --- | --- |
+| `clips.json` | `runtime/exports/` | Public | Published clips snapshot, safe for public galleries. |
+| `polls.json` | `runtime/exports/` | Public | Poll questions + aggregated votes, no voter identifiers. |
+| `tallies.json` | `runtime/exports/` | Public | Aggregate tally counts only. |
+| `scoreboards.json` | `runtime/exports/` | Public | Ranked scoreboard entries with scores. |
+| `meta.json` | `runtime/exports/` | Public | Manifest describing the export surface. |
+| `chat_events.json` | `runtime/signals/` | Dashboard-only | Normalized chat events for inspection. |
+| `poll_votes.json` | `runtime/signals/` | Dashboard-only | Individual poll vote events without personal data. |
+| `tally_events.json` | `runtime/signals/` | Dashboard-only | Increment events for tallies. |
+| `score_events.json` | `runtime/signals/` | Dashboard-only | Score adjustments feeding scoreboards. |
+| `creators.json` | `runtime/admin/` | Dashboard-only | Creator registry snapshot. |
+| `chat_triggers.json` | `runtime/admin/` | Dashboard-only | Trigger definitions for reference only. |
+| `jobs.json` | `runtime/admin/` | Dashboard-only | Job queue visibility (read-only). |
+| `rate_limits.json` | `runtime/admin/` | Dashboard-only | Rate limit policies visible to operators. |
+| `integrations.json` | `runtime/admin/` | Internal-only | Integration endpoints and statuses. |
+| `permissions.json` | `runtime/admin/` | Internal-only | Placeholder for future principal/role mapping. |
+
 ---
 
 ## Architecture Overview
@@ -491,6 +540,26 @@ StreamSuites/
 ├── exports/
 │   └── public/                # Static snapshot root for public gallery exports
 │       └── .gitkeep
+│
+├── runtime/
+│   ├── exports/               # Deterministic public-facing snapshot files
+│   │   ├── clips.json
+│   │   ├── polls.json
+│   │   ├── tallies.json
+│   │   ├── scoreboards.json
+│   │   └── meta.json
+│   ├── signals/               # Dashboard-only normalized events
+│   │   ├── chat_events.json
+│   │   ├── poll_votes.json
+│   │   ├── tally_events.json
+│   │   └── score_events.json
+│   └── admin/                 # Dashboard/internal operational snapshots
+│       ├── creators.json
+│       ├── chat_triggers.json
+│       ├── jobs.json
+│       ├── rate_limits.json
+│       ├── integrations.json
+│       └── permissions.json
 │
 ├── data/
 │   └── streamsuites.db        # SQLite runtime store (auto-created)
