@@ -562,13 +562,14 @@ StreamSuites/
 │   │   ├── poll_votes.json
 │   │   ├── tally_events.json
 │   │   └── score_events.json
-│   └── admin/                 # Dashboard/internal operational snapshots
-│       ├── creators.json
-│       ├── chat_triggers.json
-│       ├── jobs.json
-│       ├── rate_limits.json
-│       ├── integrations.json
-│       └── permissions.json
+│   ├── admin/                 # Dashboard/internal operational snapshots
+│   │   ├── creators.json
+│   │   ├── chat_triggers.json
+│   │   ├── jobs.json
+│   │   ├── rate_limits.json
+│   │   ├── integrations.json
+│   │   └── permissions.json
+│   └── version.py             # Application/runtime version information
 │
 ├── data/
 │   └── streamsuites.db        # SQLite runtime store (auto-created)
