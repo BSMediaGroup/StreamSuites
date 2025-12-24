@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "captured_at": "2024-01-01T00:00:00Z",
+    "source": "StreamSuites runtime",
+    "visibility": "dashboard-only",
+    "scope": "chat-events"
+  },
+  "events": [
+    {
+      "event_id": "chat-evt-000001",
+      "creator": "example-creator",
+      "platform": "twitch",
+      "user_id": "viewer-123",
+      "username": "ExampleViewer",
+      "message": "Great stream!",
+      "message_at": "2024-01-01T00:00:00Z"
+    }
+  ]
+}

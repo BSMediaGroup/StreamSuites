@@ -1,0 +1,18 @@
+{
+  "meta": {
+    "captured_at": "2024-01-01T00:00:00Z",
+    "source": "StreamSuites runtime",
+    "visibility": "dashboard-only",
+    "scope": "poll-votes"
+  },
+  "votes": [
+    {
+      "vote_id": "poll-vote-000001",
+      "poll_id": "poll-000001",
+      "option_id": "poll-000001-option-1",
+      "creator": "example-creator",
+      "voter_id": "viewer-123",
+      "voted_at": "2024-01-01T00:05:00Z"
+    }
+  ]
+}

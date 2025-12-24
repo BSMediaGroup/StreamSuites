@@ -1,0 +1,20 @@
+{
+  "meta": {
+    "generated_at": "2024-01-01T00:00:00Z",
+    "source": "StreamSuites runtime",
+    "visibility": "public",
+    "scope": "scoreboards"
+  },
+  "scoreboards": [
+    {
+      "scoreboard_id": "scoreboard-000001",
+      "creator": "example-creator",
+      "title": "Example scoreboard",
+      "entries": [
+        {"position": 1, "label": "First place", "score": 120},
+        {"position": 2, "label": "Second place", "score": 90}
+      ],
+      "finalized_at": "2024-01-01T01:00:00Z"
+    }
+  ]
+}

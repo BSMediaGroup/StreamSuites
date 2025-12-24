@@ -1,0 +1,16 @@
+{
+  "meta": {
+    "generated_at": "2024-01-01T00:00:00Z",
+    "source": "StreamSuites runtime",
+    "visibility": "internal-only",
+    "scope": "permissions"
+  },
+  "permissions": [
+    {
+      "principal": "example-creator",
+      "role": "admin",
+      "grants": ["read:signals", "read:exports", "manage:triggers"],
+      "updated_at": "2024-01-01T00:00:00Z"
+    }
+  ]
+}

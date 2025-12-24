@@ -1,0 +1,17 @@
+{
+  "meta": {
+    "captured_at": "2024-01-01T00:00:00Z",
+    "source": "StreamSuites runtime",
+    "visibility": "dashboard-only",
+    "scope": "tally-events"
+  },
+  "events": [
+    {
+      "event_id": "tally-evt-000001",
+      "tally_id": "tally-000001",
+      "creator": "example-creator",
+      "delta": 1,
+      "updated_at": "2024-01-01T00:10:00Z"
+    }
+  ]
+}
