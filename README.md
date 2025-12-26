@@ -59,6 +59,22 @@ mutates runtime state; it only reads the published snapshots.
 - **Export generator**: deterministic JSON snapshots are produced for public
   galleries, dashboard-only operations, and internal integration surfaces.
 
+### Version stamping workflow (runtime-owned)
+
+- **Source of truth**: `runtime/version.py` remains the canonical version
+  declaration. All downstream JSON surfaces derive from this value.
+- **Changelog + roadmap alignment**: `scripts/update_version.py` stamps the
+  runtime version across `changelog/changelog.runtime.json`, exported
+  changelog files, and the dashboard `version.json` manifest when available.
+- **About documentation**: the runtime owns version stamping for the
+  dashboard's JSON-driven About content (e.g., `docs/about/about_part*.json`).
+  `scripts/update_version.py` updates the `version` field for every About JSON
+  document it can find under `<dashboard-root>/about/` while keeping runtime
+  execution paths free of About dependencies.
+  - **Usage**: `python scripts/update_version.py v0.2.0-alpha --build 2025.01 --dashboard-root ../StreamSuites-Dashboard/docs`
+  - If the dashboard checkout is absent, the script safely skips dashboard
+    updates while keeping runtime metadata in sync.
+
 ### Data & Signals integration contract
 
 - Dashboard consumption is **read-only**. Snapshots are written by the runtime
