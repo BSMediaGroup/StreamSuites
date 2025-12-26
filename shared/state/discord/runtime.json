@@ -1,10 +1,10 @@
 {
-  "running": true,
-  "connected": true,
-  "last_heartbeat_ts": "2025-12-24T23:37:29.071754+00:00",
-  "task_count": 3,
-  "tasks": 3,
-  "guild_count": 3,
+  "running": false,
+  "connected": false,
+  "last_heartbeat_ts": "2025-12-25T07:31:25.719587+00:00",
+  "task_count": 0,
+  "tasks": 0,
+  "guild_count": null,
   "status": {
     "text": "\ud83c\udf0e streamsuites.app",
     "emoji": null
@@ -14,9 +14,9 @@
     "status_emoji": null
   },
   "heartbeat": {
-    "started_at": "2025-12-24T22:45:53.006392+00:00",
-    "last_tick_at": "2025-12-24T23:37:29.071754+00:00",
-    "connected": true,
+    "started_at": "2025-12-25T07:29:25.510642+00:00",
+    "last_tick_at": "2025-12-25T07:31:25.719587+00:00",
+    "connected": false,
     "metadata": {}
   }
 }
