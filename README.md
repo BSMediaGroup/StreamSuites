@@ -90,6 +90,13 @@ mutates runtime state; it only reads the published snapshots.
 | `integrations.json` | `runtime/admin/` | Internal-only | Integration endpoints and statuses. |
 | `permissions.json` | `runtime/admin/` | Internal-only | Placeholder for future principal/role mapping. |
 
+### Runtime changelog ownership
+
+- Runtime authors and ships runtime-scoped changelog entries under `runtime/exports/changelog.runtime.json`.
+- The dashboard repository merges and renders runtime and dashboard changelog surfaces client-side; no manual merging is required once the export is updated.
+- Public changelog views remain a merged surface while the runtime stays authoritative over runtime-originated entries.
+- The runtime remains the authoritative source for changelog data, while the dashboard stays read-only and presentational when rendering the merged public surface.
+
 ---
 
 ## Architecture Overview
@@ -352,6 +359,15 @@ re-enablement once official API access or platform whitelisting is available.
 
 ```text
 StreamSuites/
+├── runtime/
+│   └── exports/
+│       ├── changelog.json         # Legacy runtime changelog shape
+│       ├── changelog.runtime.json # Authoritative runtime changelog entries (client-side merged by dashboard)
+│       ├── clips.json             # Clips export snapshot (public)
+│       ├── meta.json              # Export manifest
+│       ├── polls.json             # Polls export snapshot (public)
+│       ├── scoreboards.json       # Scoreboards export snapshot (public)
+│       └── tallies.json           # Tallies export snapshot (public)
 ├── core/
 │   ├── README.md             # Core runtime boundaries and status
 │   ├── app.py                # Streaming runtime entrypoint & lifecycle
