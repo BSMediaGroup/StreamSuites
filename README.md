@@ -631,6 +631,7 @@ StreamSuites/
 ├── scripts/
 │   ├── bootstrap.py
 │   ├── publish_state.py
+│   ├── update_version.py
 │   └── validate_config.py
 │
 ├── tests/
