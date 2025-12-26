@@ -92,7 +92,8 @@ mutates runtime state; it only reads the published snapshots.
 
 ### Runtime changelog ownership
 
-- Runtime authors and ships runtime-scoped changelog entries under `runtime/exports/changelog.runtime.json`.
+- Runtime authors maintain the canonical changelog structure in `changelog/changelog.runtime.json`; this file defines the authoritative JSON shape expected by the dashboard.
+- Exports for distribution live under `runtime/exports/changelog.runtime.json` and must be produced manually or by CI tooling — the runtime does **not** emit changelog files during execution.
 - The dashboard repository merges and renders runtime and dashboard changelog surfaces client-side; no manual merging is required once the export is updated.
 - Public changelog views remain a merged surface while the runtime stays authoritative over runtime-originated entries.
 - The runtime remains the authoritative source for changelog data, while the dashboard stays read-only and presentational when rendering the merged public surface.
@@ -359,6 +360,9 @@ re-enablement once official API access or platform whitelisting is available.
 
 ```text
 StreamSuites/
+├── changelog/
+│   ├── README.md              # Canonical runtime changelog expectations (manual/CI copy to dashboard)
+│   └── changelog.runtime.json # Authoritative runtime changelog JSON format (structure only)
 ├── runtime/
 │   └── exports/
 │       ├── changelog.json         # Legacy runtime changelog shape
