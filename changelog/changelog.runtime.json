@@ -1,0 +1,10 @@
+[
+  {
+    "id": "2025-02-runtime-quotas",
+    "date": "2025-02-12",
+    "title": "Quota enforcement hardened",
+    "description": "Daily quota enforcement was stabilized across platforms, consolidating the QuotaRegistry and keeping snapshot exports aligned for downstream readers.",
+    "scope": "runtime",
+    "version": "v0.2.0-alpha"
+  }
+]
