@@ -25,6 +25,7 @@ class RumbleLivestreamWorker:
 
         self.browser = RumbleBrowserClient.instance()
         self.chat_task: Optional[asyncio.Task] = None
+        self.chat_worker: Optional[RumbleChatWorker] = None
         self._running = False
 
     # ------------------------------------------------------------
@@ -52,13 +53,19 @@ class RumbleLivestreamWorker:
             )
 
             # Spawn ChatWorker ONCE
-            worker = RumbleChatWorker(
+            if self.chat_task and not self.chat_task.done():
+                log.warning(
+                    f"[{self.ctx.creator_id}] Chat worker already running — duplicate start prevented"
+                )
+                return
+
+            self.chat_worker = RumbleChatWorker(
                 ctx=self.ctx,
                 jobs=self.jobs,
                 watch_url=self.ctx.rumble_manual_watch_url,
             )
 
-            self.chat_task = asyncio.create_task(worker.run())
+            self.chat_task = asyncio.create_task(self.chat_worker.run())
 
             # Hard idle — lifecycle owner
             while True:
@@ -88,4 +95,9 @@ class RumbleLivestreamWorker:
                 )
 
         self.chat_task = None
+        self.chat_worker = None
+        try:
+            await self.browser.shutdown()
+        except Exception as e:
+            log.warning(f"[{self.ctx.creator_id}] Browser shutdown error: {e}")
         self._running = False

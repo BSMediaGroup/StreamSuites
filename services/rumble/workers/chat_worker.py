@@ -145,6 +145,8 @@ class RumbleChatWorker:
 
         # Cookie jar reused by SSE client to mirror browser auth
         self._sse_cookies: httpx.Cookies = httpx.Cookies()
+        self._sse_cookie_header: str = ""
+        self._sse_headers: Dict[str, str] = {}
 
     # ------------------------------------------------------------
 
@@ -199,6 +201,7 @@ class RumbleChatWorker:
             return
 
         jar = httpx.Cookies()
+        cookie_header_parts: List[str] = []
 
         for c in cookies:
             name = c.get("name")
@@ -214,12 +217,48 @@ class RumbleChatWorker:
             except Exception:
                 continue
 
+            cookie_header_parts.append(f"{name}={value}")
+
         if not jar:
             log.warning(f"[{self.ctx.creator_id}] No cookies captured for SSE auth")
         else:
             log.info(f"[{self.ctx.creator_id}] Loaded {len(jar)} cookies for SSE auth")
+            log.debug(f"[{self.ctx.creator_id}] SSE cookie header parts: {cookie_header_parts}")
 
         self._sse_cookies = jar
+        self._sse_cookie_header = "; ".join(cookie_header_parts)
+
+    # ------------------------------------------------------------
+
+    async def _hydrate_sse_headers(self) -> None:
+        if not self.browser or not self.browser._page:
+            log.warning(f"[{self.ctx.creator_id}] Browser not ready for SSE header capture")
+            return
+
+        user_agent: Optional[str] = None
+        try:
+            user_agent = await self.browser._page.evaluate("navigator.userAgent")
+        except Exception:
+            try:
+                # Fallback to Playwright context property if evaluate fails
+                user_agent = getattr(self.browser._context, "user_agent", None)
+            except Exception:
+                user_agent = None
+
+        if not user_agent:
+            user_agent = (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            )
+
+        self._sse_headers = {
+            "User-Agent": user_agent,
+            "Origin": "https://rumble.com",
+            "Referer": self.watch_url,
+        }
+
+        log.debug(f"[{self.ctx.creator_id}] SSE headers prepared: {self._sse_headers}")
 
     # ------------------------------------------------------------
 
@@ -240,13 +279,22 @@ class RumbleChatWorker:
         # Export authenticated cookies for SSE ingest
         await self._hydrate_sse_cookies()
 
+        # Prepare browser-aligned headers for SSE (must mirror the Playwright session)
+        await self._hydrate_sse_headers()
+
         # Initialize SSE ingest client. We defer creation until here to avoid
         # building HTTP clients before the runtime is fully started.
         chat_id = self.ctx.rumble_chat_channel_id
         if not chat_id:
             raise RuntimeError(f"[{self.ctx.creator_id}] rumble_chat_channel_id is required for SSE ingest")
 
-        self._sse_client = RumbleChatSSEClient(chat_id, cookies=self._sse_cookies)
+        self._sse_client = RumbleChatSSEClient(
+            chat_id,
+            cookies=self._sse_cookies,
+            cookie_header=self._sse_cookie_header,
+            watch_url=self.watch_url,
+            headers=self._sse_headers,
+        )
 
         # 1) Establish baseline cutoff FIRST (prevents historic spam on boot)
         await self._establish_startup_baseline()
