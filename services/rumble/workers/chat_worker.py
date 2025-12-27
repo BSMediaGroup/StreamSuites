@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from datetime import datetime, timezone
 
 from core.jobs import JobRegistry
+from core.state_exporter import runtime_state
 from services.rumble.browser.browser_client import RumbleBrowserClient
 from services.rumble.chat.sse import IngestFatalError, RumbleChatStreamClient
 from shared.logging.logger import get_logger
@@ -120,6 +121,7 @@ class RumbleChatWorker:
 
         # Stream headers
         self._stream_headers: Dict[str, str] = {}
+        self._chat_id: Optional[str] = None
 
     # ------------------------------------------------------------
 
@@ -224,6 +226,7 @@ class RumbleChatWorker:
 
         rumble_ns.chat_id = chat_id
         self.ctx.rumble_chat_channel_id = chat_id
+        self._chat_id = chat_id
 
         log.info(f"[{self.ctx.creator_id}] Resolved Rumble chat_id={chat_id} from network request")
         return chat_id
@@ -281,26 +284,43 @@ class RumbleChatWorker:
         # Load external behavior config
         self._load_config()
 
-        # Ensure browser + chat iframe locked (retained for DOM send path)
-        await self._ensure_browser()
+        chat_id: Optional[str] = None
 
-        # Prepare browser-aligned headers for stream (must mirror the Playwright session)
-        await self._hydrate_stream_headers()
+        try:
+            # Ensure browser + chat iframe locked (retained for DOM send path)
+            await self._ensure_browser()
 
-        chat_id = await self._resolve_chat_id()
+            # Prepare browser-aligned headers for stream (must mirror the Playwright session)
+            await self._hydrate_stream_headers()
 
-        # Establish baseline cutoff BEFORE announcing or responding
-        self._baseline_cutoff = _utc_now()
-        self._baseline_ready = True
-        log.info(f"[{self.ctx.creator_id}] Baseline (startup now) → {self._baseline_cutoff.isoformat()}")
+            chat_id = await self._resolve_chat_id()
+            runtime_state.record_rumble_chat_status(
+                chat_id=chat_id,
+                status="CONNECTING",
+                error=None,
+            )
 
-        # Announce only AFTER baseline exists
-        if self._enable_startup_announcement and self._startup_announcement.strip():
-            await self._send_text(self._startup_announcement.strip(), reason="startup_announcement")
+            # Establish baseline cutoff BEFORE announcing or responding
+            self._baseline_cutoff = _utc_now()
+            self._baseline_ready = True
+            log.info(f"[{self.ctx.creator_id}] Baseline (startup now) → {self._baseline_cutoff.isoformat()}")
 
-        log.info(f"[{self.ctx.creator_id}] Chat ready — starting authoritative chat ingest")
+            # Announce only AFTER baseline exists
+            if self._enable_startup_announcement and self._startup_announcement.strip():
+                await self._send_text(self._startup_announcement.strip(), reason="startup_announcement")
 
-        await self._run_stream_loop(chat_id)
+            log.info(f"[{self.ctx.creator_id}] Chat ready — starting authoritative chat ingest")
+
+            await self._run_stream_loop(chat_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            runtime_state.record_rumble_chat_status(
+                chat_id=chat_id or self._chat_id or getattr(self.ctx, "rumble_chat_channel_id", None),
+                status="FAILED",
+                error=str(e),
+            )
+            raise
 
     # ------------------------------------------------------------
 
@@ -331,18 +351,46 @@ class RumbleChatWorker:
         first_logged = False
 
         try:
-            async for msg in client.iter_messages():
+            stream = client.iter_messages()
+
+            try:
+                first_message = await asyncio.wait_for(stream.__anext__(), timeout=10.0)
+            except asyncio.TimeoutError:
+                raise IngestFatalError(
+                    f"[{self.ctx.creator_id}] Chat stream produced no messages within 10s (chat_id={chat_id})"
+                )
+            except StopAsyncIteration:
+                raise IngestFatalError(
+                    f"[{self.ctx.creator_id}] Chat stream closed before first message (chat_id={chat_id})"
+                )
+
+            async def _handle_ingest(msg):
+                nonlocal total_messages, first_logged
                 total_messages += 1
                 if not first_logged:
                     log.info(
                         f"[{self.ctx.creator_id}] First chat message: {msg.user}: {msg.message}"
                     )
+                    runtime_state.record_rumble_chat_status(
+                        chat_id=chat_id,
+                        status="CONNECTED",
+                        error=None,
+                    )
                     first_logged = True
                 await self._handle_message_record(msg.raw or {})
+
+            await _handle_ingest(first_message)
+
+            async for msg in stream:
+                await _handle_ingest(msg)
         finally:
             log.info(
                 f"[{self.ctx.creator_id}] Chat stream closed after ingesting {total_messages} messages"
             )
+            try:
+                await stream.aclose()
+            except Exception:
+                pass
             await client.aclose()
 
     # ------------------------------------------------------------

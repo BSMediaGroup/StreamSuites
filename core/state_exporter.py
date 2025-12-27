@@ -53,6 +53,7 @@ class RuntimeState:
     def __init__(self) -> None:
         self._platforms: Dict[str, PlatformRuntimeState] = {}
         self._creators: Dict[str, CreatorRuntimeState] = {}
+        self._rumble_chat: Dict[str, Any] = {}
 
     # ------------------------------------------------------------
     # Configuration ingestion
@@ -144,6 +145,24 @@ class RuntimeState:
         self._creators[creator_id] = state
 
     # ------------------------------------------------------------
+    # Rumble chat ingest status
+    # ------------------------------------------------------------
+
+    def record_rumble_chat_status(
+        self,
+        *,
+        chat_id: Optional[str],
+        status: str,
+        error: Optional[str] = None,
+    ) -> None:
+        self._rumble_chat = {
+            "chat_id": chat_id,
+            "ingest_status": status,
+            "error": error,
+            "updated_at": _utc_now_iso(),
+        }
+
+    # ------------------------------------------------------------
     # Snapshot build
     # ------------------------------------------------------------
 
@@ -182,11 +201,14 @@ class RuntimeState:
                 "error": state.last_error,
             })
 
+        rumble_chat_out = dict(self._rumble_chat) if self._rumble_chat else None
+
         return {
             "schema_version": "v1",
             "generated_at": _utc_now_iso(),
             "platforms": platforms_out,
             "creators": creators_out,
+            "rumble_chat": rumble_chat_out,
         }
 
 
