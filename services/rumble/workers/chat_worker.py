@@ -1,5 +1,6 @@
 import asyncio
 import json
+from enum import Enum
 from pathlib import Path
 from typing import Optional, Set, Tuple, Dict, Any, List, Union
 from datetime import datetime, timezone
@@ -75,6 +76,12 @@ def _parse_created_on(created_raw: Union[str, int, float, None]) -> Optional[dat
     return None
 
 
+class IngestMode(str, Enum):
+    SSE_BEST_EFFORT = "sse_best_effort"
+    DOM_MUTATION = "dom_mutation"
+    DISABLED = "disabled"
+
+
 class RumbleChatWorker:
     """
     MODEL A — CHAT WORKER (POC-FAITHFUL, HARDENED)
@@ -115,8 +122,8 @@ class RumbleChatWorker:
         self._baseline_cutoff: Optional[datetime] = None
         self._baseline_ready: bool = False
 
-        # Ingest mode tracking ("sse" | "api_poll")
-        self._ingest_mode: str = "sse"
+        # Ingest mode tracking
+        self._ingest_mode: IngestMode = IngestMode.SSE_BEST_EFFORT
 
         # Config
         self._cfg: Dict[str, Any] = {}
@@ -146,15 +153,21 @@ class RumbleChatWorker:
         # we guard downstream handling to remain idempotent.
         self._last_sse_id: Optional[str] = None
 
-        # SSE side-channel (best-effort)
+        # SSE ingest (best-effort)
         self._sse_enabled: bool = True
         self._sse_disabled_logged: bool = False
         self._sse_task: Optional[asyncio.Task] = None
+        self._last_sse_event_at: Optional[float] = None
 
         # Cookie jar reused by SSE client to mirror browser auth
         self._sse_cookies: httpx.Cookies = httpx.Cookies()
         self._sse_cookie_header: str = ""
         self._sse_headers: Dict[str, str] = {}
+
+        # DOM mutation ingest
+        self._dom_queue: asyncio.Queue = asyncio.Queue()
+        self._dom_observer_binding: Optional[str] = None
+        self._dom_task: Optional[asyncio.Task] = None
 
     # ------------------------------------------------------------
 
@@ -276,8 +289,32 @@ class RumbleChatWorker:
 
     # ------------------------------------------------------------
 
+    async def _start_dom_observer(self) -> None:
+        if not self.browser:
+            return
+
+        try:
+            binding = await self.browser.start_chat_observer(self._dom_queue)
+            if binding:
+                self._dom_observer_binding = binding
+                log.info(f"[{self.ctx.creator_id}] DOM MutationObserver bound ({binding})")
+            else:
+                log.warning(f"[{self.ctx.creator_id}] DOM MutationObserver could not bind")
+        except Exception as e:
+            log.error(f"[{self.ctx.creator_id}] Failed to start DOM observer: {e}")
+
+    async def _shutdown_dom_observer(self) -> None:
+        self._dom_observer_binding = None
+        if self.browser:
+            try:
+                await self.browser.stop_chat_observer()
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------
+
     async def run(self):
-        log.info(f"[{self.ctx.creator_id}] Chat worker starting (API READ / DOM SEND)")
+        log.info(f"[{self.ctx.creator_id}] Chat worker starting (multi-mode ingest / DOM SEND)")
 
         if not self.ctx.rumble_livestream_api_url:
             raise RuntimeError(f"[{self.ctx.creator_id}] rumble_livestream_api_url is missing")
@@ -289,6 +326,9 @@ class RumbleChatWorker:
 
         # Ensure browser + chat iframe locked (retained for DOM send path)
         await self._ensure_browser()
+
+        # Attach DOM MutationObserver early so baseline reads can prefer DOM
+        await self._start_dom_observer()
 
         # Export authenticated cookies for SSE ingest
         await self._hydrate_sse_cookies()
@@ -317,62 +357,52 @@ class RumbleChatWorker:
         if self._enable_startup_announcement and self._startup_announcement.strip():
             await self._send_text(self._startup_announcement.strip(), reason="startup_announcement")
 
-        log.info(f"[{self.ctx.creator_id}] Chat ready — starting polling ingest (SSE secondary)")
+        log.info(f"[{self.ctx.creator_id}] Chat ready — starting ingest orchestrator")
 
         try:
-            await self._run_ingest_with_fallback()
+            await self._run_ingest_orchestrator()
         finally:
             await self._shutdown_sse()
+            await self._shutdown_dom_observer()
 
     # ------------------------------------------------------------
 
     async def _api_get_data(self) -> Dict[str, Any]:
-        if not self.browser or not self.browser._context:
-            raise RuntimeError("Browser context not ready")
+        headers = {"Accept": "application/json", **self._sse_headers}
+        if self._sse_cookie_header:
+            headers["Cookie"] = self._sse_cookie_header
 
-        response = await self.browser._context.request.get(
-            self.ctx.rumble_livestream_api_url,
-            timeout=10000,
-            headers={"Accept": "application/json"},
-        )
+        async with httpx.AsyncClient(cookies=self._sse_cookies, headers=headers) as client:
+            response = await client.get(self.ctx.rumble_livestream_api_url, timeout=10.0)
 
-        status = response.status
+        status = response.status_code
         if status != 200:
-            body = await response.text()
-            body_preview = body[:500].replace("\n", "\\n")
+            body_preview = response.text[:500].replace("\n", "\\n")
             raise RuntimeError(f"Livestream API HTTP {status} body={body_preview}")
 
         try:
-            return await response.json()
+            return response.json()
         except Exception:
-            body = await response.text()
-            body_preview = body[:500].replace("\n", "\\n")
+            body_preview = response.text[:500].replace("\n", "\\n")
             raise RuntimeError(f"Livestream API returned non-JSON: {body_preview}")
 
-    # ------------------------------------------------------------
+    async def _read_api_latest_timestamp(self) -> Optional[datetime]:
+        if not self.ctx.rumble_livestream_api_url:
+            log.info(f"[{self.ctx.creator_id}] Baseline API fetch skipped (URL missing)")
+            return None
 
-    async def _establish_startup_baseline(self) -> None:
-        """
-        Sets baseline cutoff to the newest created_on found in current recent_messages.
-        This prevents reacting to the backscroll / history on boot.
-
-        Important: this runs AFTER chat iframe is ready, but BEFORE any announcement.
-        """
-        log.info(f"[{self.ctx.creator_id}] Establishing startup baseline (history cutoff)")
-
-        data = await self._api_get_data()
+        try:
+            data = await self._api_get_data()
+        except Exception as e:
+            log.warning(f"[{self.ctx.creator_id}] Baseline API fetch failed: {e}")
+            return None
 
         streams = data.get("livestreams", []) or []
         if not isinstance(streams, list):
-            log.warning(f"[{self.ctx.creator_id}] Baseline: invalid livestreams structure; falling back to now()")
-            self._baseline_cutoff = _utc_now()
-            self._baseline_ready = True
-            return
+            return None
 
-        live_streams = [s for s in streams if s.get("is_live")]
         newest: Optional[datetime] = None
-
-        for stream in live_streams:
+        for stream in [s for s in streams if s.get("is_live")]:
             chat = stream.get("chat", {}) or {}
             recent = chat.get("recent_messages", []) or []
             if not isinstance(recent, list):
@@ -386,124 +416,153 @@ class RumbleChatWorker:
                 if (newest is None) or (created_ts > newest):
                     newest = created_ts
 
-                # Also mark these as seen so we don't reprocess them immediately
                 created_raw_str = str(created_raw)
                 key = (msg.get("username"), msg.get("text"), created_raw_str)
                 self._seen.add(key)
 
-        # If no messages exist, still set a cutoff
-        self._baseline_cutoff = newest if newest else _utc_now()
-        self._baseline_ready = True
+        return newest
 
-        log.info(f"[{self.ctx.creator_id}] Baseline cutoff set → {self._baseline_cutoff.isoformat()}")
-
-    # ------------------------------------------------------------
-
-    async def _run_ingest_with_fallback(self) -> None:
-        """
-        Primary ingest orchestrator.
-
-        - Primary: livestream API polling (always on)
-        - Secondary: SSE side-channel (best-effort, disabled on 204/consistent failures)
-
-        Polling continues even if SSE fails so chat ingestion remains healthy.
-        """
-
-        self._ingest_mode = "api_poll"
-        log.info(
-            f"[{self.ctx.creator_id}] Ingest mode selected → livestream API polling (SSE optional)"
-        )
-
-        if self._sse_client:
-            self._sse_task = asyncio.create_task(self._run_sse_side_channel())
+    async def _read_dom_latest_timestamp(self) -> Optional[datetime]:
+        if not self.browser or not self.browser._chat_frame:
+            return None
 
         try:
-            await self._run_api_poll_loop()
-        finally:
-            if self._sse_task and not self._sse_task.done():
-                self._sse_enabled = False
-                self._sse_task.cancel()
-                try:
-                    await self._sse_task
-                except asyncio.CancelledError:
-                    pass
+            ts = await self.browser._chat_frame.evaluate(
+                """
+                () => {
+                    const rootCandidates = [
+                        document.querySelector('[data-test-selector="chat-messages"]'),
+                        document.querySelector('[data-testid="chat-messages"]'),
+                        document.querySelector('#chat-messages'),
+                        document.querySelector('.chat-messages'),
+                        document.body
+                    ].filter(Boolean);
+
+                    const target = rootCandidates[0];
+                    if (!target) return null;
+                    const items = Array.from(target.querySelectorAll('[data-chat-message], li, div'));
+                    const last = items.reverse().find((el) => el.textContent && el.textContent.trim().length > 0);
+                    if (!last) return null;
+                    const timeEl = last.querySelector('time, [data-timestamp], .timestamp');
+                    const raw = timeEl ? (timeEl.getAttribute('datetime') || timeEl.textContent || '').trim() : '';
+                    return raw || null;
+                }
+                """
+            )
+        except Exception:
+            return None
+
+        if not ts:
+            return None
+
+        parsed = _parse_created_on(ts)
+        return parsed if parsed else None
 
     # ------------------------------------------------------------
 
-    async def _poll_recent_messages(self) -> None:
+    async def _establish_startup_baseline(self) -> None:
         """
-        Fetch recent_messages from the livestream API and process any that are
-        newer than the baseline. This path mirrors the baseline establishment
-        logic but runs continuously when SSE is unavailable.
-        """
+        Establishes the history cutoff using DOM timestamps first, then the
+        livestream API if available, and finally falls back to now().
 
-        data = await self._api_get_data()
-        streams = data.get("livestreams", []) or []
-        if not isinstance(streams, list):
-            log.warning(f"[{self.ctx.creator_id}] Poll: invalid livestreams structure")
+        This path is deliberately defensive: APIRequestContext is avoided to
+        keep Playwright automation isolated. HTTP requests use the same
+        browser-derived cookies/headers as SSE, and failures never crash the
+        worker. DOM visibility wins when present.
+        """
+        log.info(f"[{self.ctx.creator_id}] Establishing startup baseline (history cutoff)")
+
+        dom_ts = await self._read_dom_latest_timestamp()
+        if dom_ts:
+            self._baseline_cutoff = dom_ts
+            self._baseline_ready = True
+            log.info(f"[{self.ctx.creator_id}] Baseline (DOM) → {self._baseline_cutoff.isoformat()}")
             return
 
-        live_streams = [s for s in streams if s.get("is_live")]
-        for stream in live_streams:
-            chat = stream.get("chat", {}) or {}
-            recent = chat.get("recent_messages", []) or []
-            if not isinstance(recent, list):
-                continue
+        api_ts = await self._read_api_latest_timestamp()
+        if api_ts:
+            self._baseline_cutoff = api_ts
+            self._baseline_ready = True
+            log.info(f"[{self.ctx.creator_id}] Baseline (API) → {self._baseline_cutoff.isoformat()}")
+            return
 
-            for msg in recent:
-                if not isinstance(msg, dict):
-                    continue
-                await self._handle_message_record(msg)
+        self._baseline_cutoff = _utc_now()
+        self._baseline_ready = True
+        log.info(f"[{self.ctx.creator_id}] Baseline (fallback now) → {self._baseline_cutoff.isoformat()}")
 
     # ------------------------------------------------------------
 
-    async def _run_api_poll_loop(self) -> None:
-        log.info(
-            f"[{self.ctx.creator_id}] Entering livestream API polling ingest (interval={self._poll_seconds}s)"
-        )
+    async def _run_ingest_orchestrator(self) -> None:
+        if not self._sse_client:
+            log.info(f"[{self.ctx.creator_id}] SSE client missing — forcing DOM mutation ingest")
+            self._ingest_mode = IngestMode.DOM_MUTATION
+        else:
+            self._ingest_mode = IngestMode.SSE_BEST_EFFORT
+
+        log.info(f"[{self.ctx.creator_id}] Ingest mode selected → {self._ingest_mode.value}")
+
+        if self._ingest_mode == IngestMode.SSE_BEST_EFFORT:
+            try:
+                await self._run_sse_loop(primary=True)
+            except SSEUnavailable as e:
+                log.warning(
+                    f"[{self.ctx.creator_id}] SSE unavailable ({e}) — downgrading to DOM mutations"
+                )
+                self._ingest_mode = IngestMode.DOM_MUTATION
+
+        if self._ingest_mode == IngestMode.DOM_MUTATION:
+            await self._run_dom_mutation_loop()
+
+        if self._ingest_mode == IngestMode.DISABLED:
+            log.warning(f"[{self.ctx.creator_id}] Ingest disabled — no chat will be processed")
+
+    async def _run_dom_mutation_loop(self) -> None:
+        if not self._dom_observer_binding:
+            await self._start_dom_observer()
+
+        if not self._dom_observer_binding:
+            log.error(f"[{self.ctx.creator_id}] DOM mutation ingest unavailable; disabling chat ingest")
+            self._ingest_mode = IngestMode.DISABLED
+            return
+
+        log.info(f"[{self.ctx.creator_id}] DOM mutation ingest active (authoritative fallback)")
 
         while True:
             try:
-                await self._poll_recent_messages()
+                payload = await self._dom_queue.get()
+                if not isinstance(payload, dict):
+                    continue
+
+                if payload.get("type") == "observer_ready":
+                    log.info(f"[{self.ctx.creator_id}] DOM observer confirmed attached")
+                    continue
+
+                if payload.get("type") == "observer_error":
+                    log.error(
+                        f"[{self.ctx.creator_id}] DOM observer error: {payload.get('reason', 'unknown')}"
+                    )
+                    self._ingest_mode = IngestMode.DISABLED
+                    return
+
+                if payload.get("type") != "chat":
+                    continue
+
+                normalized = payload.get("payload") or {}
+                if not isinstance(normalized, dict):
+                    continue
+
+                dom_record = {
+                    "username": normalized.get("username"),
+                    "text": normalized.get("text"),
+                    "created_on": normalized.get("timestamp") or _utc_now().isoformat(),
+                }
+                await self._handle_message_record(dom_record)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                log.warning(f"[{self.ctx.creator_id}] Polling ingest error: {e}")
+                log.warning(f"[{self.ctx.creator_id}] DOM mutation ingest error: {e}")
 
-            await asyncio.sleep(self._poll_seconds)
-
-    # ------------------------------------------------------------
-
-    async def _run_sse_side_channel(self) -> None:
-        if not self._sse_client:
-            return
-
-        log.info(
-            f"[{self.ctx.creator_id}] Starting SSE side-channel (best-effort, will disable on 204)"
-        )
-
-        try:
-            await self._run_sse_loop()
-        except SSEUnavailable as e:
-            self._sse_enabled = False
-            if not self._sse_disabled_logged:
-                log.warning(
-                    f"[{self.ctx.creator_id}] SSE unavailable → disabled for session ({e})"
-                )
-                self._sse_disabled_logged = True
-            await self._shutdown_sse()
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            self._sse_enabled = False
-            if not self._sse_disabled_logged:
-                log.warning(
-                    f"[{self.ctx.creator_id}] SSE side-channel error → disabled for session: {e}"
-                )
-                self._sse_disabled_logged = True
-            await self._shutdown_sse()
-
-    async def _run_sse_loop(self) -> None:
+    async def _run_sse_loop(self, primary: bool = False) -> None:
         if not self._sse_client:
             raise RuntimeError("SSE client not initialized")
 
@@ -511,16 +570,32 @@ class RumbleChatWorker:
             log.warning(f"[{self.ctx.creator_id}] Baseline not ready; SSE loop waiting")
             await asyncio.sleep(1)
 
+        self._last_sse_event_at = asyncio.get_event_loop().time()
+        sse_quiet_timeout = 30.0
+
         try:
             async for event in self._sse_client.iter_events():
                 if not self._sse_enabled:
                     break
+
+                if event and event.data:
+                    self._last_sse_event_at = asyncio.get_event_loop().time()
+
                 try:
                     await self._handle_sse_event(event)
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
                     log.error(f"[{self.ctx.creator_id}] SSE event handling error: {e}")
+
+                if primary and self._last_sse_event_at:
+                    delta = asyncio.get_event_loop().time() - self._last_sse_event_at
+                    if delta > sse_quiet_timeout:
+                        log.warning(
+                            f"[{self.ctx.creator_id}] SSE quiet for {delta:.1f}s — downgrading to DOM mutations"
+                        )
+                        self._ingest_mode = IngestMode.DOM_MUTATION
+                        return
         except SSEUnavailable:
             raise
         except asyncio.CancelledError:
@@ -531,6 +606,10 @@ class RumbleChatWorker:
     # ------------------------------------------------------------
 
     async def _handle_sse_event(self, event) -> None:
+        if not event or not getattr(event, "data", None):
+            log.debug(f"[{self.ctx.creator_id}] SSE keepalive received (no payload)")
+            return
+
         # Basic idempotency guard: if the SSE server replays an event id we
         # already processed (e.g., after reconnect), skip it. We store the
         # last seen id and expect monotonic progression from the backend.
@@ -571,9 +650,9 @@ class RumbleChatWorker:
     # ------------------------------------------------------------
 
     async def _handle_message_record(self, msg: Dict[str, Any]) -> None:
-        created_raw = msg.get("created_on") or msg.get("created_at")
+        created_raw = msg.get("created_on") or msg.get("created_at") or msg.get("timestamp")
         if created_raw is None:
-            return
+            created_raw = _utc_now().isoformat()
 
         created_raw_str = str(created_raw)
 
@@ -584,7 +663,7 @@ class RumbleChatWorker:
 
         created_ts = _parse_created_on(created_raw)
         if not created_ts:
-            return
+            created_ts = _utc_now()
 
         # HARD RULE: ignore anything at/before baseline cutoff
         if self._baseline_cutoff and created_ts <= self._baseline_cutoff:
