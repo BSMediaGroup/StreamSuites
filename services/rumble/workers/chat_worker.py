@@ -29,6 +29,7 @@ log = get_logger("rumble.chat_worker")
 DEFAULT_POLL_SECONDS = 2
 DEFAULT_SEND_COOLDOWN_SECONDS = 0.75
 DEFAULT_STARTUP_ANNOUNCEMENT = "🤖 StreamSuites bot online"
+DEFAULT_SSE_QUIET_DISABLE_SECONDS = 30.0
 
 CONFIG_PATH = Path("shared") / "config" / "chat_behaviour.json"
 
@@ -122,8 +123,8 @@ class RumbleChatWorker:
         self._baseline_cutoff: Optional[datetime] = None
         self._baseline_ready: bool = False
 
-        # Ingest mode tracking
-        self._ingest_mode: IngestMode = IngestMode.SSE_BEST_EFFORT
+        # Ingest mode tracking (DOM-first)
+        self._ingest_mode: IngestMode = IngestMode.DOM_MUTATION
 
         # Config
         self._cfg: Dict[str, Any] = {}
@@ -156,8 +157,11 @@ class RumbleChatWorker:
         # SSE ingest (best-effort)
         self._sse_enabled: bool = True
         self._sse_disabled_logged: bool = False
+        self._sse_failure_logged: bool = False
         self._sse_task: Optional[asyncio.Task] = None
         self._last_sse_event_at: Optional[float] = None
+        self._sse_watchdog_task: Optional[asyncio.Task] = None
+        self._sse_quiet_timeout: float = DEFAULT_SSE_QUIET_DISABLE_SECONDS
 
         # Cookie jar reused by SSE client to mirror browser auth
         self._sse_cookies: httpx.Cookies = httpx.Cookies()
@@ -493,25 +497,21 @@ class RumbleChatWorker:
     # ------------------------------------------------------------
 
     async def _run_ingest_orchestrator(self) -> None:
-        if not self._sse_client:
-            log.info(f"[{self.ctx.creator_id}] SSE client missing — forcing DOM mutation ingest")
-            self._ingest_mode = IngestMode.DOM_MUTATION
+        self._ingest_mode = IngestMode.DOM_MUTATION
+        log.info(f"[{self.ctx.creator_id}] Ingest mode selected → dom_primary")
+
+        if self._sse_client:
+            log.info(f"[{self.ctx.creator_id}] Starting SSE ingest as best-effort telemetry")
+            self._sse_task = asyncio.create_task(
+                self._run_sse_loop(primary=False, quiet_timeout=self._sse_quiet_timeout)
+            )
+            self._sse_watchdog_task = asyncio.create_task(
+                self._sse_quiet_watchdog(timeout_seconds=self._sse_quiet_timeout)
+            )
         else:
-            self._ingest_mode = IngestMode.SSE_BEST_EFFORT
+            self._log_sse_disabled_once("SSE client missing — DOM only")
 
-        log.info(f"[{self.ctx.creator_id}] Ingest mode selected → {self._ingest_mode.value}")
-
-        if self._ingest_mode == IngestMode.SSE_BEST_EFFORT:
-            try:
-                await self._run_sse_loop(primary=True)
-            except SSEUnavailable as e:
-                log.warning(
-                    f"[{self.ctx.creator_id}] SSE unavailable ({e}) — downgrading to DOM mutations"
-                )
-                self._ingest_mode = IngestMode.DOM_MUTATION
-
-        if self._ingest_mode == IngestMode.DOM_MUTATION:
-            await self._run_dom_mutation_loop()
+        await self._run_dom_mutation_loop()
 
         if self._ingest_mode == IngestMode.DISABLED:
             log.warning(f"[{self.ctx.creator_id}] Ingest disabled — no chat will be processed")
@@ -551,6 +551,11 @@ class RumbleChatWorker:
                 if not isinstance(normalized, dict):
                     continue
 
+                user = (normalized.get("username") or "").strip()
+                text = (normalized.get("text") or "").strip()
+                if user and text:
+                    log.info(f"[{self.ctx.creator_id}] DOM chat received → {user}: {text}")
+
                 dom_record = {
                     "username": normalized.get("username"),
                     "text": normalized.get("text"),
@@ -562,7 +567,7 @@ class RumbleChatWorker:
             except Exception as e:
                 log.warning(f"[{self.ctx.creator_id}] DOM mutation ingest error: {e}")
 
-    async def _run_sse_loop(self, primary: bool = False) -> None:
+    async def _run_sse_loop(self, primary: bool = False, quiet_timeout: Optional[float] = None) -> None:
         if not self._sse_client:
             raise RuntimeError("SSE client not initialized")
 
@@ -570,8 +575,8 @@ class RumbleChatWorker:
             log.warning(f"[{self.ctx.creator_id}] Baseline not ready; SSE loop waiting")
             await asyncio.sleep(1)
 
-        self._last_sse_event_at = asyncio.get_event_loop().time()
-        sse_quiet_timeout = 30.0
+        self._last_sse_event_at = None
+        started_at = asyncio.get_event_loop().time()
 
         try:
             async for event in self._sse_client.iter_events():
@@ -588,20 +593,55 @@ class RumbleChatWorker:
                 except Exception as e:
                     log.error(f"[{self.ctx.creator_id}] SSE event handling error: {e}")
 
-                if primary and self._last_sse_event_at:
+                if primary and quiet_timeout and self._last_sse_event_at:
                     delta = asyncio.get_event_loop().time() - self._last_sse_event_at
-                    if delta > sse_quiet_timeout:
-                        log.warning(
-                            f"[{self.ctx.creator_id}] SSE quiet for {delta:.1f}s — downgrading to DOM mutations"
+                    if delta > quiet_timeout:
+                        self._log_sse_disabled_once(
+                            f"SSE quiet for {delta:.1f}s — downgrading to DOM mutations"
                         )
                         self._ingest_mode = IngestMode.DOM_MUTATION
+                        await self._shutdown_sse()
+                        return
+                elif quiet_timeout and self._last_sse_event_at is None:
+                    delta = asyncio.get_event_loop().time() - started_at
+                    if delta > quiet_timeout:
+                        self._log_sse_disabled_once(
+                            f"No SSE events within {delta:.1f}s — disabling SSE ingest"
+                        )
+                        await self._shutdown_sse()
                         return
         except SSEUnavailable:
-            raise
+            self._log_sse_disabled_once("SSE unavailable — disabling best-effort channel")
+            await self._shutdown_sse()
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            log.warning(f"[{self.ctx.creator_id}] SSE loop aborted: {e}")
+            if not self._sse_failure_logged:
+                log.warning(f"[{self.ctx.creator_id}] SSE loop aborted: {e}")
+                self._sse_failure_logged = True
+            await self._shutdown_sse()
+
+    async def _sse_quiet_watchdog(self, timeout_seconds: float) -> None:
+        started_at = asyncio.get_event_loop().time()
+        while self._sse_enabled:
+            await asyncio.sleep(timeout_seconds)
+            if not self._sse_enabled:
+                return
+
+            now = asyncio.get_event_loop().time()
+            if self._last_sse_event_at is None:
+                if now - started_at >= timeout_seconds:
+                    self._log_sse_disabled_once(
+                        f"No SSE events observed in {timeout_seconds:.1f}s — disabling"
+                    )
+                    await self._shutdown_sse()
+                    return
+            elif now - self._last_sse_event_at >= timeout_seconds:
+                self._log_sse_disabled_once(
+                    f"SSE silent for {timeout_seconds:.1f}s — disabling best-effort channel"
+                )
+                await self._shutdown_sse()
+                return
 
     # ------------------------------------------------------------
 
@@ -683,12 +723,28 @@ class RumbleChatWorker:
 
     async def _shutdown_sse(self) -> None:
         self._sse_enabled = False
+        current = asyncio.current_task()
+        if self._sse_watchdog_task:
+            if self._sse_watchdog_task is not current:
+                self._sse_watchdog_task.cancel()
+            self._sse_watchdog_task = None
+        if self._sse_task:
+            if self._sse_task is not current:
+                self._sse_task.cancel()
+            self._sse_task = None
         if self._sse_client:
             try:
                 await self._sse_client.aclose()
             except Exception:
                 pass
             self._sse_client = None
+
+    def _log_sse_disabled_once(self, reason: str) -> None:
+        if self._sse_disabled_logged:
+            return
+
+        self._sse_disabled_logged = True
+        log.warning(f"[{self.ctx.creator_id}] SSE disabled: {reason}")
 
     # ------------------------------------------------------------
 
