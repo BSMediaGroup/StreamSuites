@@ -12,8 +12,14 @@ log = get_logger("rumble.chat.sse")
 class SSEUnavailable(Exception):
     """
     Raised when the SSE endpoint explicitly signals that streaming is not
-    available (e.g., HTTP 204 or repeated non-SSE responses). Callers can use
-    this to downgrade to alternate ingest paths instead of retrying forever.
+    available (e.g., repeated non-SSE responses). Callers can use this to
+    downgrade to alternate ingest paths instead of retrying forever.
+
+    HTTP 204 is now treated as a keepalive, not a failure. The previous logic
+    escalated 204s into hard disablement which prevented the worker from
+    falling back deterministically. The behavior change is documented here
+    because it shortens the old failure path and keeps the retry window flat
+    when the server simply withholds data.
     """
 
     def __init__(self, message: str, status_code: Optional[int] = None):
@@ -122,15 +128,14 @@ class RumbleChatSSEClient:
                     status = resp.status_code
 
                     if status == 204:
-                        log.warning(
-                            "SSE returned HTTP 204 (chat_id=%s) — downgrading",
+                        log.info(
+                            "SSE keepalive HTTP 204 (chat_id=%s) — waiting for events",
                             self.chat_id,
                         )
-                        self._closed = True
-                        raise SSEUnavailable(
-                            "Rumble SSE returned HTTP 204 (unavailable)",
-                            status_code=status,
-                        )
+                        # 204 is an empty keepalive; do not backoff exponentially.
+                        failure_count = 0
+                        await asyncio.sleep(2)
+                        continue
 
                     if status != 200 or (ct and "text/event-stream" not in ct):
                         body_preview = ""

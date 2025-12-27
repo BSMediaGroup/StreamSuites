@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 from typing import Optional
+import uuid
 
 from playwright.async_api import async_playwright, BrowserContext, Page, Frame
 from shared.logging.logger import get_logger
@@ -25,6 +26,7 @@ class RumbleBrowserClient:
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
         self._chat_frame: Optional[Frame] = None
+        self._chat_binding_name: Optional[str] = None
 
         self._profile_dir = Path(".browser") / "rumble"
         self._profile_dir.mkdir(parents=True, exist_ok=True)
@@ -255,7 +257,32 @@ class RumbleBrowserClient:
             res = await self._send_chat_injection(message)
 
             if res == "SENT_OK":
-                return True
+                # Confirm send by checking the input clears or a DOM mutation fires
+                try:
+                    cleared = await self._chat_frame.wait_for_selector(
+                        f"{input_selector}[value='']",
+                        timeout=1500,
+                        state="attached",
+                    )
+                    if cleared:
+                        log.info("Chat send confirmed via input clear")
+                        return True
+                except Exception:
+                    pass
+
+                # Final guard: read the input value directly
+                try:
+                    value = await self._chat_frame.eval_on_selector(
+                        input_selector, "el => el && el.value"
+                    )
+                    if value in (None, ""):
+                        log.info("Chat send confirmed via input value empty")
+                        return True
+                except Exception:
+                    pass
+
+                log.warning("Chat send not confirmed via DOM; treating as failure")
+                return False
 
             log.error(
                 f"DOM injection did not return SENT_OK (res={res}) — send aborted (no Enter fallback)"
@@ -295,3 +322,131 @@ class RumbleBrowserClient:
                 self._playwright = None
                 self._started = False
                 self._shutting_down = False
+
+    # ------------------------------------------------------------
+    # CHAT DOM OBSERVER (for ingest fallback + send confirmation)
+    # ------------------------------------------------------------
+
+    async def start_chat_observer(self, queue: asyncio.Queue) -> Optional[str]:
+        """
+        Inject a MutationObserver into the chat iframe that reports new chat
+        message nodes back to Python through a unique Playwright binding.
+
+        Returns the binding name used, or None if the observer could not be
+        attached. Consumers should listen to the binding events separately.
+        """
+
+        if not self._page or not self._chat_frame:
+            log.warning("Cannot attach chat observer — chat frame not ready")
+            return None
+
+        if self._chat_binding_name:
+            return self._chat_binding_name
+
+        binding_name = f"rumbleChatObserver_{uuid.uuid4().hex}"
+
+        try:
+            await self._page.expose_binding(
+                binding_name,
+                lambda source, payload: queue.put_nowait(payload),
+            )
+        except Exception as e:
+            log.error(f"Failed to expose chat binding: {e}")
+            return None
+
+        script = r"""
+            (bindingName) => {
+                const send = (payload) => {
+                    if (!globalThis[bindingName]) return;
+                    try {
+                        globalThis[bindingName](payload);
+                    } catch (err) {
+                        console.error('Chat observer dispatch failed', err);
+                    }
+                };
+
+                const rootCandidates = [
+                    document.querySelector('[data-test-selector="chat-messages"]'),
+                    document.querySelector('[data-testid="chat-messages"]'),
+                    document.querySelector('#chat-messages'),
+                    document.querySelector('.chat-messages'),
+                    document.body
+                ].filter(Boolean);
+
+                const target = rootCandidates[0];
+                if (!target) {
+                    send({ type: 'observer_error', reason: 'no_target' });
+                    return 'NO_TARGET';
+                }
+
+                const normalize = (node) => {
+                    const usernameEl = node.querySelector('[data-username], .chat--username, .user-name, .username');
+                    const textEl = node.querySelector('[data-message-text], .chat--message, .message-text, .content');
+                    const timeEl = node.querySelector('time, [data-timestamp], .timestamp');
+
+                    const username = usernameEl ? (usernameEl.textContent || '').trim() : '';
+                    const text = textEl ? (textEl.textContent || '').trim() : '';
+                    const ts = timeEl ? ((timeEl.getAttribute('datetime') || timeEl.textContent || '').trim()) : '';
+
+                    if (!username || !text) return null;
+                    return { username, text, timestamp: ts || null };
+                };
+
+                const seen = new WeakSet();
+
+                const emitExisting = () => {
+                    const candidates = target.querySelectorAll('[data-chat-message], li, div');
+                    candidates.forEach((node) => {
+                        if (seen.has(node)) return;
+                        const normalized = normalize(node);
+                        if (normalized) {
+                            seen.add(node);
+                            send({ type: 'chat', payload: normalized });
+                        }
+                    });
+                };
+
+                emitExisting();
+
+                const observer = new MutationObserver((mutations) => {
+                    for (const m of mutations) {
+                        m.addedNodes.forEach((node) => {
+                            if (!(node instanceof HTMLElement)) return;
+                            if (seen.has(node)) return;
+                            const normalized = normalize(node);
+                            if (normalized) {
+                                seen.add(node);
+                                send({ type: 'chat', payload: normalized });
+                            }
+                            node.querySelectorAll && node.querySelectorAll('[data-chat-message], li, div').forEach((child) => {
+                                if (seen.has(child)) return;
+                                const childNorm = normalize(child);
+                                if (childNorm) {
+                                    seen.add(child);
+                                    send({ type: 'chat', payload: childNorm });
+                                }
+                            });
+                        });
+                    }
+                });
+
+                observer.observe(target, { childList: true, subtree: true });
+                send({ type: 'observer_ready' });
+                return 'BOUND';
+            }
+        """
+
+        try:
+            result = await self._chat_frame.evaluate(script, binding_name)
+            if result == "BOUND":
+                self._chat_binding_name = binding_name
+                log.info("Chat MutationObserver attached (binding=%s)", binding_name)
+                return binding_name
+            log.warning(f"Chat observer failed to bind: {result}")
+        except Exception as e:
+            log.error(f"Failed to attach chat observer: {e}")
+
+        return None
+
+    async def stop_chat_observer(self) -> None:
+        self._chat_binding_name = None

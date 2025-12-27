@@ -42,23 +42,23 @@ re-enablement.
 
 ### Rumble chat ingest modes
 
-- **Primary read path (Livestream API polling)**: chat ingest now **always**
-  runs the livestream API poller against `recent_messages`, honoring the startup
-  baseline cutoff and de-duplication keys.
-- **Secondary read path (SSE side-channel)**: SSE connects to
-  `https://web7.rumble.com/chat/api/chat/<CHAT_ID>/stream` as a best-effort
-  side channel. It mirrors the authenticated browser session but is not
-  required for chat ingestion to continue.
-- **SSE gating and disablement**: a single HTTP 204 response (even once) marks
-  SSE as unavailable for the session. The worker logs the downgrade once,
-  disables SSE, and continues polling without retrying forever. Repeated
-  non-SSE responses or stream errors also cap retries and disable SSE.
-- **Authentication model**: SSE attempts reuse exported Playwright cookies plus
-  browser-matched headers (`User-Agent`, `Origin`, `Referer`). Missing any of
-  these commonly results in HTTP 204; polling remains active regardless.
-- **Parsing + dedupe**: SSE frames are parsed as JSON batches of
-  `data.messages` and flow through the same baseline and de-duplication guards
-  as polling, so ingest paths stay idempotent.
+- **SSE_BEST_EFFORT (default)**: connects to
+  `https://web7.rumble.com/chat/api/chat/<CHAT_ID>/stream` with the live
+  browser cookies/headers. HTTP 204 responses are treated as keepalives, not
+  failures, and do not trigger exponential backoff. Only `text/event-stream`
+  payloads are parsed; non-SSE responses cap retries and cause a downgrade.
+- **DOM_MUTATION (authoritative fallback)**: attaches a MutationObserver inside
+  the chat iframe to capture newly added message nodes. Each captured node is
+  normalized into the runtime message record (username, text, timestamp when
+  present) so ingest stays deterministic even when the SSE endpoint is silent
+  or blocked. This mode is activated automatically when SSE stays quiet beyond
+  the configured window or explicitly fails to connect.
+- **DISABLED**: terminal state used when no ingest path can be attached (e.g.,
+  chat iframe missing). The worker logs the disabled state but keeps the
+  process alive.
+
+The worker logs the active ingest mode at startup and every downgrade event.
+DOM send remains isolated and continues regardless of ingest path.
 
 ### Chat send (Playwright DOM)
 
@@ -99,23 +99,28 @@ send reliability is preserved even when ingest requirements change:
 
 ### SSE 204 responses explained
 
-- A 204 response with `content-type=text/html` indicates the SSE request did
-  not meet Rumble's session requirements. This occurs when cookies are stale or
-  missing, when headers are incomplete, or when the Referer does not match the
-  watch URL. Ensuring the SSE client uses the browser-derived cookies and
-  headers restores the expected `text/event-stream` 200 response. When a 204 is
-  received, the runtime now marks SSE as unavailable and downgrades to the
-  livestream API polling ingest path instead of retrying forever.
+- A 204 response with `content-type=text/html` often means the server is not
+  ready to emit events yet. The runtime now treats these as keepalives rather
+  than failures and holds the connection without exponential backoff. Only
+  repeated non-SSE responses or stream errors trigger a downgrade to the DOM
+  mutation ingest path.
 
 ### Known limitations
 
-- Rumble SSE availability is environment-dependent; HTTP 204 responses disable
-  SSE for the session and ingestion continues via polling only.
+- Rumble SSE availability is environment-dependent; repeated non-SSE responses
+  will trigger a downgrade to DOM mutation ingest while HTTP 204 responses are
+  treated as keepalives.
 - A logged-in Rumble profile is still required in the persistent Playwright
   context before runtime start.
 - DOM chat sending requires the chat iframe (`#chat-message-text-input` and
   `button.chat--send`) to be present; if Rumble ships DOM changes, selectors may
   need to be updated before send succeeds.
+- Baseline cutoffs prefer DOM-visible timestamps; if both DOM and the
+  livestream API are unreachable, the worker falls back to `now()` without
+  crashing and keeps ingest mode stateful.
+- APIRequestContext is intentionally avoided during ingest to prevent TLS/X509
+  crashes and cross-talk with the Playwright automation session; HTTP calls use
+  isolated `httpx` clients with browser-derived cookies/headers instead.
 
 ## Project Status
 
