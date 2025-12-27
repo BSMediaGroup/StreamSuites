@@ -3,7 +3,13 @@ from pathlib import Path
 from typing import Optional
 import uuid
 
-from playwright.async_api import async_playwright, BrowserContext, Page, Frame
+from playwright.async_api import (
+    async_playwright,
+    BrowserContext,
+    Page,
+    Frame,
+    APIRequestContext,
+)
 from shared.logging.logger import get_logger
 
 log = get_logger("rumble.browser")
@@ -26,6 +32,7 @@ class RumbleBrowserClient:
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
         self._chat_frame: Optional[Frame] = None
+        self._request_context: Optional[APIRequestContext] = None
         self._chat_binding_name: Optional[str] = None
 
         self._profile_dir = Path(".browser") / "rumble"
@@ -72,6 +79,9 @@ class RumbleBrowserClient:
                     "--no-default-browser-check",
                 ],
             )
+
+            self._request_context = self._context.request
+            log.info("Playwright request context initialized and bound to browser context")
 
             pages = self._context.pages
 
@@ -173,43 +183,39 @@ class RumbleBrowserClient:
 
     async def _send_chat_injection(self, message: str) -> str:
         """
-        Deterministic chat send that stays inside the chat iframe and clicks the
-        real send button (no Enter keypresses). React-friendly events ensure the
-        input updates reliably before the click.
+        Deterministic chat send that stays inside the chat iframe and triggers the
+        real send behavior via Enter on the focused input. This avoids accidentally
+        hitting payment/rant buttons rendered outside the iframe.
         """
         if not self._chat_frame:
             raise RuntimeError("Chat frame not initialized")
 
-        return await self._chat_frame.evaluate(
-            """
-            (msg) => {
-                const input = document.querySelector("#chat-message-text-input");
-                const sendBtn = document.querySelector("button.chat--send");
+        input_selector = "#chat-message-text-input"
+        send_selector = "button.chat--send"
 
-                if (!input) return "NO_INPUT";
-                if (!sendBtn) return "NO_SEND_BUTTON";
+        input = await self._chat_frame.wait_for_selector(input_selector, timeout=3000)
+        await input.click()
+        await self._chat_frame.wait_for_timeout(50)
 
-                input.focus();
-
-                input.value = "";
-                input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward", data: "" }));
-
-                input.value = msg;
-                input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: msg }));
-                input.dispatchEvent(new Event("change", { bubbles: true }));
-                input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
-
-                if (sendBtn.disabled) {
-                    sendBtn.removeAttribute("disabled");
-                }
-
-                sendBtn.click();
-
-                return "SENT_OK";
-            }
-            """,
-            message,
+        active_ok = await self._chat_frame.evaluate(
+            "selector => document.activeElement && document.activeElement.matches(selector)",
+            input_selector,
         )
+        if not active_ok:
+            await input.focus()
+
+        await self._chat_frame.fill(input_selector, "")
+        await self._chat_frame.type(input_selector, message, delay=20)
+
+        # Ensure the send button we see is the chat iframe's button (not payment)
+        send_btn = await self._chat_frame.query_selector(send_selector)
+        if not send_btn:
+            return "NO_SEND_BUTTON"
+
+        await self._chat_frame.press(input_selector, "Enter")
+        await self._chat_frame.wait_for_timeout(50)
+
+        return "SENT_OK"
 
     # ------------------------------------------------------------
     # PAYMENT / MODAL GUARD
@@ -247,6 +253,53 @@ class RumbleBrowserClient:
         input_selector = "#chat-message-text-input"
         send_selector = "button.chat--send"
 
+        async def _message_echoed() -> bool:
+            try:
+                return bool(
+                    await self._chat_frame.evaluate(
+                        """
+                        (msg) => {
+                            const roots = [
+                                document.querySelector('[data-test-selector="chat-messages"]'),
+                                document.querySelector('[data-testid="chat-messages"]'),
+                                document.querySelector('#chat-messages'),
+                                document.querySelector('.chat-messages'),
+                                document.body
+                            ].filter(Boolean);
+
+                            const target = roots[0];
+                            if (!target) return false;
+
+                            const nodes = Array.from(target.querySelectorAll('[data-chat-message], li, div'));
+                            const recent = nodes.slice(-15);
+                            return recent.some((n) => (n.textContent || '').trim().includes(msg));
+                        }
+                        """,
+                        message,
+                    )
+                )
+            except Exception:
+                return False
+
+        async def _confirm_send() -> bool:
+            deadline = asyncio.get_event_loop().time() + 5.0
+            while asyncio.get_event_loop().time() < deadline:
+                try:
+                    cleared = await self._chat_frame.eval_on_selector(
+                        input_selector, "el => el && el.value === ''"
+                    )
+                    if cleared:
+                        return True
+                except Exception:
+                    pass
+
+                if await _message_echoed():
+                    return True
+
+                await asyncio.sleep(0.3)
+
+            return False
+
         try:
             await self._dismiss_payment_modals()
 
@@ -254,39 +307,25 @@ class RumbleBrowserClient:
                 f"Sending via DOM (iframe scoped) input={input_selector} send_button={send_selector}"
             )
 
-            res = await self._send_chat_injection(message)
+            for attempt in range(1, 3):
+                res = await self._send_chat_injection(message)
 
-            if res == "SENT_OK":
-                # Confirm send by checking the input clears or a DOM mutation fires
-                try:
-                    cleared = await self._chat_frame.wait_for_selector(
-                        f"{input_selector}[value='']",
-                        timeout=1500,
-                        state="attached",
-                    )
-                    if cleared:
-                        log.info("Chat send confirmed via input clear")
+                if res == "SENT_OK":
+                    if await _confirm_send():
+                        log.info("Chat send confirmed via DOM signal")
                         return True
-                except Exception:
-                    pass
 
-                # Final guard: read the input value directly
-                try:
-                    value = await self._chat_frame.eval_on_selector(
-                        input_selector, "el => el && el.value"
+                    log.warning(
+                        "Chat send not observed in DOM (attempt=%s) — retrying", attempt
                     )
-                    if value in (None, ""):
-                        log.info("Chat send confirmed via input value empty")
-                        return True
-                except Exception:
-                    pass
+                    continue
 
-                log.warning("Chat send not confirmed via DOM; treating as failure")
+                log.error(
+                    f"DOM injection did not return SENT_OK (res={res}) — send aborted (no Enter fallback)"
+                )
                 return False
 
-            log.error(
-                f"DOM injection did not return SENT_OK (res={res}) — send aborted (no Enter fallback)"
-            )
+            log.error("Chat send failed after retries — no DOM confirmation")
             return False
 
         except Exception as e:
@@ -304,6 +343,13 @@ class RumbleBrowserClient:
             log.info("Shutting down browser")
 
             try:
+                if self._request_context:
+                    try:
+                        await self._request_context.dispose()
+                        log.info("Playwright request context disposed")
+                    except Exception as e:
+                        log.warning(f"Request context dispose ignored: {e}")
+
                 if self._context:
                     try:
                         await self._context.close()
@@ -319,6 +365,7 @@ class RumbleBrowserClient:
                 self._context = None
                 self._page = None
                 self._chat_frame = None
+                self._request_context = None
                 self._playwright = None
                 self._started = False
                 self._shutting_down = False
