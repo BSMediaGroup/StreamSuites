@@ -35,6 +35,8 @@ class RumbleBrowserClient:
         self._chat_frame: Optional[Frame] = None
         self._request_context: Optional[APIRequestContext] = None
         self._chat_binding_name: Optional[str] = None
+        self._eventsource_binding_name: Optional[str] = None
+        self._eventsource_patched: bool = False
 
         self._profile_dir = Path(".browser") / "rumble"
         self._profile_dir.mkdir(parents=True, exist_ok=True)
@@ -553,3 +555,97 @@ class RumbleBrowserClient:
 
     async def stop_chat_observer(self) -> None:
         self._chat_binding_name = None
+
+    # ------------------------------------------------------------
+    # CHAT INGEST — EVENTSOURCE TAP (TOMBI-STYLE)
+    # ------------------------------------------------------------
+
+    async def enable_chat_eventsource_tap(self, queue: asyncio.Queue) -> Optional[str]:
+        """
+        Monkey-patch the page's native EventSource constructor so that any
+        chat EventSource created by Rumble's own client is mirrored back to
+        Python via Playwright's expose_function bridge.
+        """
+
+        if not self._page:
+            raise RuntimeError("Browser not started")
+
+        if self._eventsource_binding_name:
+            return self._eventsource_binding_name
+
+        binding_name = f"rumbleChatStreamTap_{uuid.uuid4().hex}"
+
+        try:
+            await self._page.expose_function(
+                binding_name, lambda payload: queue.put_nowait(payload)
+            )
+        except Exception as e:
+            log.error(f"Failed to expose EventSource tap binding: {e}")
+            return None
+
+        script = r"""
+            (bindingName) => {
+                const targetFragment = '/chat/api/chat/';
+                const Original = window.EventSource;
+                if (!Original) return 'NO_EVENTSOURCE';
+                if (Original && Original.__ssPatched) return 'ALREADY_PATCHED';
+
+                const dispatch = (payload) => {
+                    try {
+                        const fn = globalThis[bindingName];
+                        if (typeof fn === 'function') fn(payload);
+                    } catch (err) {
+                        console.error('EventSource tap dispatch failed', err);
+                    }
+                };
+
+                const Patched = function(url, ...args) {
+                    const es = new Original(url, ...args);
+                    try {
+                        const rawUrl = typeof url === 'string' ? url : (url && url.url) || String(url || '');
+                        if (String(rawUrl).includes(targetFragment)) {
+                            const match = String(rawUrl).match(/\\/chat\\/api\\/chat\\/(\\d+)/);
+                            const chatId = match ? match[1] : null;
+
+                            dispatch({ type: 'eventsource_open', url: String(rawUrl), chatId });
+
+                            es.addEventListener('message', (event) => {
+                                if (!event || !('data' in event)) return;
+                                try {
+                                    const parsed = JSON.parse(event.data);
+                                    dispatch({ type: 'message', payload: parsed, chatId, url: String(rawUrl) });
+                                } catch (err) {
+                                    dispatch({ type: 'invalid_json', raw: event.data, chatId, url: String(rawUrl) });
+                                }
+                            });
+                        }
+                    } catch (err) {
+                        dispatch({ type: 'hook_error', reason: String(err) });
+                    }
+                    return es;
+                };
+
+                Patched.prototype = Original.prototype;
+                Patched.__ssPatched = true;
+                window.EventSource = Patched;
+                return 'PATCHED';
+            }
+        """
+
+        try:
+            await self._page.add_init_script(script, binding_name)
+        except Exception as e:
+            log.warning(f"Failed to register EventSource tap as init script: {e}")
+
+        try:
+            result = await self._page.evaluate(script, binding_name)
+            if result not in {"PATCHED", "ALREADY_PATCHED"}:
+                log.warning(f"EventSource tap returned non-success: {result}")
+        except Exception as e:
+            log.error(f"Failed to apply EventSource tap: {e}")
+            return None
+
+        self._eventsource_binding_name = binding_name
+        self._eventsource_patched = True
+        log.info("EventSource tap installed (binding=%s)", binding_name)
+        return binding_name
