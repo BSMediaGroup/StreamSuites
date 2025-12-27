@@ -15,8 +15,8 @@
       "limits": {
         "max_concurrent_clip_jobs": 2
       },
-      "rumble_channel_url": "https://rumble.com/c/ThirdRailify",
-      "rumble_manual_watch_url": "https://rumble.com/v73i5cg-news-hangout-friday-december-26-2025.html",
+      "rumble_channel_url": "https://rumble.com/c/StreamSuites",
+      "rumble_manual_watch_url": "https://rumble.com/v73j8o2-still-testing-shit.html",
       "rumble_livestream_api_env_key": "RUMBLE_LIVESTREAM_KEY_DANIEL",
       "rumble_chat_channel_id": "424574510",
       "rumble_dom_chat_enabled": true
