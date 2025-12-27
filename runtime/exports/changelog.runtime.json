@@ -1,7 +1,16 @@
 [
   {
+    "id": "2025-12-project-suspended",
+    "date": "2025-12-28",
+    "title": "Runtime suspended",
+    "description": "Runtime development was indefinitely suspended after repeated failures to achieve a stable, deterministic ingestion baseline across external platforms.",
+    "version": "v0.2.0-alpha",
+    "scope": "runtime",
+    "tags": ["suspended", "runtime", "status"]
+  },
+  {
     "id": "2025-02-runtime-quotas",
-    "date": "2025-02-12",
+    "date": "2025-12-20",
     "title": "Quota enforcement hardened",
     "description": "Daily quota enforcement was stabilized across platforms, consolidating the QuotaRegistry and keeping snapshot exports aligned for downstream readers.",
     "version": "v0.2.0-alpha",

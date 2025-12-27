@@ -3,12 +3,26 @@
     "source": "runtime",
     "project": "StreamSuites",
     "version": "v0.2.0-alpha",
-    "generated_at": "2025-02-12"
+    "generated_at": "2025-12-28"
   },
   "entries": [
     {
+      "id": "2025-12-project-suspended",
+      "date": "2025-12-28",
+      "version": "v0.2.0-alpha",
+      "scope": "runtime",
+      "title": "Runtime development suspended",
+      "summary": "Runtime execution and ingestion development has been suspended.",
+      "details": [
+        "External platform interfaces failed to provide stable, supportable ingestion paths.",
+        "Runtime behavior could not be made deterministic enough for safe automation.",
+        "No further runtime changes are planned until external conditions materially change."
+      ],
+      "tags": ["suspended", "runtime", "status"]
+    },
+    {
       "id": "2025-02-runtime-quotas",
-      "date": "2025-02-12",
+      "date": "2025-12-20",
       "version": "v0.2.0-alpha",
       "scope": "runtime",
       "title": "Quota enforcement hardened",
