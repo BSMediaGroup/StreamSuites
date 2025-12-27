@@ -5,11 +5,9 @@ from typing import Optional, Set, Tuple, Dict, Any, List, Union
 from types import SimpleNamespace
 from datetime import datetime, timezone
 
-import httpx
-
 from core.jobs import JobRegistry
 from services.rumble.browser.browser_client import RumbleBrowserClient
-from services.rumble.chat.tombi_stream import TombiStreamClient, StreamDisconnected
+from services.rumble.chat.sse import IngestFatalError, RumbleChatStreamClient
 from shared.logging.logger import get_logger
 
 # ------------------------------------------------------------
@@ -27,8 +25,6 @@ log = get_logger("rumble.chat_worker")
 
 DEFAULT_SEND_COOLDOWN_SECONDS = 0.75
 DEFAULT_STARTUP_ANNOUNCEMENT = "🤖 StreamSuites bot online"
-DEFAULT_STREAM_IDLE_TIMEOUT_SECONDS = 30.0
-
 CONFIG_PATH = Path("shared") / "config" / "chat_behaviour.json"
 
 
@@ -77,9 +73,9 @@ def _parse_created_on(created_raw: Union[str, int, float, None]) -> Optional[dat
 
 class RumbleChatWorker:
     """
-    TOMBI-STYLE CHAT WORKER
+    Authoritative Rumble chat worker
 
-    READ: Tombi streaming endpoint
+    READ: persistent HTTP stream from https://web7.rumble.com/chat/api/chat/{chat_id}/stream
     SEND: DOM injection (Playwright keyboard)
 
     HARD RULES:
@@ -122,12 +118,8 @@ class RumbleChatWorker:
         # Trigger cooldown tracking
         self._trigger_last_fired: Dict[str, float] = {}
 
-        # Stream auth
-        self._stream_cookies: httpx.Cookies = httpx.Cookies()
-        self._stream_cookie_header: str = ""
+        # Stream headers
         self._stream_headers: Dict[str, str] = {}
-
-        self._stream_idle_timeout: float = DEFAULT_STREAM_IDLE_TIMEOUT_SECONDS
 
     # ------------------------------------------------------------
 
@@ -173,46 +165,6 @@ class RumbleChatWorker:
         await self.browser.wait_for_chat_ready()
 
     # ------------------------------------------------------------
-
-    async def _hydrate_stream_cookies(self) -> None:
-        if not self.browser:
-            return
-
-        try:
-            cookies = await self.browser.export_cookies(
-                for_domains=["rumble.com", ".rumble.com", "web7.rumble.com"]
-            )
-        except Exception as e:
-            log.warning(f"[{self.ctx.creator_id}] Unable to export cookies for chat stream: {e}")
-            return
-
-        jar = httpx.Cookies()
-        cookie_header_parts: List[str] = []
-
-        for c in cookies:
-            name = c.get("name")
-            value = c.get("value")
-            if not name or value is None:
-                continue
-
-            domain = c.get("domain") or "rumble.com"
-            path = c.get("path") or "/"
-
-            try:
-                jar.set(name, value, domain=domain, path=path)
-            except Exception:
-                continue
-
-            cookie_header_parts.append(f"{name}={value}")
-
-        if not jar:
-            log.warning(f"[{self.ctx.creator_id}] No cookies captured for chat stream auth")
-        else:
-            log.info(f"[{self.ctx.creator_id}] Loaded {len(jar)} cookies for chat stream auth")
-            log.debug(f"[{self.ctx.creator_id}] Chat stream cookie header parts: {cookie_header_parts}")
-
-        self._stream_cookies = jar
-        self._stream_cookie_header = "; ".join(cookie_header_parts)
 
     # ------------------------------------------------------------
 
@@ -324,16 +276,13 @@ class RumbleChatWorker:
     # ------------------------------------------------------------
 
     async def run(self):
-        log.info(f"[{self.ctx.creator_id}] Chat worker starting (Tombi stream ingest / DOM SEND)")
+        log.info(f"[{self.ctx.creator_id}] Chat worker starting (authoritative HTTP ingest / DOM SEND)")
 
         # Load external behavior config
         self._load_config()
 
         # Ensure browser + chat iframe locked (retained for DOM send path)
         await self._ensure_browser()
-
-        # Export authenticated cookies for stream ingest
-        await self._hydrate_stream_cookies()
 
         # Prepare browser-aligned headers for stream (must mirror the Playwright session)
         await self._hydrate_stream_headers()
@@ -349,7 +298,7 @@ class RumbleChatWorker:
         if self._enable_startup_announcement and self._startup_announcement.strip():
             await self._send_text(self._startup_announcement.strip(), reason="startup_announcement")
 
-        log.info(f"[{self.ctx.creator_id}] Chat ready — starting Tombi stream ingest")
+        log.info(f"[{self.ctx.creator_id}] Chat ready — starting authoritative chat ingest")
 
         await self._run_stream_loop(chat_id)
 
@@ -363,6 +312,9 @@ class RumbleChatWorker:
                 log.warning(f"[{self.ctx.creator_id}] Chat stream disconnected — scheduling reconnect")
             except asyncio.CancelledError:
                 raise
+            except IngestFatalError as e:
+                log.error(f"[{self.ctx.creator_id}] Fatal chat stream error: {e}")
+                raise
             except Exception as e:
                 log.error(f"[{self.ctx.creator_id}] Chat stream error: {e}")
 
@@ -370,22 +322,28 @@ class RumbleChatWorker:
             backoff = min(backoff * 2, 30.0)
 
     async def _consume_stream(self, chat_id: str) -> None:
-        client = TombiStreamClient(
-            chat_id,
-            cookies=self._stream_cookies,
-            cookie_header=self._stream_cookie_header,
-            watch_url=self.watch_url,
-            headers=self._stream_headers,
-            idle_timeout=self._stream_idle_timeout,
-        )
+        headers = dict(self._stream_headers)
+        headers.setdefault("Referer", self.watch_url)
+        headers.setdefault("User-Agent", self._stream_headers.get("User-Agent", ""))
+
+        client = RumbleChatStreamClient(chat_id, headers=headers)
+        total_messages = 0
+        first_logged = False
 
         try:
             async for msg in client.iter_messages():
-                await self._handle_message_record(msg)
-        except asyncio.CancelledError:
-            raise
-        except StreamDisconnected as e:
-            raise RuntimeError(str(e)) from e
+                total_messages += 1
+                if not first_logged:
+                    log.info(
+                        f"[{self.ctx.creator_id}] First chat message: {msg.user}: {msg.message}"
+                    )
+                    first_logged = True
+                await self._handle_message_record(msg.raw or {})
+        finally:
+            log.info(
+                f"[{self.ctx.creator_id}] Chat stream closed after ingesting {total_messages} messages"
+            )
+            await client.aclose()
 
     # ------------------------------------------------------------
 
@@ -415,14 +373,13 @@ class RumbleChatWorker:
             return
 
         self_identities = {self.ctx.display_name.lower(), self.ctx.creator_id.lower()}
-        if user.lower() in self_identities:
-            log.debug(f"[{self.ctx.creator_id}] Ignoring self-authored message: {user}: {text}")
-            return
+        is_self = user.lower() in self_identities
 
         log.info(f"💬 {user}: {text} (created_on={created_raw_str})")
 
-        # Trigger evaluation
-        await self._handle_triggers(user=user, text=text)
+        if not is_self:
+            # Trigger evaluation
+            await self._handle_triggers(user=user, text=text)
 
     # ------------------------------------------------------------
 
