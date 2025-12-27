@@ -1,4 +1,28 @@
+<div style="background-color:#ffdddd; border:1px solid #d9534f; padding:12px;">
+<strong>STATUS: INDEFINITELY SUSPENDED — StreamSuites Runtime Engine</strong><br/>
+Development is halted. Rumble chat ingestion instability, inability to deterministically resolve or sustain <code>chat_id</code> ingestion, and repeated failed remediation attempts prevent safe progress to beta.
+</div>
+
 # StreamSuites
+
+## Suspension Notice
+
+- **Project Status:** INDEFINITELY SUSPENDED. The runtime is archived in place and no further development is planned.
+- **Reason for Suspension (technical summary only):**
+  - Rumble chat ingestion is unstable and cannot deterministically discover or sustain the required `chat_id` for SSE or HTTP-based ingestion.
+  - Endpoint behavior is inconsistent and non-deterministic across attempts, preventing reliable chat event capture.
+  - Multiple remediation attempts were executed and failed to restore deterministic ingestion, blocking any safe path to beta readiness.
+- **What Works (reference only):**
+  - Repository layout, historical architecture descriptions, and prior scaffolding remain available for audit and learning.
+  - Existing exports, schemas, and configuration samples remain readable as a static archive of the late-alpha runtime surface.
+- **What Does Not Work (explicit):**
+  - Rumble chat ingestion: `chat_id` discovery is unstable, endpoints respond inconsistently, and ingestion cannot be maintained deterministically.
+  - Any path to beta stabilization: runtime reliability requirements cannot be met under current conditions.
+- **Why This Repo Remains Public:** Preserved as a reference, audit artifact, and learning archive for the suspended runtime; no active maintenance is planned.
+- **No Roadmap / No ETA:** There is no roadmap, no planned fixes, and no estimated resumption.
+- **Versioning note:** v0.2.0-alpha is the final experimental snapshot retained in this archive; no new releases will be produced.
+
+The sections below are preserved for historical reference and reflect the runtime state prior to suspension.
 
 StreamSuites is a modular, multi-platform livestream automation system. It is
 the single canonical runtime source for orchestrating streaming data-plane
@@ -124,18 +148,10 @@ send reliability is preserved even when ingest requirements change:
 
 ## Project Status
 
-- **Stabilization milestone**: quota enforcement and quota snapshot export are
-  complete. Runtimes are focused on hardening, observability, and boundary
-  cleanup before expanding feature surface area.
-- **Dashboard compatibility**: dashboard-generated `creators.json` and
-  `platforms.json` are ingested via `core/config_loader.py` with schema
-  validation, and the streaming runtime publishes `shared/state/runtime_snapshot.json`
-  for dashboard telemetry.
-- **Public export readiness**: read-only snapshot builders for public clips and
-  polls galleries are available under `shared/public_exports/` with a static
-  export root at `exports/public/` for future publishing. Tallies are prepared
-  as a distinct schema for future read-only snapshots without sharing poll
-  logic or storage.
+- **Status:** INDEFINITELY SUSPENDED. The runtime is archived in place; no active development or remediation is planned.
+- **Final experimental snapshot:** v0.2.0-alpha (Build 2025.01) remains the last recorded runtime state and should be treated strictly as historical reference material.
+- **Operational impact:** the runtime cannot proceed safely to beta due to unresolved Rumble chat ingestion instability, including non-deterministic `chat_id` discovery and inconsistent endpoint behavior despite repeated remediation attempts.
+- **Dashboard and exports:** existing schemas, exports, and configuration samples remain for reference only and are not being updated or validated against live runtimes.
 
 ## Runtime data, signals, and exports (Data & Signals readiness)
 
