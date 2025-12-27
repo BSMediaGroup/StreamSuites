@@ -69,8 +69,21 @@ class RumbleLivestreamWorker:
             self.chat_task = asyncio.create_task(self.chat_worker.run())
 
             # Hard idle — lifecycle owner
-            while True:
-                await asyncio.sleep(30)
+            while self._running:
+                await asyncio.sleep(5)
+                if self.chat_task.done():
+                    try:
+                        self.chat_task.result()
+                        log.info(
+                            f"[{self.ctx.creator_id}] Chat worker completed — livestream loop exiting"
+                        )
+                    except Exception as e:
+                        log.error(
+                            f"[{self.ctx.creator_id}] Chat worker exited with error: {e}"
+                        )
+                    finally:
+                        self._running = False
+                        break
 
         except asyncio.CancelledError:
             log.info(f"[{self.ctx.creator_id}] Livestream worker cancelled")

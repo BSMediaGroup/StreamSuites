@@ -109,6 +109,8 @@ class RumbleChatSSEClient:
         failure_count = 0
 
         while not self._closed:
+            log.info("SSE handshake starting (chat_id=%s)", self.chat_id)
+
             headers = dict(self._base_headers)
             if self._last_event_id:
                 headers["Last-Event-ID"] = self._last_event_id
@@ -132,9 +134,15 @@ class RumbleChatSSEClient:
                             "SSE keepalive HTTP 204 (chat_id=%s) — waiting for events",
                             self.chat_id,
                         )
-                        # 204 is an empty keepalive; do not backoff exponentially.
+                        # 204 is an empty keepalive; use gentle backoff while waiting.
                         failure_count = 0
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(backoff_seconds)
+                        backoff_seconds = min(backoff_seconds * 1.5, 30.0)
+                        log.info(
+                            "SSE reconnect scheduled after 204 in %.1fs (chat_id=%s)",
+                            backoff_seconds,
+                            self.chat_id,
+                        )
                         continue
 
                     if status != 200 or (ct and "text/event-stream" not in ct):
@@ -187,6 +195,12 @@ class RumbleChatSSEClient:
                     async for event in self._read_stream(resp):
                         if event.event_id:
                             self._last_event_id = event.event_id
+                        log.info(
+                            "SSE message received (chat_id=%s, event=%s, id=%s)",
+                            self.chat_id,
+                            getattr(event, "event", "message"),
+                            getattr(event, "event_id", None),
+                        )
                         yield event
 
             except asyncio.CancelledError:
@@ -215,6 +229,11 @@ class RumbleChatSSEClient:
 
             log.debug(
                 "SSE retrying in %.1fs after error (chat_id=%s)",
+                backoff_seconds,
+                self.chat_id,
+            )
+            log.info(
+                "SSE reconnect attempt in %.1fs (chat_id=%s)",
                 backoff_seconds,
                 self.chat_id,
             )
