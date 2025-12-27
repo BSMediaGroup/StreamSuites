@@ -26,6 +26,17 @@ The first implemented and validated platform was **Rumble**; Rumble support is
 currently paused (see status below) but all code remains intact for
 re-enablement.
 
+### Rumble chat ingest (SSE)
+
+- **Authoritative read path**: chat ingest now uses the Server-Sent Events
+  endpoint `https://web7.rumble.com/chat/api/chat/<CHAT_ID>/stream`, which emits
+  `init` and `messages` frames containing chat, users, and channel data.
+- **Parsing model**: SSE frames are parsed as JSON with nested `data.messages`
+  lists; idempotency is preserved via SSE `id` handling and baseline cutoffs
+  remain unchanged.
+- **Send path**: outbound chat messages continue to use the DOM-based send path
+  (Playwright keyboard/React-friendly injection); no REST chat sends are used.
+
 ## Project Status
 
 - **Stabilization milestone**: quota enforcement and quota snapshot export are

@@ -337,7 +337,8 @@ class RumbleChatWorker:
         if event_type not in {"init", "messages"}:
             return
 
-        messages = payload.get("messages") or []
+        payload_data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+        messages = payload_data.get("messages") or []
         if not isinstance(messages, list):
             return
 
