@@ -1,14 +1,13 @@
 import asyncio
 import json
-from pathlib import Path
-from typing import Optional, Set, Tuple, Dict, Any, List, Union
-from types import SimpleNamespace
 from datetime import datetime, timezone
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from core.jobs import JobRegistry
 from core.state_exporter import runtime_state
 from services.rumble.browser.browser_client import RumbleBrowserClient
-from services.rumble.chat.tombi_stream import StreamDisconnected, TombiStreamClient
 from shared.logging.logger import get_logger
 
 # ------------------------------------------------------------
@@ -23,6 +22,10 @@ except Exception:
     record_trigger_fire = None  # type: ignore
 
 log = get_logger("rumble.chat_worker")
+
+
+class StreamDisconnected(Exception):
+    """Raised when the browser-captured chat stream stops producing events."""
 
 DEFAULT_SEND_COOLDOWN_SECONDS = 0.75
 DEFAULT_STARTUP_ANNOUNCEMENT = "🤖 StreamSuites bot online"
@@ -76,7 +79,7 @@ class RumbleChatWorker:
     """
     Authoritative Rumble chat worker
 
-    READ: persistent HTTP stream from https://web7.rumble.com/chat/api/chat/{chat_id}/stream
+    READ: browser-captured EventSource stream (hijacks native Rumble client)
     SEND: DOM injection (Playwright keyboard)
 
     HARD RULES:
@@ -119,11 +122,9 @@ class RumbleChatWorker:
         # Trigger cooldown tracking
         self._trigger_last_fired: Dict[str, float] = {}
 
-        # Stream headers
-        self._stream_headers: Dict[str, str] = {}
-        self._stream_cookies: List[Dict[str, Any]] = []
-        self._cookie_header: Optional[str] = None
+        # Chat identifiers (assigned when the EventSource connects)
         self._chat_id: Optional[str] = None
+        self._chat_id_persisted: bool = False
 
     # ------------------------------------------------------------
 
@@ -170,91 +171,18 @@ class RumbleChatWorker:
 
     # ------------------------------------------------------------
 
-    # ------------------------------------------------------------
+    def _track_chat_id(self, chat_id: Optional[str]) -> Optional[str]:
+        if not chat_id:
+            return self._chat_id
 
-    async def _hydrate_stream_headers(self) -> None:
-        if not self.browser or not self.browser._page:
-            log.warning(f"[{self.ctx.creator_id}] Browser not ready for chat header capture")
-            return
+        chat_id_str = str(chat_id)
+        if not chat_id_str.isdigit():
+            return self._chat_id
 
-        user_agent: Optional[str] = None
-        try:
-            user_agent = await self.browser._page.evaluate("navigator.userAgent")
-        except Exception:
-            try:
-                user_agent = getattr(self.browser._context, "user_agent", None)
-            except Exception:
-                user_agent = None
+        if self._chat_id == chat_id_str:
+            return self._chat_id
 
-        if not user_agent:
-            user_agent = (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            )
-
-        self._stream_headers = {
-            "User-Agent": user_agent,
-            "Origin": "https://rumble.com",
-            "Referer": self.watch_url,
-        }
-
-        log.debug(f"[{self.ctx.creator_id}] Chat stream headers prepared: {self._stream_headers}")
-
-    # ------------------------------------------------------------
-
-    async def _prepare_stream_cookies(self) -> None:
-        if not self.browser:
-            raise RuntimeError("Browser not ready for chat cookie capture")
-
-        allowed_domains = [
-            "rumble.com",
-            "web7.rumble.com",
-            "web6.rumble.com",
-            "web5.rumble.com",
-            "web4.rumble.com",
-            "web3.rumble.com",
-            "web2.rumble.com",
-            "web1.rumble.com",
-        ]
-
-        cookies = await self.browser.export_cookies(for_domains=allowed_domains)
-        header_parts = []
-        for c in cookies:
-            name = c.get("name")
-            value = c.get("value")
-            if name and value:
-                header_parts.append(f"{name}={value}")
-
-        cookie_header = "; ".join(header_parts)
-
-        if not cookie_header:
-            raise RuntimeError(
-                f"[{self.ctx.creator_id}] No cookies exported for chat stream authentication"
-            )
-
-        self._stream_cookies = cookies
-        self._cookie_header = cookie_header
-
-        log.info(
-            f"[{self.ctx.creator_id}] Captured {len(cookies)} cookies for chat stream auth"
-        )
-
-    # ------------------------------------------------------------
-
-    async def _resolve_chat_id(self) -> str:
-        if not self.browser or not self.browser._page:
-            raise RuntimeError("Browser not ready for chat_id resolution")
-
-        chat_id = await self.browser.wait_for_chat_stream_id(self.watch_url, timeout=15.0)
-
-        if not chat_id or not chat_id.isdigit():
-            raise RuntimeError(
-                f"[{self.ctx.creator_id}] Unable to resolve numeric chat_id from network request"
-            )
-
-        self._persist_chat_id(chat_id)
-
+        self._chat_id = chat_id_str
         runtime_ns = getattr(self.ctx, "runtime", None)
         if runtime_ns is None:
             runtime_ns = SimpleNamespace()
@@ -265,12 +193,39 @@ class RumbleChatWorker:
             rumble_ns = SimpleNamespace()
             setattr(runtime_ns, "rumble", rumble_ns)
 
-        rumble_ns.chat_id = chat_id
-        self.ctx.rumble_chat_channel_id = chat_id
-        self._chat_id = chat_id
+        rumble_ns.chat_id = chat_id_str
+        self.ctx.rumble_chat_channel_id = chat_id_str
+        return self._chat_id
 
-        log.info(f"[{self.ctx.creator_id}] Resolved Rumble chat_id={chat_id} from network request")
-        return chat_id
+    def _persist_chat_id_once(self) -> None:
+        if self._chat_id and not getattr(self, "_chat_id_persisted", False):
+            self._persist_chat_id(self._chat_id)
+            self._chat_id_persisted = True
+
+    @staticmethod
+    def _extract_messages(payload: Any) -> List[Dict[str, Any]]:
+        if isinstance(payload, list):
+            return [m for m in payload if isinstance(m, dict)]
+
+        if not isinstance(payload, dict):
+            return []
+
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+        messages = data.get("messages") if isinstance(data, dict) else None
+
+        out: List[Dict[str, Any]] = []
+
+        if isinstance(messages, list):
+            out.extend([m for m in messages if isinstance(m, dict)])
+
+        if not out and isinstance(payload, dict):
+            if isinstance(payload.get("text"), str) and (
+                isinstance(payload.get("user_name"), str)
+                or isinstance(payload.get("username"), str)
+            ):
+                out.append(payload)
+
+        return out
 
     # ------------------------------------------------------------
 
@@ -320,27 +275,37 @@ class RumbleChatWorker:
     # ------------------------------------------------------------
 
     async def run(self):
-        log.info(f"[{self.ctx.creator_id}] Chat worker starting (authoritative HTTP ingest / DOM SEND)")
+        log.info(
+            f"[{self.ctx.creator_id}] Chat worker starting (browser EventSource ingest / DOM SEND)"
+        )
 
         # Load external behavior config
         self._load_config()
+        self._chat_id_persisted = False
 
-        chat_id: Optional[str] = None
+        event_queue: asyncio.Queue = asyncio.Queue()
 
         try:
             # Ensure browser + chat iframe locked (retained for DOM send path)
             await self._ensure_browser()
 
-            # Prepare browser-aligned headers for stream (must mirror the Playwright session)
-            await self._hydrate_stream_headers()
-            await self._prepare_stream_cookies()
+            binding = await self.browser.enable_chat_eventsource_tap(event_queue)  # type: ignore[arg-type]
+            if not binding:
+                raise RuntimeError(
+                    f"[{self.ctx.creator_id}] Failed to install EventSource tap on watch page"
+                )
 
-            chat_id = await self._resolve_chat_id()
-            runtime_state.record_rumble_chat_status(
-                chat_id=chat_id,
-                status="CONNECTING",
-                error=None,
+            log.info(
+                f"[{self.ctx.creator_id}] Browser EventSource tap ready (binding={binding})"
             )
+
+            try:
+                await self.browser._page.reload(wait_until="domcontentloaded")  # type: ignore[union-attr]
+                await self.browser.wait_for_chat_ready()
+            except Exception as e:
+                log.warning(
+                    f"[{self.ctx.creator_id}] Reload after EventSource tap failed: {e}"
+                )
 
             # Establish baseline cutoff BEFORE announcing or responding
             self._baseline_cutoff = _utc_now()
@@ -349,16 +314,20 @@ class RumbleChatWorker:
 
             # Announce only AFTER baseline exists
             if self._enable_startup_announcement and self._startup_announcement.strip():
-                await self._send_text(self._startup_announcement.strip(), reason="startup_announcement")
+                await self._send_text(
+                    self._startup_announcement.strip(), reason="startup_announcement"
+                )
 
-            log.info(f"[{self.ctx.creator_id}] Chat ready — starting authoritative chat ingest")
+            log.info(
+                f"[{self.ctx.creator_id}] Chat ready — starting browser-captured chat ingest"
+            )
 
-            await self._run_stream_loop(chat_id)
+            await self._run_stream_loop(event_queue)
         except asyncio.CancelledError:
             raise
         except Exception as e:
             runtime_state.record_rumble_chat_status(
-                chat_id=chat_id or self._chat_id or getattr(self.ctx, "rumble_chat_channel_id", None),
+                chat_id=self._chat_id or getattr(self.ctx, "rumble_chat_channel_id", None),
                 status="FAILED",
                 error=str(e),
             )
@@ -366,83 +335,84 @@ class RumbleChatWorker:
 
     # ------------------------------------------------------------
 
-    async def _run_stream_loop(self, chat_id: str) -> None:
+    async def _run_stream_loop(self, queue: asyncio.Queue) -> None:
         backoff = 1.0
         while True:
             try:
-                await self._consume_stream(chat_id)
-                log.warning(f"[{self.ctx.creator_id}] Chat stream disconnected — scheduling reconnect")
+                await self._consume_browser_stream(queue)
+                log.warning(
+                    f"[{self.ctx.creator_id}] Browser chat stream disconnected — scheduling reconnect"
+                )
             except asyncio.CancelledError:
                 raise
             except StreamDisconnected as e:
-                log.warning(f"[{self.ctx.creator_id}] Chat stream disconnected: {e}")
+                log.warning(f"[{self.ctx.creator_id}] Browser chat stream disconnected: {e}")
             except Exception as e:
-                log.error(f"[{self.ctx.creator_id}] Chat stream error: {e}")
+                log.error(f"[{self.ctx.creator_id}] Browser chat stream error: {e}")
+
+            try:
+                await self.browser._page.reload(wait_until="domcontentloaded")  # type: ignore[union-attr]
+                await self.browser.wait_for_chat_ready()
+            except Exception:
+                pass
 
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30.0)
 
-    async def _consume_stream(self, chat_id: str) -> None:
-        headers = dict(self._stream_headers)
-        headers.setdefault("Referer", self.watch_url)
-        headers.setdefault("User-Agent", self._stream_headers.get("User-Agent", ""))
-
-        client = TombiStreamClient(
-            chat_id,
-            headers=headers,
-            cookies=self._stream_cookies,
-            cookie_header=self._cookie_header,
-            watch_url=self.watch_url,
-        )
+    async def _consume_browser_stream(self, queue: asyncio.Queue) -> None:
         total_messages = 0
         first_logged = False
 
-        try:
-            stream = client.iter_messages()
-
+        while True:
             try:
-                first_message = await asyncio.wait_for(stream.__anext__(), timeout=10.0)
-            except asyncio.TimeoutError:
+                event = await asyncio.wait_for(queue.get(), timeout=30.0)
+            except asyncio.TimeoutError as e:
                 raise StreamDisconnected(
-                    f"[{self.ctx.creator_id}] Chat stream produced no messages within 10s (chat_id={chat_id})"
-                )
-            except StopAsyncIteration:
-                raise StreamDisconnected(
-                    f"[{self.ctx.creator_id}] Chat stream closed before first message (chat_id={chat_id})"
-                )
+                    f"[{self.ctx.creator_id}] Browser EventSource idle for 30s"
+                ) from e
 
-            async def _handle_ingest(msg):
-                nonlocal total_messages, first_logged
+            if not isinstance(event, dict):
+                continue
+
+            evt_type = event.get("type")
+            chat_id = self._track_chat_id(event.get("chatId") or event.get("chat_id"))
+
+            if evt_type == "eventsource_open":
+                runtime_state.record_rumble_chat_status(
+                    chat_id=chat_id or self.ctx.rumble_chat_channel_id,
+                    status="CONNECTING",
+                    error=None,
+                )
+                continue
+
+            if evt_type != "message":
+                continue
+
+            messages = self._extract_messages(event.get("payload"))
+            if not messages:
+                continue
+
+            for msg in messages:
+                chat_id = self._track_chat_id(
+                    chat_id or msg.get("chat_id") or msg.get("chatId")
+                )
                 total_messages += 1
-                if not first_logged:
+                processed = await self._handle_message_record(msg)
+                if processed and not first_logged:
                     log.info(
                         f"[{self.ctx.creator_id}] First chat message: {msg.get('user_name') or msg.get('username')}: {msg.get('text')}"
                     )
                     runtime_state.record_rumble_chat_status(
-                        chat_id=chat_id,
+                        chat_id=self._chat_id or chat_id or self.ctx.rumble_chat_channel_id,
                         status="CONNECTED",
                         error=None,
                     )
                     first_logged = True
-                await self._handle_message_record(msg)
 
-            await _handle_ingest(first_message)
-
-            async for msg in stream:
-                await _handle_ingest(msg)
-        finally:
-            log.info(
-                f"[{self.ctx.creator_id}] Chat stream closed after ingesting {total_messages} messages"
-            )
-            try:
-                await stream.aclose()
-            except Exception:
-                pass
-            await client.aclose()
 
     # ------------------------------------------------------------
 
-    async def _handle_message_record(self, msg: Dict[str, Any]) -> None:
+    async def _handle_message_record(self, msg: Dict[str, Any]) -> bool:
         created_raw = msg.get("created_on") or msg.get("created_at") or msg.get("timestamp")
         if created_raw is None:
             created_raw = _utc_now().isoformat()
@@ -451,7 +421,7 @@ class RumbleChatWorker:
 
         key = (msg.get("user_id") or msg.get("username"), msg.get("text"), created_raw_str)
         if key in self._seen:
-            return
+            return False
         self._seen.add(key)
 
         created_ts = _parse_created_on(created_raw)
@@ -460,12 +430,14 @@ class RumbleChatWorker:
 
         # HARD RULE: ignore anything at/before baseline cutoff
         if self._baseline_cutoff and created_ts <= self._baseline_cutoff:
-            return
+            return False
 
         user = (msg.get("user_name") or msg.get("username") or "").strip()
         text = (msg.get("text") or "").strip()
         if not user or not text:
-            return
+            return False
+
+        self._persist_chat_id_once()
 
         self_identities = {self.ctx.display_name.lower(), self.ctx.creator_id.lower()}
         is_self = user.lower() in self_identities
@@ -475,6 +447,8 @@ class RumbleChatWorker:
         if not is_self:
             # Trigger evaluation
             await self._handle_triggers(user=user, text=text)
+
+        return True
 
     # ------------------------------------------------------------
 
