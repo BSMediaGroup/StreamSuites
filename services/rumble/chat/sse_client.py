@@ -45,6 +45,8 @@ class RumbleChatSSEClient:
                 "Accept": "text/event-stream",
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
+                "Origin": "https://rumble.com",
+                "Referer": "https://rumble.com/",
                 # Browser-like UA reduces the chance of edge-case filtering
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -53,6 +55,7 @@ class RumbleChatSSEClient:
                 ),
             },
             timeout=httpx.Timeout(10.0, read=None),
+            follow_redirects=True,
         )
 
         self._client_owned = client is None
@@ -81,11 +84,13 @@ class RumbleChatSSEClient:
 
             try:
                 async with self._client.stream("GET", url, headers=headers) as resp:
-                    if resp.status_code != 200:
+                    ct = resp.headers.get("content-type")
+                    if resp.status_code != 200 or (ct and "text/event-stream" not in ct):
                         log.error(
-                            "SSE connection failed [%s] content-type=%s",
+                            "SSE connection failed [%s] content-type=%s url=%s",
                             resp.status_code,
-                            resp.headers.get("content-type"),
+                            ct,
+                            url,
                         )
                         await asyncio.sleep(backoff_seconds)
                         backoff_seconds = min(backoff_seconds * 2, 30.0)
