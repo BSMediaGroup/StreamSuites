@@ -31,11 +31,16 @@ re-enablement.
 - **Authoritative read path**: chat ingest now uses the Server-Sent Events
   endpoint `https://web7.rumble.com/chat/api/chat/<CHAT_ID>/stream`, which emits
   `init` and `messages` frames containing chat, users, and channel data.
+- **Authentication model**: SSE connections reuse the browser-authenticated
+  Playwright context cookies (exported from the persistent profile) to mirror
+  the logged-in session and avoid unauthenticated 204 responses.
 - **Parsing model**: SSE frames are parsed as JSON with nested `data.messages`
   lists; idempotency is preserved via SSE `id` handling and baseline cutoffs
   remain unchanged.
 - **Send path**: outbound chat messages continue to use the DOM-based send path
   (Playwright keyboard/React-friendly injection); no REST chat sends are used.
+- **Livestream API usage**: livestream API polling is no longer used for chat
+  ingest; it remains only for startup baseline cutoff calculation.
 
 ## Project Status
 

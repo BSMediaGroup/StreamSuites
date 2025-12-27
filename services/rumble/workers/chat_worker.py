@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Optional, Set, Tuple, Dict, Any, List, Union
 from datetime import datetime, timezone
 
+import httpx
+
 from core.jobs import JobRegistry
 from services.rumble.browser.browser_client import RumbleBrowserClient
 from services.rumble.chat.sse_client import RumbleChatSSEClient
@@ -141,6 +143,9 @@ class RumbleChatWorker:
         # we guard downstream handling to remain idempotent.
         self._last_sse_id: Optional[str] = None
 
+        # Cookie jar reused by SSE client to mirror browser auth
+        self._sse_cookies: httpx.Cookies = httpx.Cookies()
+
     # ------------------------------------------------------------
 
     def _load_config(self) -> None:
@@ -181,6 +186,43 @@ class RumbleChatWorker:
 
     # ------------------------------------------------------------
 
+    async def _hydrate_sse_cookies(self) -> None:
+        if not self.browser:
+            return
+
+        try:
+            cookies = await self.browser.export_cookies(
+                for_domains=["rumble.com", ".rumble.com", "web7.rumble.com"]
+            )
+        except Exception as e:
+            log.warning(f"[{self.ctx.creator_id}] Unable to export cookies for SSE: {e}")
+            return
+
+        jar = httpx.Cookies()
+
+        for c in cookies:
+            name = c.get("name")
+            value = c.get("value")
+            if not name or value is None:
+                continue
+
+            domain = c.get("domain") or "rumble.com"
+            path = c.get("path") or "/"
+
+            try:
+                jar.set(name, value, domain=domain, path=path)
+            except Exception:
+                continue
+
+        if not jar:
+            log.warning(f"[{self.ctx.creator_id}] No cookies captured for SSE auth")
+        else:
+            log.info(f"[{self.ctx.creator_id}] Loaded {len(jar)} cookies for SSE auth")
+
+        self._sse_cookies = jar
+
+    # ------------------------------------------------------------
+
     async def run(self):
         log.info(f"[{self.ctx.creator_id}] Chat worker starting (API READ / DOM SEND)")
 
@@ -195,13 +237,16 @@ class RumbleChatWorker:
         # Ensure browser + chat iframe locked (retained for DOM send path)
         await self._ensure_browser()
 
+        # Export authenticated cookies for SSE ingest
+        await self._hydrate_sse_cookies()
+
         # Initialize SSE ingest client. We defer creation until here to avoid
         # building HTTP clients before the runtime is fully started.
         chat_id = self.ctx.rumble_chat_channel_id
         if not chat_id:
             raise RuntimeError(f"[{self.ctx.creator_id}] rumble_chat_channel_id is required for SSE ingest")
 
-        self._sse_client = RumbleChatSSEClient(chat_id)
+        self._sse_client = RumbleChatSSEClient(chat_id, cookies=self._sse_cookies)
 
         # 1) Establish baseline cutoff FIRST (prevents historic spam on boot)
         await self._establish_startup_baseline()

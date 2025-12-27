@@ -36,7 +36,13 @@ class RumbleChatSSEClient:
 
     STREAM_URL = "https://web7.rumble.com/chat/api/chat/{chat_id}/stream"
 
-    def __init__(self, chat_id: str, *, client: Optional[httpx.AsyncClient] = None):
+    def __init__(
+        self,
+        chat_id: str,
+        *,
+        client: Optional[httpx.AsyncClient] = None,
+        cookies: Optional[httpx._models.CookieTypes] = None,
+    ):
         self.chat_id = str(chat_id)
 
         # Allow caller to supply a shared client; otherwise own lifecycle
@@ -54,6 +60,7 @@ class RumbleChatSSEClient:
                     "Chrome/124.0.0.0 Safari/537.36"
                 ),
             },
+            cookies=cookies,
             timeout=httpx.Timeout(10.0, read=None),
             follow_redirects=True,
         )

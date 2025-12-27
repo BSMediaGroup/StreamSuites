@@ -134,6 +134,32 @@ class RumbleBrowserClient:
         raise TimeoutError("Chat iframe not found")
 
     # ------------------------------------------------------------
+    # AUTH COOKIE EXPORT (FOR NON-DOM CLIENTS)
+    # ------------------------------------------------------------
+
+    async def export_cookies(self, for_domains: Optional[list[str]] = None) -> list:
+        """
+        Export cookies from the persistent browser context so downstream HTTP
+        clients (e.g., SSE) can reuse the authenticated session. Optional
+        domain filtering keeps the jar tight to rumble hosts.
+        """
+        if not self._context:
+            raise RuntimeError("Browser context not ready")
+
+        cookies = await self._context.cookies()
+
+        if for_domains:
+            normalized = [d.lstrip(".") for d in for_domains]
+
+            def _matches(domain: str) -> bool:
+                dom = domain.lstrip(".")
+                return any(dom == nd or dom.endswith(f".{nd}") for nd in normalized)
+
+            cookies = [c for c in cookies if _matches(c.get("domain", ""))]
+
+        return cookies
+
+    # ------------------------------------------------------------
     # 🔥 AUTHORITATIVE CHAT SEND — POC DOM INJECTION (REACT EVENTS + CLICK)
     # ------------------------------------------------------------
 
