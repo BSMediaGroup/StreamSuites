@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from core.jobs import JobRegistry
 from core.state_exporter import runtime_state
 from services.rumble.browser.browser_client import RumbleBrowserClient
-from services.rumble.chat.sse import IngestFatalError, RumbleChatStreamClient
+from services.rumble.chat.tombi_stream import StreamDisconnected, TombiStreamClient
 from shared.logging.logger import get_logger
 
 # ------------------------------------------------------------
@@ -121,6 +121,8 @@ class RumbleChatWorker:
 
         # Stream headers
         self._stream_headers: Dict[str, str] = {}
+        self._stream_cookies: List[Dict[str, Any]] = []
+        self._cookie_header: Optional[str] = None
         self._chat_id: Optional[str] = None
 
     # ------------------------------------------------------------
@@ -198,6 +200,45 @@ class RumbleChatWorker:
         }
 
         log.debug(f"[{self.ctx.creator_id}] Chat stream headers prepared: {self._stream_headers}")
+
+    # ------------------------------------------------------------
+
+    async def _prepare_stream_cookies(self) -> None:
+        if not self.browser:
+            raise RuntimeError("Browser not ready for chat cookie capture")
+
+        allowed_domains = [
+            "rumble.com",
+            "web7.rumble.com",
+            "web6.rumble.com",
+            "web5.rumble.com",
+            "web4.rumble.com",
+            "web3.rumble.com",
+            "web2.rumble.com",
+            "web1.rumble.com",
+        ]
+
+        cookies = await self.browser.export_cookies(for_domains=allowed_domains)
+        header_parts = []
+        for c in cookies:
+            name = c.get("name")
+            value = c.get("value")
+            if name and value:
+                header_parts.append(f"{name}={value}")
+
+        cookie_header = "; ".join(header_parts)
+
+        if not cookie_header:
+            raise RuntimeError(
+                f"[{self.ctx.creator_id}] No cookies exported for chat stream authentication"
+            )
+
+        self._stream_cookies = cookies
+        self._cookie_header = cookie_header
+
+        log.info(
+            f"[{self.ctx.creator_id}] Captured {len(cookies)} cookies for chat stream auth"
+        )
 
     # ------------------------------------------------------------
 
@@ -292,6 +333,7 @@ class RumbleChatWorker:
 
             # Prepare browser-aligned headers for stream (must mirror the Playwright session)
             await self._hydrate_stream_headers()
+            await self._prepare_stream_cookies()
 
             chat_id = await self._resolve_chat_id()
             runtime_state.record_rumble_chat_status(
@@ -332,9 +374,8 @@ class RumbleChatWorker:
                 log.warning(f"[{self.ctx.creator_id}] Chat stream disconnected — scheduling reconnect")
             except asyncio.CancelledError:
                 raise
-            except IngestFatalError as e:
-                log.error(f"[{self.ctx.creator_id}] Fatal chat stream error: {e}")
-                raise
+            except StreamDisconnected as e:
+                log.warning(f"[{self.ctx.creator_id}] Chat stream disconnected: {e}")
             except Exception as e:
                 log.error(f"[{self.ctx.creator_id}] Chat stream error: {e}")
 
@@ -346,7 +387,13 @@ class RumbleChatWorker:
         headers.setdefault("Referer", self.watch_url)
         headers.setdefault("User-Agent", self._stream_headers.get("User-Agent", ""))
 
-        client = RumbleChatStreamClient(chat_id, headers=headers)
+        client = TombiStreamClient(
+            chat_id,
+            headers=headers,
+            cookies=self._stream_cookies,
+            cookie_header=self._cookie_header,
+            watch_url=self.watch_url,
+        )
         total_messages = 0
         first_logged = False
 
@@ -356,11 +403,11 @@ class RumbleChatWorker:
             try:
                 first_message = await asyncio.wait_for(stream.__anext__(), timeout=10.0)
             except asyncio.TimeoutError:
-                raise IngestFatalError(
+                raise StreamDisconnected(
                     f"[{self.ctx.creator_id}] Chat stream produced no messages within 10s (chat_id={chat_id})"
                 )
             except StopAsyncIteration:
-                raise IngestFatalError(
+                raise StreamDisconnected(
                     f"[{self.ctx.creator_id}] Chat stream closed before first message (chat_id={chat_id})"
                 )
 
@@ -369,7 +416,7 @@ class RumbleChatWorker:
                 total_messages += 1
                 if not first_logged:
                     log.info(
-                        f"[{self.ctx.creator_id}] First chat message: {msg.user}: {msg.message}"
+                        f"[{self.ctx.creator_id}] First chat message: {msg.get('user_name') or msg.get('username')}: {msg.get('text')}"
                     )
                     runtime_state.record_rumble_chat_status(
                         chat_id=chat_id,
@@ -377,7 +424,7 @@ class RumbleChatWorker:
                         error=None,
                     )
                     first_logged = True
-                await self._handle_message_record(msg.raw or {})
+                await self._handle_message_record(msg)
 
             await _handle_ingest(first_message)
 
