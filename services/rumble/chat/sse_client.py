@@ -122,18 +122,9 @@ class RumbleChatSSEClient:
                     status = resp.status_code
 
                     if status == 204:
-                        body_preview = ""
-                        try:
-                            raw = await resp.aread()
-                            body_preview = raw.decode(errors="ignore")[:200]
-                        except Exception:
-                            body_preview = "<unreadable>"
-
                         log.warning(
-                            "SSE endpoint returned HTTP 204 (chat_id=%s) content-type=%s body=%s",
+                            "SSE returned HTTP 204 (chat_id=%s) — downgrading",
                             self.chat_id,
-                            ct,
-                            body_preview,
                         )
                         self._closed = True
                         raise SSEUnavailable(
@@ -196,10 +187,23 @@ class RumbleChatSSEClient:
             except asyncio.CancelledError:
                 raise
 
+            except SSEUnavailable:
+                raise
+
             except Exception as e:
+                failure_count += 1
                 log.warning(
-                    "SSE stream error (chat_id=%s): %s", self.chat_id, e
+                    "SSE stream error (chat_id=%s, attempt=%s): %s",
+                    self.chat_id,
+                    failure_count,
+                    e,
                 )
+
+                if failure_count >= 5:
+                    self._closed = True
+                    raise SSEUnavailable(
+                        f"SSE repeatedly failed after {failure_count} attempts",
+                    )
 
             if self._closed:
                 break
@@ -283,4 +287,3 @@ class RumbleChatSSEClient:
                 await self._client.aclose()
             except Exception:
                 pass
-

@@ -26,33 +26,50 @@ The first implemented and validated platform was **Rumble**; Rumble support is
 currently paused (see status below) but all code remains intact for
 re-enablement.
 
+## Repository layout
+
+- `core/`: streaming runtime entrypoint (`app.py`), scheduler, job registry,
+  and shared snapshot export loops.
+- `services/rumble/`: Rumble-specific workers, browser client, SSE client, and
+  chat helpers.
+- `shared/`: platform-neutral configuration, state publishers, storage helpers,
+  and logging.
+- `runtime/`: exported snapshots owned by the runtime (state, signals,
+  admin/export manifests).
+- `changelog/` + `scripts/`: version stamping and release utilities.
+- `services/{twitch,youtube,discord}/`: other platform runtimes and control
+  plane implementations.
+
 ### Rumble chat ingest modes
 
-- **Preferred read path (SSE)**: chat ingest prefers the Server-Sent Events
-  endpoint `https://web7.rumble.com/chat/api/chat/<CHAT_ID>/stream`, which
-  emits `init` and `messages` frames containing chat, users, and channel data.
-- **Authentication model**: SSE connections reuse the browser-authenticated
-  Playwright context cookies (exported from the persistent profile) to mirror
-  the logged-in session. Missing cookies or Referer/User-Agent headers cause
-  HTTP 204 responses. The runtime now treats SSE as optional and will not hard
-  fail on 204.
-- **Fallback ingest**: when SSE is unavailable or rejected, the runtime logs the
-  downgrade and falls back to livestream API polling of `recent_messages`
-  (baseline cutoff preserved). This prevents infinite SSE retry loops and keeps
-  chat ingestion alive without crashing.
-- **Parsing model**: SSE frames are parsed as JSON with nested `data.messages`
-  lists; idempotency is preserved via SSE `id` handling and baseline cutoffs
-  remain unchanged across ingest modes.
+- **Primary read path (Livestream API polling)**: chat ingest now **always**
+  runs the livestream API poller against `recent_messages`, honoring the startup
+  baseline cutoff and de-duplication keys.
+- **Secondary read path (SSE side-channel)**: SSE connects to
+  `https://web7.rumble.com/chat/api/chat/<CHAT_ID>/stream` as a best-effort
+  side channel. It mirrors the authenticated browser session but is not
+  required for chat ingestion to continue.
+- **SSE gating and disablement**: a single HTTP 204 response (even once) marks
+  SSE as unavailable for the session. The worker logs the downgrade once,
+  disables SSE, and continues polling without retrying forever. Repeated
+  non-SSE responses or stream errors also cap retries and disable SSE.
+- **Authentication model**: SSE attempts reuse exported Playwright cookies plus
+  browser-matched headers (`User-Agent`, `Origin`, `Referer`). Missing any of
+  these commonly results in HTTP 204; polling remains active regardless.
+- **Parsing + dedupe**: SSE frames are parsed as JSON batches of
+  `data.messages` and flow through the same baseline and de-duplication guards
+  as polling, so ingest paths stay idempotent.
 
 ### Chat send (Playwright DOM)
 
 - **Iframe-scoped DOM send**: outbound chat messages target the chat iframe
   directly. The bot focuses `#chat-message-text-input`, dispatches React-safe
-  DOM events, and clicks the `button.chat--send` control instead of issuing
-  global page-level keyboard presses.
+  DOM events, and clicks the `button.chat--send` control. **Enter is never
+  pressed** to avoid monetization modals or key-capture side effects.
 - **Payment / monetization guard**: known Rumble monetization modals are
-  detected and closed before sending so the Enter key cannot be captured by
-  payment UI. All selectors used for sending are logged for observability.
+  detected and closed before sending. All selectors used for sending are logged
+  for observability and the send will abort (not fall back to Enter) if
+  required elements are missing.
 - **No REST chat sends**: outbound chat remains DOM-driven; no REST chat send
   endpoints are used.
 
@@ -89,6 +106,16 @@ send reliability is preserved even when ingest requirements change:
   headers restores the expected `text/event-stream` 200 response. When a 204 is
   received, the runtime now marks SSE as unavailable and downgrades to the
   livestream API polling ingest path instead of retrying forever.
+
+### Known limitations
+
+- Rumble SSE availability is environment-dependent; HTTP 204 responses disable
+  SSE for the session and ingestion continues via polling only.
+- A logged-in Rumble profile is still required in the persistent Playwright
+  context before runtime start.
+- DOM chat sending requires the chat iframe (`#chat-message-text-input` and
+  `button.chat--send`) to be present; if Rumble ships DOM changes, selectors may
+  need to be updated before send succeeds.
 
 ## Project Status
 
@@ -193,6 +220,9 @@ started by a shared scheduler:
   admin/status commands and notification routing without embedding ingestion.
 - Shared configuration and state live under `shared/`, with platform-neutral
   helpers under `services/`.
+- Rumble Playwright ownership is centralized: `RumbleLivestreamWorker` starts a
+  single persistent browser instance, and `RumbleChatWorker` reuses that page
+  and chat iframe without opening extra tabs.
 
 Both entrypoints are independent runtime processes. The scheduler coordinates
 lifecycles while keeping control-plane behavior separate from streaming logic.
