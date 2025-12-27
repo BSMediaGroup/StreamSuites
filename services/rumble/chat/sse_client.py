@@ -9,6 +9,18 @@ from shared.logging.logger import get_logger
 log = get_logger("rumble.chat.sse")
 
 
+class SSEUnavailable(Exception):
+    """
+    Raised when the SSE endpoint explicitly signals that streaming is not
+    available (e.g., HTTP 204 or repeated non-SSE responses). Callers can use
+    this to downgrade to alternate ingest paths instead of retrying forever.
+    """
+
+    def __init__(self, message: str, status_code: Optional[int] = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 @dataclass
 class SSEEvent:
     """
@@ -88,6 +100,7 @@ class RumbleChatSSEClient:
         url = self.STREAM_URL.format(chat_id=self.chat_id)
 
         backoff_seconds = 1.0
+        failure_count = 0
 
         while not self._closed:
             headers = dict(self._base_headers)
@@ -106,7 +119,29 @@ class RumbleChatSSEClient:
             try:
                 async with self._client.stream("GET", url, headers=headers) as resp:
                     ct = resp.headers.get("content-type")
-                    if resp.status_code != 200 or (ct and "text/event-stream" not in ct):
+                    status = resp.status_code
+
+                    if status == 204:
+                        body_preview = ""
+                        try:
+                            raw = await resp.aread()
+                            body_preview = raw.decode(errors="ignore")[:200]
+                        except Exception:
+                            body_preview = "<unreadable>"
+
+                        log.warning(
+                            "SSE endpoint returned HTTP 204 (chat_id=%s) content-type=%s body=%s",
+                            self.chat_id,
+                            ct,
+                            body_preview,
+                        )
+                        self._closed = True
+                        raise SSEUnavailable(
+                            "Rumble SSE returned HTTP 204 (unavailable)",
+                            status_code=status,
+                        )
+
+                    if status != 200 or (ct and "text/event-stream" not in ct):
                         body_preview = ""
                         try:
                             raw = await resp.aread()
@@ -116,7 +151,7 @@ class RumbleChatSSEClient:
 
                         log.error(
                             "SSE connection failed [%s] content-type=%s url=%s body=%s",
-                            resp.status_code,
+                            status,
                             ct,
                             url,
                             body_preview,
@@ -126,6 +161,14 @@ class RumbleChatSSEClient:
                             self.chat_id,
                             dict(resp.headers),
                         )
+
+                        failure_count += 1
+                        if failure_count >= 3:
+                            self._closed = True
+                            raise SSEUnavailable(
+                                f"Failed to establish SSE after {failure_count} attempts (last status={status})",
+                                status_code=status,
+                            )
 
                         log.debug(
                             "SSE retrying in %.1fs (chat_id=%s)",
@@ -143,6 +186,7 @@ class RumbleChatSSEClient:
                         dict(resp.headers),
                     )
                     backoff_seconds = 1.0
+                    failure_count = 0
 
                     async for event in self._read_stream(resp):
                         if event.event_id:
