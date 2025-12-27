@@ -146,6 +146,11 @@ class RumbleChatWorker:
         # we guard downstream handling to remain idempotent.
         self._last_sse_id: Optional[str] = None
 
+        # SSE side-channel (best-effort)
+        self._sse_enabled: bool = True
+        self._sse_disabled_logged: bool = False
+        self._sse_task: Optional[asyncio.Task] = None
+
         # Cookie jar reused by SSE client to mirror browser auth
         self._sse_cookies: httpx.Cookies = httpx.Cookies()
         self._sse_cookie_header: str = ""
@@ -186,9 +191,13 @@ class RumbleChatWorker:
                 "Browser must be started by RumbleLivestreamWorker before chat worker begins"
             )
 
-        log.info(f"[{self.ctx.creator_id}] Navigating to livestream → {self.watch_url}")
+        current_url = getattr(self.browser._page, "url", "") if self.browser else ""
+        if current_url != self.watch_url:
+            log.info(f"[{self.ctx.creator_id}] Navigating to livestream → {self.watch_url}")
+            await self.browser.open_watch(self.watch_url)
+        else:
+            log.info(f"[{self.ctx.creator_id}] Livestream already open — reusing existing page")
 
-        await self.browser.open_watch(self.watch_url)
         await self.browser.wait_for_chat_ready()
 
     # ------------------------------------------------------------
@@ -308,7 +317,7 @@ class RumbleChatWorker:
         if self._enable_startup_announcement and self._startup_announcement.strip():
             await self._send_text(self._startup_announcement.strip(), reason="startup_announcement")
 
-        log.info(f"[{self.ctx.creator_id}] Chat ready — selecting ingest mode")
+        log.info(f"[{self.ctx.creator_id}] Chat ready — starting polling ingest (SSE secondary)")
 
         try:
             await self._run_ingest_with_fallback()
@@ -392,43 +401,32 @@ class RumbleChatWorker:
 
     async def _run_ingest_with_fallback(self) -> None:
         """
-        Primary ingest orchestrator. SSE is preferred but explicitly optional.
-        If SSE is rejected (e.g., HTTP 204) we downgrade to livestream API
-        polling while preserving the same baseline cutoff behavior.
+        Primary ingest orchestrator.
+
+        - Primary: livestream API polling (always on)
+        - Secondary: SSE side-channel (best-effort, disabled on 204/consistent failures)
+
+        Polling continues even if SSE fails so chat ingestion remains healthy.
         """
 
-        self._ingest_mode = "sse"
+        self._ingest_mode = "api_poll"
         log.info(
-            f"[{self.ctx.creator_id}] Ingest mode selected → {self._ingest_mode}"
+            f"[{self.ctx.creator_id}] Ingest mode selected → livestream API polling (SSE optional)"
         )
 
-        while True:
-            if self._ingest_mode == "sse":
+        if self._sse_client:
+            self._sse_task = asyncio.create_task(self._run_sse_side_channel())
+
+        try:
+            await self._run_api_poll_loop()
+        finally:
+            if self._sse_task and not self._sse_task.done():
+                self._sse_enabled = False
+                self._sse_task.cancel()
                 try:
-                    await self._run_sse_loop()
-                except SSEUnavailable as e:
-                    log.warning(
-                        f"[{self.ctx.creator_id}] SSE unavailable ({e}); switching to livestream API polling fallback"
-                    )
-                    await self._shutdown_sse()
-                    self._ingest_mode = "api_poll"
-                    log.info(
-                        f"[{self.ctx.creator_id}] Ingest mode selected → {self._ingest_mode}"
-                    )
-                    continue
-
-                # _run_sse_loop only returns on cancellation or shutdown
-                return
-
-            if self._ingest_mode == "api_poll":
-                await self._run_api_poll_loop()
-                return
-
-            # Defensive: if mode is ever unset, default to polling to avoid spin
-            log.warning(
-                f"[{self.ctx.creator_id}] Unknown ingest mode {self._ingest_mode}; defaulting to API polling"
-            )
-            self._ingest_mode = "api_poll"
+                    await self._sse_task
+                except asyncio.CancelledError:
+                    pass
 
     # ------------------------------------------------------------
 
@@ -476,6 +474,35 @@ class RumbleChatWorker:
 
     # ------------------------------------------------------------
 
+    async def _run_sse_side_channel(self) -> None:
+        if not self._sse_client:
+            return
+
+        log.info(
+            f"[{self.ctx.creator_id}] Starting SSE side-channel (best-effort, will disable on 204)"
+        )
+
+        try:
+            await self._run_sse_loop()
+        except SSEUnavailable as e:
+            self._sse_enabled = False
+            if not self._sse_disabled_logged:
+                log.warning(
+                    f"[{self.ctx.creator_id}] SSE unavailable → disabled for session ({e})"
+                )
+                self._sse_disabled_logged = True
+            await self._shutdown_sse()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            self._sse_enabled = False
+            if not self._sse_disabled_logged:
+                log.warning(
+                    f"[{self.ctx.creator_id}] SSE side-channel error → disabled for session: {e}"
+                )
+                self._sse_disabled_logged = True
+            await self._shutdown_sse()
+
     async def _run_sse_loop(self) -> None:
         if not self._sse_client:
             raise RuntimeError("SSE client not initialized")
@@ -486,6 +513,8 @@ class RumbleChatWorker:
 
         try:
             async for event in self._sse_client.iter_events():
+                if not self._sse_enabled:
+                    break
                 try:
                     await self._handle_sse_event(event)
                 except asyncio.CancelledError:
@@ -574,6 +603,7 @@ class RumbleChatWorker:
     # ------------------------------------------------------------
 
     async def _shutdown_sse(self) -> None:
+        self._sse_enabled = False
         if self._sse_client:
             try:
                 await self._sse_client.aclose()
