@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass
-from typing import AsyncIterator, Optional, List
+from typing import AsyncIterator, Optional, List, Dict
 
 import httpx
 
@@ -42,24 +42,29 @@ class RumbleChatSSEClient:
         *,
         client: Optional[httpx.AsyncClient] = None,
         cookies: Optional[httpx._models.CookieTypes] = None,
+        cookie_header: Optional[str] = None,
+        watch_url: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
     ):
         self.chat_id = str(chat_id)
 
+        base_headers = {
+            "Accept": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Origin": "https://rumble.com",
+            "Referer": watch_url or "https://rumble.com/",
+        }
+
+        if headers:
+            base_headers.update(headers)
+
+        self._base_headers = base_headers
+        self._cookie_header = cookie_header
+
         # Allow caller to supply a shared client; otherwise own lifecycle
         self._client = client or httpx.AsyncClient(
-            headers={
-                "Accept": "text/event-stream",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "Origin": "https://rumble.com",
-                "Referer": "https://rumble.com/",
-                # Browser-like UA reduces the chance of edge-case filtering
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0.0.0 Safari/537.36"
-                ),
-            },
+            headers=self._base_headers,
             cookies=cookies,
             timeout=httpx.Timeout(10.0, read=None),
             follow_redirects=True,
@@ -85,25 +90,58 @@ class RumbleChatSSEClient:
         backoff_seconds = 1.0
 
         while not self._closed:
-            headers = {}
+            headers = dict(self._base_headers)
             if self._last_event_id:
                 headers["Last-Event-ID"] = self._last_event_id
+            if self._cookie_header:
+                headers["Cookie"] = self._cookie_header
+
+            log.debug(
+                "SSE headers (chat_id=%s, cookies=%s): %s",
+                self.chat_id,
+                len(self._client.cookies or []),
+                headers,
+            )
 
             try:
                 async with self._client.stream("GET", url, headers=headers) as resp:
                     ct = resp.headers.get("content-type")
                     if resp.status_code != 200 or (ct and "text/event-stream" not in ct):
+                        body_preview = ""
+                        try:
+                            raw = await resp.aread()
+                            body_preview = raw.decode(errors="ignore")[:500]
+                        except Exception:
+                            body_preview = "<unreadable>"
+
                         log.error(
-                            "SSE connection failed [%s] content-type=%s url=%s",
+                            "SSE connection failed [%s] content-type=%s url=%s body=%s",
                             resp.status_code,
                             ct,
                             url,
+                            body_preview,
+                        )
+                        log.debug(
+                            "SSE response headers (chat_id=%s): %s",
+                            self.chat_id,
+                            dict(resp.headers),
+                        )
+
+                        log.debug(
+                            "SSE retrying in %.1fs (chat_id=%s)",
+                            backoff_seconds,
+                            self.chat_id,
                         )
                         await asyncio.sleep(backoff_seconds)
                         backoff_seconds = min(backoff_seconds * 2, 30.0)
                         continue
 
                     log.info("Rumble SSE stream connected (chat_id=%s)", self.chat_id)
+                    log.debug(
+                        "SSE response headers (chat_id=%s): %s",
+                        self.chat_id,
+                        dict(resp.headers),
+                    )
                     backoff_seconds = 1.0
 
                     async for event in self._read_stream(resp):
@@ -122,6 +160,11 @@ class RumbleChatSSEClient:
             if self._closed:
                 break
 
+            log.debug(
+                "SSE retrying in %.1fs after error (chat_id=%s)",
+                backoff_seconds,
+                self.chat_id,
+            )
             await asyncio.sleep(backoff_seconds)
             backoff_seconds = min(backoff_seconds * 2, 30.0)
 

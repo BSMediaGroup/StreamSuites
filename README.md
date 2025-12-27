@@ -42,6 +42,38 @@ re-enablement.
 - **Livestream API usage**: livestream API polling is no longer used for chat
   ingest; it remains only for startup baseline cutoff calculation.
 
+## Rumble Chat Ingest Architecture
+
+Rumble chat handling is split into two independent, cooperating paths so that
+send reliability is preserved even when ingest requirements change:
+
+- **DOM send (Playwright)**: authenticated browser session drives the chat
+  input and button click. This path relies on Playwright only and is unaffected
+  by SSE headers or cookies.
+- **SSE ingest (httpx)**: authoritative read path that mirrors the browser
+  session. The SSE request **must** include the browser's cookies, user-agent,
+  Origin `https://rumble.com`, and Referer set to the livestream watch URL.
+  Missing any of these headers causes Rumble to return HTTP 204 with
+  `content-type=text/html`, which prevents events from flowing.
+
+### Why cookies and headers are required
+
+- Rumble's SSE endpoint validates the authenticated session using both cookies
+  and CSRF-style headers derived from the browser context. Cookies alone no
+  longer authorize the stream, and requests without the proper User-Agent,
+  Origin, and Referer are rejected with empty responses.
+- The runtime now exports cookies directly from the Playwright context and
+  injects them as both structured cookie jars **and** `Cookie` headers to match
+  the browser.
+
+### 204 responses explained
+
+- A 204 response with `content-type=text/html` indicates the SSE request did
+  not meet Rumble's session requirements. This occurs when cookies are stale or
+  missing, when headers are incomplete, or when the Referer does not match the
+  watch URL. Ensuring the SSE client uses the browser-derived cookies and
+  headers restores the expected `text/event-stream` 200 response.
+
 ## Project Status
 
 - **Stabilization milestone**: quota enforcement and quota snapshot export are
