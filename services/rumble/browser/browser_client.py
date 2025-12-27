@@ -35,6 +35,12 @@ class RumbleBrowserClient:
 
     # ------------------------------------------------------------
 
+    @property
+    def started(self) -> bool:
+        return self._started
+
+    # ------------------------------------------------------------
+
     @classmethod
     def instance(cls) -> "RumbleBrowserClient":
         if not cls._instance:
@@ -222,26 +228,63 @@ class RumbleBrowserClient:
     # ------------------------------------------------------------
 
     async def _send_chat_keyboard(self, message: str) -> bool:
-        if not self._chat_frame or not self._page:
+        if not self._chat_frame:
             raise RuntimeError("Chat frame not initialized")
 
-        await self._chat_frame.click("#chat-message-text-input")
+        input_locator = self._chat_frame.locator("#chat-message-text-input")
+        await input_locator.click()
 
-        await self._page.keyboard.press("Control+A")
-        await self._page.keyboard.press("Backspace")
+        await input_locator.press("Control+A")
+        await input_locator.press("Backspace")
 
-        await self._page.keyboard.type(message, delay=20)
-        await self._page.keyboard.press("Enter")
+        await input_locator.type(message, delay=20)
+        await input_locator.press("Enter")
 
         return True
 
     # ------------------------------------------------------------
+    # PAYMENT / MODAL GUARD
+    # ------------------------------------------------------------
+
+    async def _dismiss_payment_modals(self) -> None:
+        if not self._page:
+            return
+
+        selectors = [
+            "div.modal.show button.btn-close",
+            "div.modal.show button.close",
+            "div.modal.show [data-bs-dismiss='modal']",
+            "div.modal.show .modal-footer button",
+            "div.modal.show .modal-header button",
+        ]
+
+        for sel in selectors:
+            try:
+                modal_btn = await self._page.query_selector(sel)
+                if modal_btn:
+                    log.info(f"Closing blocking modal via selector={sel}")
+                    await modal_btn.click()
+                    await asyncio.sleep(0.2)
+                    return
+            except Exception:
+                continue
+
+    # ------------------------------------------------------------
 
     async def send_chat_dom(self, message: str) -> bool:
-        if not self._chat_frame or not self._page:
+        if not self._chat_frame:
             raise RuntimeError("Chat frame not initialized")
 
+        input_selector = "#chat-message-text-input"
+        send_selector = "button.chat--send"
+
         try:
+            await self._dismiss_payment_modals()
+
+            log.info(
+                f"Sending via DOM (iframe scoped) input={input_selector} send_button={send_selector}"
+            )
+
             # Primary: POC-locked DOM injection that guarantees send via click
             res = await self._send_chat_poc_injection(message)
 

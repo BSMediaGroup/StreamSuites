@@ -8,7 +8,7 @@ import httpx
 
 from core.jobs import JobRegistry
 from services.rumble.browser.browser_client import RumbleBrowserClient
-from services.rumble.chat.sse_client import RumbleChatSSEClient
+from services.rumble.chat.sse_client import RumbleChatSSEClient, SSEUnavailable
 from shared.logging.logger import get_logger
 
 # ------------------------------------------------------------
@@ -115,6 +115,9 @@ class RumbleChatWorker:
         self._baseline_cutoff: Optional[datetime] = None
         self._baseline_ready: bool = False
 
+        # Ingest mode tracking ("sse" | "api_poll")
+        self._ingest_mode: str = "sse"
+
         # Config
         self._cfg: Dict[str, Any] = {}
         self._poll_seconds: float = float(DEFAULT_POLL_SECONDS)
@@ -178,8 +181,10 @@ class RumbleChatWorker:
     async def _ensure_browser(self) -> None:
         self.browser = RumbleBrowserClient.instance()
 
-        await self.browser.start()
-        await self.browser.ensure_logged_in()
+        if not self.browser.started:
+            raise RuntimeError(
+                "Browser must be started by RumbleLivestreamWorker before chat worker begins"
+            )
 
         log.info(f"[{self.ctx.creator_id}] Navigating to livestream → {self.watch_url}")
 
@@ -303,10 +308,10 @@ class RumbleChatWorker:
         if self._enable_startup_announcement and self._startup_announcement.strip():
             await self._send_text(self._startup_announcement.strip(), reason="startup_announcement")
 
-        log.info(f"[{self.ctx.creator_id}] Chat ready — entering SSE ingest loop")
+        log.info(f"[{self.ctx.creator_id}] Chat ready — selecting ingest mode")
 
         try:
-            await self._run_sse_loop()
+            await self._run_ingest_with_fallback()
         finally:
             await self._shutdown_sse()
 
@@ -385,6 +390,92 @@ class RumbleChatWorker:
 
     # ------------------------------------------------------------
 
+    async def _run_ingest_with_fallback(self) -> None:
+        """
+        Primary ingest orchestrator. SSE is preferred but explicitly optional.
+        If SSE is rejected (e.g., HTTP 204) we downgrade to livestream API
+        polling while preserving the same baseline cutoff behavior.
+        """
+
+        self._ingest_mode = "sse"
+        log.info(
+            f"[{self.ctx.creator_id}] Ingest mode selected → {self._ingest_mode}"
+        )
+
+        while True:
+            if self._ingest_mode == "sse":
+                try:
+                    await self._run_sse_loop()
+                except SSEUnavailable as e:
+                    log.warning(
+                        f"[{self.ctx.creator_id}] SSE unavailable ({e}); switching to livestream API polling fallback"
+                    )
+                    await self._shutdown_sse()
+                    self._ingest_mode = "api_poll"
+                    log.info(
+                        f"[{self.ctx.creator_id}] Ingest mode selected → {self._ingest_mode}"
+                    )
+                    continue
+
+                # _run_sse_loop only returns on cancellation or shutdown
+                return
+
+            if self._ingest_mode == "api_poll":
+                await self._run_api_poll_loop()
+                return
+
+            # Defensive: if mode is ever unset, default to polling to avoid spin
+            log.warning(
+                f"[{self.ctx.creator_id}] Unknown ingest mode {self._ingest_mode}; defaulting to API polling"
+            )
+            self._ingest_mode = "api_poll"
+
+    # ------------------------------------------------------------
+
+    async def _poll_recent_messages(self) -> None:
+        """
+        Fetch recent_messages from the livestream API and process any that are
+        newer than the baseline. This path mirrors the baseline establishment
+        logic but runs continuously when SSE is unavailable.
+        """
+
+        data = await self._api_get_data()
+        streams = data.get("livestreams", []) or []
+        if not isinstance(streams, list):
+            log.warning(f"[{self.ctx.creator_id}] Poll: invalid livestreams structure")
+            return
+
+        live_streams = [s for s in streams if s.get("is_live")]
+        for stream in live_streams:
+            chat = stream.get("chat", {}) or {}
+            recent = chat.get("recent_messages", []) or []
+            if not isinstance(recent, list):
+                continue
+
+            for msg in recent:
+                if not isinstance(msg, dict):
+                    continue
+                await self._handle_message_record(msg)
+
+    # ------------------------------------------------------------
+
+    async def _run_api_poll_loop(self) -> None:
+        log.info(
+            f"[{self.ctx.creator_id}] Entering livestream API polling ingest (interval={self._poll_seconds}s)"
+        )
+
+        while True:
+            try:
+                await self._poll_recent_messages()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                log.warning(f"[{self.ctx.creator_id}] Polling ingest error: {e}")
+
+            await asyncio.sleep(self._poll_seconds)
+
+    # ------------------------------------------------------------
+
     async def _run_sse_loop(self) -> None:
         if not self._sse_client:
             raise RuntimeError("SSE client not initialized")
@@ -393,13 +484,20 @@ class RumbleChatWorker:
             log.warning(f"[{self.ctx.creator_id}] Baseline not ready; SSE loop waiting")
             await asyncio.sleep(1)
 
-        async for event in self._sse_client.iter_events():
-            try:
-                await self._handle_sse_event(event)
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                log.error(f"[{self.ctx.creator_id}] SSE event handling error: {e}")
+        try:
+            async for event in self._sse_client.iter_events():
+                try:
+                    await self._handle_sse_event(event)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    log.error(f"[{self.ctx.creator_id}] SSE event handling error: {e}")
+        except SSEUnavailable:
+            raise
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            log.warning(f"[{self.ctx.creator_id}] SSE loop aborted: {e}")
 
     # ------------------------------------------------------------
 

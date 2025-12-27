@@ -26,21 +26,35 @@ The first implemented and validated platform was **Rumble**; Rumble support is
 currently paused (see status below) but all code remains intact for
 re-enablement.
 
-### Rumble chat ingest (SSE)
+### Rumble chat ingest modes
 
-- **Authoritative read path**: chat ingest now uses the Server-Sent Events
-  endpoint `https://web7.rumble.com/chat/api/chat/<CHAT_ID>/stream`, which emits
-  `init` and `messages` frames containing chat, users, and channel data.
+- **Preferred read path (SSE)**: chat ingest prefers the Server-Sent Events
+  endpoint `https://web7.rumble.com/chat/api/chat/<CHAT_ID>/stream`, which
+  emits `init` and `messages` frames containing chat, users, and channel data.
 - **Authentication model**: SSE connections reuse the browser-authenticated
   Playwright context cookies (exported from the persistent profile) to mirror
-  the logged-in session and avoid unauthenticated 204 responses.
+  the logged-in session. Missing cookies or Referer/User-Agent headers cause
+  HTTP 204 responses. The runtime now treats SSE as optional and will not hard
+  fail on 204.
+- **Fallback ingest**: when SSE is unavailable or rejected, the runtime logs the
+  downgrade and falls back to livestream API polling of `recent_messages`
+  (baseline cutoff preserved). This prevents infinite SSE retry loops and keeps
+  chat ingestion alive without crashing.
 - **Parsing model**: SSE frames are parsed as JSON with nested `data.messages`
   lists; idempotency is preserved via SSE `id` handling and baseline cutoffs
-  remain unchanged.
-- **Send path**: outbound chat messages continue to use the DOM-based send path
-  (Playwright keyboard/React-friendly injection); no REST chat sends are used.
-- **Livestream API usage**: livestream API polling is no longer used for chat
-  ingest; it remains only for startup baseline cutoff calculation.
+  remain unchanged across ingest modes.
+
+### Chat send (Playwright DOM)
+
+- **Iframe-scoped DOM send**: outbound chat messages target the chat iframe
+  directly. The bot focuses `#chat-message-text-input`, dispatches React-safe
+  DOM events, and clicks the `button.chat--send` control instead of issuing
+  global page-level keyboard presses.
+- **Payment / monetization guard**: known Rumble monetization modals are
+  detected and closed before sending so the Enter key cannot be captured by
+  payment UI. All selectors used for sending are logged for observability.
+- **No REST chat sends**: outbound chat remains DOM-driven; no REST chat send
+  endpoints are used.
 
 ## Rumble Chat Ingest Architecture
 
@@ -66,13 +80,15 @@ send reliability is preserved even when ingest requirements change:
   injects them as both structured cookie jars **and** `Cookie` headers to match
   the browser.
 
-### 204 responses explained
+### SSE 204 responses explained
 
 - A 204 response with `content-type=text/html` indicates the SSE request did
   not meet Rumble's session requirements. This occurs when cookies are stale or
   missing, when headers are incomplete, or when the Referer does not match the
   watch URL. Ensuring the SSE client uses the browser-derived cookies and
-  headers restores the expected `text/event-stream` 200 response.
+  headers restores the expected `text/event-stream` 200 response. When a 204 is
+  received, the runtime now marks SSE as unavailable and downgrades to the
+  livestream API polling ingest path instead of retrying forever.
 
 ## Project Status
 
@@ -504,6 +520,7 @@ StreamSuites/
 │   │   │   └── browser_client.py   # Persistent Playwright browser control
 │   │   ├── chat/
 │   │   │   ├── rest_client.py
+│   │   │   ├── sse_client.py      # SSE ingest client (optional; falls back to API poll)
 │   │   │   └── ws_listener.py
 │   │   ├── chat_client.py
 │   │   ├── models/
@@ -511,7 +528,7 @@ StreamSuites/
 │   │   │   ├── message.py
 │   │   │   └── stream.py
 │   │   └── workers/
-│   │       ├── chat_worker.py      # Chat read/write logic
+│   │       ├── chat_worker.py      # Chat read/write logic (SSE preferred; API poll fallback)
 │   │       └── livestream_worker.py
 │   ├── triggers/                   # Platform-agnostic trigger registry
 │   │   ├── __init__.py

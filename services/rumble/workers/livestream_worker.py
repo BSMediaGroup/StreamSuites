@@ -17,6 +17,7 @@ class RumbleLivestreamWorker:
     - Manual watch URL ONLY
     - Exactly ONE ChatWorker
     - ChatWorker owns navigation + polling
+    - Livestream worker owns browser lifetime (start/shutdown)
     """
 
     def __init__(self, ctx, jobs: JobRegistry):
