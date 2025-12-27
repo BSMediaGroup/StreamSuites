@@ -1,4 +1,5 @@
 import asyncio
+import re
 from pathlib import Path
 from typing import Optional
 import uuid
@@ -150,6 +151,61 @@ class RumbleBrowserClient:
             await asyncio.sleep(0.5)
 
         raise TimeoutError("Chat iframe not found")
+
+    # ------------------------------------------------------------
+    # CHAT STREAM IDENTIFIER RESOLUTION (NETWORK-AUTHORITATIVE)
+    # ------------------------------------------------------------
+
+    async def wait_for_chat_stream_id(self, watch_url: str, timeout: float = 15.0) -> str:
+        """
+        Capture the numeric chat_id from the SAME network request the frontend uses:
+        https://web7.rumble.com/chat/api/chat/{chat_id}/stream
+
+        The method listens for Playwright "request" events and extracts the chat_id
+        from the first matching URL. It fails hard if nothing is observed within the
+        provided timeout (seconds).
+        """
+        if not self._page:
+            raise RuntimeError("Browser not started")
+
+        pattern = re.compile(r"/chat/api/chat/(\d+)/stream")
+        loop = asyncio.get_event_loop()
+        start = loop.time()
+
+        # Ensure we are on the correct watch page before listening
+        if self._page.url != watch_url:
+            log.info("Navigating to watch page for chat_id capture: %s", watch_url)
+            await self._page.goto(watch_url, wait_until="domcontentloaded")
+
+        reloaded = False
+        while True:
+            remaining = timeout - (loop.time() - start)
+            if remaining <= 0:
+                raise TimeoutError("Timed out waiting for chat_id via chat stream request")
+
+            try:
+                request = await self._page.wait_for_event(
+                    "request",
+                    predicate=lambda r: bool(pattern.search(r.url)),
+                    timeout=remaining * 1000,
+                )
+                match = pattern.search(request.url)
+                if not match:
+                    continue
+
+                chat_id = match.group(1)
+                log.info("Captured chat_id=%s from network request %s", chat_id, request.url)
+                return chat_id
+            except asyncio.TimeoutError:
+                if reloaded:
+                    raise TimeoutError(
+                        "Timed out waiting for chat_id via chat stream request"
+                    )
+
+                # Force a reload once to retrigger the chat stream request before expiring
+                reloaded = True
+                log.info("Reloading watch page to retrigger chat stream request")
+                await self._page.reload(wait_until="domcontentloaded")
 
     # ------------------------------------------------------------
     # AUTH COOKIE EXPORT (FOR NON-DOM CLIENTS)

@@ -66,6 +66,10 @@ class RumbleLivestreamWorker:
                 watch_url=self.ctx.rumble_manual_watch_url,
             )
 
+            log.info(
+                f"[{self.ctx.creator_id}] Chat worker will capture chat_id via network stream request"
+            )
+
             self.chat_task = asyncio.create_task(self.chat_worker.run())
 
             # Hard idle — lifecycle owner

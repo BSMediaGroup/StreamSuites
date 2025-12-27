@@ -1,6 +1,5 @@
 import asyncio
 import json
-import re
 from pathlib import Path
 from typing import Optional, Set, Tuple, Dict, Any, List, Union
 from types import SimpleNamespace
@@ -248,30 +247,18 @@ class RumbleChatWorker:
 
     # ------------------------------------------------------------
 
-    @staticmethod
-    def _extract_chat_id_from_html(html: str) -> Optional[str]:
-        patterns = [
-            r"\"chat_id\"\s*:\s*\"?(\d+)\"?",
-            r"\"chatId\"\s*:\s*\"?(\d+)\"?",
-            r'chat:\{"id":(\d+)',
-            r"chat_id=(\d+)",
-        ]
-
-        for pat in patterns:
-            match = re.search(pat, html)
-            if match:
-                return match.group(1)
-        return None
-
     async def _resolve_chat_id(self) -> str:
         if not self.browser or not self.browser._page:
             raise RuntimeError("Browser not ready for chat_id resolution")
 
-        html = await self.browser._page.content()
-        chat_id = self._extract_chat_id_from_html(html or "")
+        chat_id = await self.browser.wait_for_chat_stream_id(self.watch_url, timeout=15.0)
 
         if not chat_id or not chat_id.isdigit():
-            raise RuntimeError(f"[{self.ctx.creator_id}] Unable to resolve numeric chat_id from livestream page")
+            raise RuntimeError(
+                f"[{self.ctx.creator_id}] Unable to resolve numeric chat_id from network request"
+            )
+
+        self._persist_chat_id(chat_id)
 
         runtime_ns = getattr(self.ctx, "runtime", None)
         if runtime_ns is None:
@@ -284,9 +271,55 @@ class RumbleChatWorker:
             setattr(runtime_ns, "rumble", rumble_ns)
 
         rumble_ns.chat_id = chat_id
+        self.ctx.rumble_chat_channel_id = chat_id
 
-        log.info(f"[{self.ctx.creator_id}] Resolved Rumble chat_id={chat_id} from livestream page")
+        log.info(f"[{self.ctx.creator_id}] Resolved Rumble chat_id={chat_id} from network request")
         return chat_id
+
+    # ------------------------------------------------------------
+
+    def _persist_chat_id(self, chat_id: str) -> None:
+        creators_path = Path("shared") / "config" / "creators.json"
+        try:
+            data = json.loads(creators_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            log.error(
+                f"[{self.ctx.creator_id}] Failed to read creators.json for chat_id persist: {e}"
+            )
+            return
+
+        creators = data.get("creators")
+        if not isinstance(creators, list):
+            log.error(
+                f"[{self.ctx.creator_id}] creators.json missing 'creators' array — cannot persist chat_id"
+            )
+            return
+
+        updated = False
+        for entry in creators:
+            if isinstance(entry, dict) and entry.get("creator_id") == self.ctx.creator_id:
+                entry["rumble_chat_channel_id"] = chat_id
+                updated = True
+                break
+
+        if not updated:
+            log.error(
+                f"[{self.ctx.creator_id}] Creator not found in creators.json — cannot persist chat_id"
+            )
+            return
+
+        try:
+            creators_path.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            log.info(
+                f"[{self.ctx.creator_id}] Persisted chat_id={chat_id} to {creators_path.as_posix()}"
+            )
+        except Exception as e:
+            log.error(
+                f"[{self.ctx.creator_id}] Failed to write creators.json for chat_id persist: {e}"
+            )
 
     # ------------------------------------------------------------
 
