@@ -1,9 +1,12 @@
+import asyncio
 from typing import Optional
 
 from services.youtube.api.chat import YouTubeChatClient
 from services.youtube.models.message import YouTubeChatMessage
 from services.triggers.registry import TriggerRegistry
+from services.triggers.actions import ActionExecutor
 from shared.logging.logger import get_logger
+from core.state_exporter import runtime_state
 
 from shared.runtime.quotas import (
     quota_registry,
@@ -33,6 +36,7 @@ class YouTubeChatWorker:
         api_key: str,
         live_chat_id: str,
         poll_interval: Optional[float] = None,
+        action_executor: Optional[ActionExecutor] = None,
     ):
         if not api_key:
             raise RuntimeError("YouTube api_key is required")
@@ -88,40 +92,67 @@ class YouTubeChatWorker:
         # --------------------------------------------------
 
         self._triggers = TriggerRegistry(creator_id=ctx.creator_id)
+        self._actions = action_executor
+
+        self._stop_event = asyncio.Event()
 
     # ------------------------------------------------------------------ #
 
     async def run(self) -> None:
         log.info(f"[{self.ctx.creator_id}] YouTube chat worker starting")
+        backoff = 2.0
+        max_backoff = 30.0
 
-        try:
-            async for message in self._client.iter_messages():
-                await self._handle_message(message)
+        while not self._stop_event.is_set():
+            try:
+                runtime_state.record_platform_status(
+                    "youtube", "connecting", creator_id=self.ctx.creator_id
+                )
 
-        except QuotaExceeded as e:
-            log.error(
-                f"[{self.ctx.creator_id}] YouTube quota exceeded — "
-                "chat polling halted"
-            )
-            log.error(str(e))
+                runtime_state.record_platform_status(
+                    "youtube", "connected", creator_id=self.ctx.creator_id, success=True
+                )
 
-        except QuotaBufferWarning as e:
-            # Should not normally bubble this far, but safe to log
-            log.warning(
-                f"[{self.ctx.creator_id}] YouTube quota buffer warning"
-            )
-            log.warning(str(e))
+                async for message in self._client.iter_messages():
+                    await self._handle_message(message)
+                    if self._stop_event.is_set():
+                        break
 
-        except Exception as e:
-            log.error(
-                f"[{self.ctx.creator_id}] YouTube chat worker error: {e}"
-            )
+                if self._stop_event.is_set():
+                    break
 
-        finally:
-            await self.shutdown()
+                raise RuntimeError("YouTube chat polling ended unexpectedly")
+
+            except asyncio.CancelledError:
+                log.debug(f"[{self.ctx.creator_id}] YouTube chat worker cancelled")
+                raise
+            except QuotaExceeded as e:
+                runtime_state.record_platform_error("youtube", str(e), self.ctx.creator_id)
+                log.error(
+                    f"[{self.ctx.creator_id}] YouTube quota exceeded — chat polling halted"
+                )
+                break
+            except QuotaBufferWarning as warn:
+                log.warning(f"[{self.ctx.creator_id}] YouTube quota buffer warning: {warn}")
+                await asyncio.sleep(backoff)
+                backoff = min(max_backoff, backoff * 2)
+            except Exception as e:
+                runtime_state.record_platform_error("youtube", str(e), self.ctx.creator_id)
+                log.warning(f"[{self.ctx.creator_id}] YouTube chat worker error: {e}")
+                await asyncio.sleep(backoff)
+                backoff = min(max_backoff, backoff * 2)
+            else:
+                backoff = 2.0
+
+        await self.shutdown()
 
     async def shutdown(self) -> None:
+        if self._stop_event.is_set():
+            return
+
+        self._stop_event.set()
         await self._client.close()
+        runtime_state.record_platform_status("youtube", "inactive", creator_id=self.ctx.creator_id)
         log.info(f"[{self.ctx.creator_id}] YouTube chat worker stopped")
 
     # ------------------------------------------------------------------ #
@@ -131,6 +162,10 @@ class YouTubeChatWorker:
         Routing hook for chat messages.
         """
         event = message.to_event()
+        event["creator_id"] = self.ctx.creator_id
+        event["channel"] = message.live_chat_id
+
+        runtime_state.record_platform_event("youtube", creator_id=self.ctx.creator_id)
 
         log.debug(
             f"[{self.ctx.creator_id}] [YouTube liveChat={message.live_chat_id}] "
@@ -142,7 +177,12 @@ class YouTubeChatWorker:
         # --------------------------------------------------
 
         actions = self._triggers.process(event)
+        if actions:
+            runtime_state.record_trigger_actions("youtube", len(actions), creator_id=self.ctx.creator_id)
         for action in actions:
             log.debug(
                 f"[{self.ctx.creator_id}] Trigger action emitted: {action}"
             )
+
+        if self._actions and actions:
+            await self._actions.execute(actions, default_platform="youtube")
