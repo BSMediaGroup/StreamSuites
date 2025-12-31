@@ -14,6 +14,7 @@ from services.discord.runtime.supervisor import DiscordSupervisor
 from services.triggers.actions import ActionExecutor
 from shared.logging.logger import get_logger
 from shared.config.services import get_services_config
+from shared.platforms.state import PlatformState, normalize_platform_state
 
 from shared.runtime.quotas import quota_snapshot_aggregator
 
@@ -36,6 +37,9 @@ class Scheduler:
 
         # creator_id -> set[platform] actually started
         self._creator_platforms_started: Dict[str, Set[str]] = {}
+
+        # creator_id -> set[platform] tracked for heartbeat/telemetry (includes paused)
+        self._creator_platforms_tracked: Dict[str, Set[str]] = {}
 
         # Track which platforms were started (global, not per-creator)
         self._platforms_started: Set[str] = set()
@@ -91,12 +95,20 @@ class Scheduler:
         for name, entry in cfg.items():
             if isinstance(entry, dict):
                 enabled = bool(entry.get("enabled", False))
+                state = normalize_platform_state(name, entry.get("state"), enabled=enabled)
                 normalized[name] = {
-                    "enabled": enabled,
+                    "enabled": state != PlatformState.DISABLED,
                     "telemetry_enabled": bool(entry.get("telemetry_enabled", enabled)),
+                    "state": state.value,
+                    "paused_reason": entry.get("paused_reason"),
                 }
             else:
-                normalized[name] = {"enabled": False, "telemetry_enabled": False}
+                normalized[name] = {
+                    "enabled": False,
+                    "telemetry_enabled": False,
+                    "state": PlatformState.DISABLED.value,
+                    "paused_reason": None,
+                }
         return normalized
 
     def _get_action_executor(self, creator_id: str) -> ActionExecutor:
@@ -119,6 +131,7 @@ class Scheduler:
         self._tasks[ctx.creator_id] = []
         self._job_counts[ctx.creator_id] = {}
         self._creator_platforms_started[ctx.creator_id] = set()
+        self._creator_platforms_tracked[ctx.creator_id] = set()
 
         executor = self._get_action_executor(ctx.creator_id)
 
@@ -133,9 +146,26 @@ class Scheduler:
         # Rumble livestream + chat orchestration
         # --------------------------------------------------
         rumble_cfg = self._services_cfg.get("rumble", {})
+        rumble_state = PlatformState.from_value(
+            rumble_cfg.get("state"),
+            default=PlatformState.ACTIVE if rumble_cfg.get("enabled", True) else PlatformState.DISABLED,
+        )
         try:
-            if not rumble_cfg.get("enabled", True):
+            paused_reason = rumble_cfg.get("paused_reason") or "Rumble ingestion paused"
+
+            if rumble_state == PlatformState.DISABLED or not rumble_cfg.get("enabled", True):
+                runtime_state.record_platform_state("rumble", PlatformState.DISABLED, creator_id=ctx.creator_id)
                 log.info(f"[{ctx.creator_id}] Rumble skipped (disabled by services.json)")
+            elif rumble_state == PlatformState.PAUSED:
+                runtime_state.record_platform_state(
+                    "rumble",
+                    PlatformState.PAUSED,
+                    paused_reason=paused_reason,
+                    creator_id=ctx.creator_id,
+                )
+                runtime_state.record_platform_status("rumble", "paused", creator_id=ctx.creator_id)
+                self._creator_platforms_tracked[ctx.creator_id].add("rumble")
+                log.info(f"[{ctx.creator_id}] Rumble PAUSED — worker not started ({paused_reason})")
             elif not ctx.platform_enabled("rumble"):
                 log.info(f"[{ctx.creator_id}] Rumble skipped (disabled for creator)")
             else:
@@ -143,6 +173,7 @@ class Scheduler:
                 log.info(f"[{ctx.creator_id}] Rumble ENABLED — starting worker")
                 self._platforms_started.add("rumble")
                 self._creator_platforms_started[ctx.creator_id].add("rumble")
+                self._creator_platforms_tracked[ctx.creator_id].add("rumble")
                 runtime_state.record_platform_started("rumble", ctx.creator_id)
 
                 livestream_worker = RumbleLivestreamWorker(
@@ -159,9 +190,18 @@ class Scheduler:
         # Twitch chat orchestration
         # --------------------------------------------------
         twitch_cfg = self._services_cfg.get("twitch", {})
+        twitch_state = PlatformState.from_value(
+            twitch_cfg.get("state"),
+            default=PlatformState.ACTIVE if twitch_cfg.get("enabled", True) else PlatformState.DISABLED,
+        )
         try:
-            if not twitch_cfg.get("enabled", True):
+            if twitch_state == PlatformState.DISABLED or not twitch_cfg.get("enabled", True):
                 log.info(f"[{ctx.creator_id}] Twitch skipped (disabled by services.json)")
+            elif twitch_state == PlatformState.PAUSED:
+                runtime_state.record_platform_state("twitch", PlatformState.PAUSED, creator_id=ctx.creator_id)
+                runtime_state.record_platform_status("twitch", "paused", creator_id=ctx.creator_id)
+                self._creator_platforms_tracked[ctx.creator_id].add("twitch")
+                log.info(f"[{ctx.creator_id}] Twitch PAUSED — worker not started")
             elif not ctx.platform_enabled("twitch"):
                 log.info(f"[{ctx.creator_id}] Twitch skipped (disabled for creator)")
             else:
@@ -180,6 +220,7 @@ class Scheduler:
                     runtime_state.record_platform_status("twitch", "connecting", creator_id=ctx.creator_id)
                     self._platforms_started.add("twitch")
                     self._creator_platforms_started[ctx.creator_id].add("twitch")
+                    self._creator_platforms_tracked[ctx.creator_id].add("twitch")
                     runtime_state.record_platform_started("twitch", ctx.creator_id)
 
                     twitch_worker = TwitchChatWorker(
@@ -202,9 +243,18 @@ class Scheduler:
         # YouTube chat orchestration
         # --------------------------------------------------
         youtube_cfg = self._services_cfg.get("youtube", {})
+        youtube_state = PlatformState.from_value(
+            youtube_cfg.get("state"),
+            default=PlatformState.ACTIVE if youtube_cfg.get("enabled", True) else PlatformState.DISABLED,
+        )
         try:
-            if not youtube_cfg.get("enabled", True):
+            if youtube_state == PlatformState.DISABLED or not youtube_cfg.get("enabled", True):
                 log.info(f"[{ctx.creator_id}] YouTube skipped (disabled by services.json)")
+            elif youtube_state == PlatformState.PAUSED:
+                runtime_state.record_platform_state("youtube", PlatformState.PAUSED, creator_id=ctx.creator_id)
+                runtime_state.record_platform_status("youtube", "paused", creator_id=ctx.creator_id)
+                self._creator_platforms_tracked[ctx.creator_id].add("youtube")
+                log.info(f"[{ctx.creator_id}] YouTube PAUSED — worker not started")
             elif not ctx.platform_enabled("youtube"):
                 log.info(f"[{ctx.creator_id}] YouTube skipped (disabled for creator)")
             else:
@@ -237,6 +287,7 @@ class Scheduler:
                         runtime_state.record_platform_status("youtube", "connecting", creator_id=ctx.creator_id)
                         self._platforms_started.add("youtube")
                         self._creator_platforms_started[ctx.creator_id].add("youtube")
+                        self._creator_platforms_tracked[ctx.creator_id].add("youtube")
                         runtime_state.record_platform_started("youtube", ctx.creator_id)
 
                         youtube_worker = YouTubeChatWorker(
@@ -319,7 +370,7 @@ class Scheduler:
                 log.debug(f"[{ctx.creator_id}] runtime heartbeat")
 
                 runtime_state.record_creator_heartbeat(ctx.creator_id)
-                for platform in self._creator_platforms_started.get(ctx.creator_id, set()):
+                for platform in self._creator_platforms_tracked.get(ctx.creator_id, set()):
                     runtime_state.record_platform_heartbeat(platform)
 
                 # --------------------------------------------------
@@ -360,6 +411,7 @@ class Scheduler:
         self._tasks.clear()
         self._job_counts.clear()
         self._creator_platforms_started.clear()
+        self._creator_platforms_tracked.clear()
         self._action_executors.clear()
 
         if self._discord_supervisor:

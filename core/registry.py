@@ -6,6 +6,7 @@ from core.config_loader import ConfigLoader
 from core.context import CreatorContext
 from core.ratelimits import merge_ratelimits
 from shared.logging.logger import get_logger
+from shared.platforms.state import PlatformState
 
 log = get_logger("core.registry")
 
@@ -165,6 +166,10 @@ class CreatorRegistry:
             raw_creators = self._config_loader.load_creators_config()
 
         out: Dict[str, CreatorContext] = {}
+        platform_states = {
+            name: PlatformState.from_value(cfg.get("state"), default=PlatformState.ACTIVE if cfg.get("enabled") else PlatformState.DISABLED)
+            for name, cfg in (platform_defaults or {}).items()
+        }
 
         for c in raw_creators:
             creator_id = c.get("creator_id")
@@ -222,6 +227,7 @@ class CreatorRegistry:
                     display_name=c.get("display_name", creator_id),
                     platforms=platforms,
                     limits=runtime_limits,
+                    platform_states=platform_states,
 
                     rumble_channel_url=c.get("rumble_channel_url"),
                     rumble_manual_watch_url=c.get("rumble_manual_watch_url"),

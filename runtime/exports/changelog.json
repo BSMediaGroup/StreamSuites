@@ -3,9 +3,23 @@
     "source": "runtime",
     "project": "StreamSuites",
     "version": "v0.2.0-alpha",
-    "generated_at": "2025-12-28"
+    "generated_at": "2026-01-15"
   },
   "entries": [
+    {
+      "id": "2026-01-runtime-resumed",
+      "date": "2026-01-15",
+      "version": "v0.2.0-alpha",
+      "scope": "runtime",
+      "title": "Runtime development resumed",
+      "summary": "Runtime execution resumed with Rumble paused and YouTube/Twitch prioritized for ingestion.",
+      "details": [
+        "Explicit platform state tracking introduced (ACTIVE, PAUSED, DISABLED).",
+        "Rumble marked as PAUSED with telemetry preserved and scheduler skip logic.",
+        "YouTube and Twitch stabilized for continued chat ingestion development."
+      ],
+      "tags": ["resumed", "runtime", "status"]
+    },
     {
       "id": "2025-12-project-suspended",
       "date": "2025-12-28",

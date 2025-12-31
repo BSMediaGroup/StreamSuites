@@ -119,8 +119,10 @@ class TwitchChatWorker:
         """
         event = message.to_event()
         event["creator_id"] = self.ctx.creator_id
+        event["platform"] = "twitch"
 
         runtime_state.record_platform_event("twitch", creator_id=self.ctx.creator_id)
+        runtime_state.record_platform_heartbeat("twitch")
 
         log.info(
             f"[{self.ctx.creator_id}] [#{message.channel}] "
