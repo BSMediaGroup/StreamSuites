@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UnifiedChatMessage",
+  "description": "Placeholder schema for unified chat replay messages across supported platforms.",
+  "type": "object",
+  "properties": {
+    "message_id": {
+      "type": "string",
+      "description": "Unique identifier for the chat message within its source platform."
+    },
+    "platform": {
+      "type": "string",
+      "enum": ["youtube", "twitch", "rumble", "kick", "unknown"],
+      "description": "Origin platform for the chat message."
+    },
+    "author": {
+      "type": "object",
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "description": "Display name rendered by the platform."
+        },
+        "color": {
+          "type": "string",
+          "description": "Author color hex or CSS string supplied by the platform."
+        },
+        "badges": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Ordered list of badge identifiers or labels."
+        }
+      },
+      "description": "Author metadata captured at message time."
+    },
+    "message": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Raw text payload of the chat message."
+        },
+        "emotes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional emote identifiers or labels supplied by the platform."
+        }
+      },
+      "description": "Normalized message payload including text and optional emotes."
+    },
+    "timestamp": {
+      "type": "object",
+      "properties": {
+        "unix": {
+          "type": "number",
+          "description": "Unix timestamp (seconds) when the message was observed."
+        },
+        "iso": {
+          "type": "string",
+          "description": "ISO-8601 timestamp string for the message."
+        }
+      },
+      "description": "Timestamp metadata as captured from the source platform or runtime."
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "is_mod": {
+          "type": "boolean",
+          "description": "True when the author is a moderator at message time."
+        },
+        "is_member": {
+          "type": "boolean",
+          "description": "True when the author is a member/subscriber."
+        },
+        "is_superchat": {
+          "type": "boolean",
+          "description": "True when the message is a paid/pinned variant such as Super Chat."
+        },
+        "raw": {
+          "type": "object",
+          "description": "Passthrough object for platform-native payload fragments."
+        }
+      },
+      "description": "Platform and runtime metadata flags captured with the message."
+    }
+  },
+  "required": ["message_id", "platform", "author", "message", "timestamp", "metadata"]
+}

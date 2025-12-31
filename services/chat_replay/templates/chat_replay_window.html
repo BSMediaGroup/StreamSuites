@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StreamSuites | Chat Replay</title>
+  <link rel="stylesheet" href="../static/chat.css" />
+</head>
+<body class="chat-shell">
+  <section class="chat-window">
+    <header class="chat-header">
+      <div>
+        <h1>Chat Replay (Preview)</h1>
+        <div class="subtext">Static mock data • No live ingestion yet</div>
+      </div>
+      <div class="chat-controls">
+        <button class="chat-btn" id="toggle-timestamps">Timestamps: On</button>
+        <button class="chat-btn" id="toggle-autoscroll">Autoscroll: On</button>
+      </div>
+    </header>
+
+    <main class="chat-log" id="chat-log" aria-label="Chat messages"></main>
+
+    <footer class="chat-footer">
+      <div class="chat-footer-controls">
+        <button class="chat-btn" id="pause-feed">Pause</button>
+        <button class="chat-btn" id="clear-feed">Clear</button>
+      </div>
+      <button class="chat-toggle" id="status-indicator"><span></span> Replay Ready (Mock)</button>
+    </footer>
+  </section>
+
+  <script src="../static/chat_mock_data.js"></script>
+  <script>
+    const chatLog = document.getElementById('chat-log');
+    let timestampsVisible = true;
+    let autoscrollEnabled = true;
+    let paused = false;
+
+    function applyToggles() {
+      document.querySelectorAll('.timestamp').forEach((el) => {
+        el.style.display = timestampsVisible ? 'block' : 'none';
+      });
+    }
+
+    function appendMessages(entries) {
+      if (paused) return;
+      renderChatLog(chatLog, entries);
+      applyToggles();
+      if (autoscrollEnabled) {
+        chatLog.scrollTop = chatLog.scrollHeight;
+      }
+    }
+
+    document.getElementById('toggle-timestamps').addEventListener('click', () => {
+      timestampsVisible = !timestampsVisible;
+      document.getElementById('toggle-timestamps').textContent = `Timestamps: ${timestampsVisible ? 'On' : 'Off'}`;
+      applyToggles();
+    });
+
+    document.getElementById('toggle-autoscroll').addEventListener('click', () => {
+      autoscrollEnabled = !autoscrollEnabled;
+      document.getElementById('toggle-autoscroll').textContent = `Autoscroll: ${autoscrollEnabled ? 'On' : 'Off'}`;
+      if (autoscrollEnabled) {
+        chatLog.scrollTop = chatLog.scrollHeight;
+      }
+    });
+
+    document.getElementById('pause-feed').addEventListener('click', () => {
+      paused = !paused;
+      document.getElementById('pause-feed').textContent = paused ? 'Resume' : 'Pause';
+    });
+
+    document.getElementById('clear-feed').addEventListener('click', () => {
+      chatLog.innerHTML = '';
+    });
+
+    appendMessages(chatMessages);
+  </script>
+</body>
+</html>

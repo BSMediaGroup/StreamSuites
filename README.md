@@ -63,6 +63,287 @@ re-enablement.
 - `changelog/` + `scripts/`: version stamping and release utilities.
 - `services/{twitch,youtube,discord}/`: other platform runtimes and control
   plane implementations.
+- `services/chat_replay/`: neutral chat replay scaffolding (pop-out window, OBS overlay, and placeholder contract) to be fed by
+  future unified replay ingestion.
+  - `contracts/chat_message.schema.json`: placeholder unified chat replay contract for future ingestion.
+  - `templates/chat_replay_window.html`: standalone pop-out style chat replay window that renders static mock messages.
+  - `templates/chat_overlay_obs.html`: transparent browser-source overlay for OBS/Meld/Streamlabs with fade-in entries.
+  - `static/chat.css`: scoped styling shared by the pop-out and overlay templates.
+  - `static/chat_mock_data.js`: labeled placeholder message set used by both templates (no live data yet).
+  - `README.md`: documentation describing the scaffolding purpose and future integration path.
+
+### Repository tree (updated with chat replay scaffolding)
+
+```
+StreamSuites/
+├── .env.example
+├── .gitignore
+├── LICENSE
+├── README.md
+├── RUNTIME_AUDIT_REPORT.md
+├── changelog/
+│   ├── README.md
+│   └── changelog.runtime.json
+├── core/
+│   ├── README.md
+│   ├── __init__.py
+│   ├── app.py
+│   ├── config_loader.py
+│   ├── context.py
+│   ├── discord_app.py
+│   ├── jobs.py
+│   ├── ratelimits.py
+│   ├── registry.py
+│   ├── scheduler.py
+│   ├── state_exporter.py
+│   ├── shutdown.py
+│   ├── signals.py
+│   └── tallies/
+│       ├── README.md
+│       ├── __init__.py
+│       └── models.py
+├── data/
+│   └── streamsuites.db
+├── docs/
+│   └── POST_MORTEM.md
+├── exports/
+│   └── public/
+├── services/
+│   ├── chat_replay/
+│   │   ├── README.md
+│   │   ├── contracts/
+│   │   │   └── chat_message.schema.json
+│   │   ├── static/
+│   │   │   ├── chat.css
+│   │   │   └── chat_mock_data.js
+│   │   └── templates/
+│   │       ├── chat_overlay_obs.html
+│   │       └── chat_replay_window.html
+│   ├── clips/
+│   │   ├── __init__.py
+│   │   ├── encoder.py
+│   │   ├── exporter.py
+│   │   ├── manager.py
+│   │   ├── models.py
+│   │   ├── storage.py
+│   │   ├── uploader.py
+│   │   └── worker.py
+│   ├── discord/
+│   │   ├── README.md
+│   │   ├── announcements.py
+│   │   ├── client.py
+│   │   ├── commands/
+│   │   │   ├── README.md
+│   │   │   ├── __init__.py
+│   │   │   ├── admin.py
+│   │   │   ├── admin_commands.py
+│   │   │   ├── creators.py
+│   │   │   ├── public.py
+│   │   │   └── services.py
+│   │   ├── heartbeat.py
+│   │   ├── logging.py
+│   │   ├── permissions.py
+│   │   ├── runtime/
+│   │   │   ├── README.md
+│   │   │   ├── __init__.py
+│   │   │   ├── lifecycle.py
+│   │   │   └── supervisor.py
+│   │   ├── status.py
+│   │   └── tasks/
+│   │       ├── README.md
+│   │       ├── pilled_live.py
+│   │       ├── rumble_live.py
+│   │       ├── twitch_live.py
+│   │       ├── twitter_posting.py
+│   │       └── youtube_live.py
+│   ├── pilled/
+│   │   └── api/
+│   │       ├── chat.py
+│   │       └── livestream.py
+│   ├── rumble/
+│   │   ├── api/
+│   │   │   ├── channel_page.py
+│   │   │   ├── chat.py
+│   │   │   └── chat_post.py
+│   │   ├── browser/
+│   │   │   ├── __init__.py
+│   │   │   └── browser_client.py
+│   │   ├── chat/
+│   │   │   ├── rest_client.py
+│   │   │   ├── sse.py
+│   │   │   └── tombi_stream.py
+│   │   ├── chat_client.py
+│   │   ├── models/
+│   │   │   ├── chat_event.py
+│   │   │   ├── message.py
+│   │   │   └── stream.py
+│   │   └── workers/
+│   │       ├── chat_worker.py
+│   │       └── livestream_worker.py
+│   ├── triggers/
+│   │   ├── __init__.py
+│   │   ├── actions.py
+│   │   ├── base.py
+│   │   ├── README.md
+│   │   └── registry.py
+│   ├── twitch/
+│   │   ├── README.md
+│   │   ├── api/
+│   │   │   ├── chat.py
+│   │   │   └── livestream.py
+│   │   ├── models/
+│   │   │   └── message.py
+│   │   └── workers/
+│   │       └── chat_worker.py
+│   ├── twitter/
+│   │   ├── api/
+│   │   │   ├── auth.py
+│   │   │   └── posting.py
+│   │   └── workers/
+│   │       └── posting_worker.py
+│   └── youtube/
+│       ├── README.md
+│       ├── api/
+│       │   ├── chat.py
+│       │   └── livestream.py
+│       ├── models/
+│       │   ├── message.py
+│       │   └── stream.py
+│       └── workers/
+│           ├── chat_worker.py
+│           └── livestream_worker.py
+├── shared/
+│   ├── config/
+│   │   ├── chat_behaviour.json
+│   │   ├── clip_rules.json
+│   │   ├── creators.json
+│   │   ├── logging.json
+│   │   ├── monetization.json
+│   │   ├── posting_rules.json
+│   │   ├── ratelimits.json
+│   │   ├── services.json
+│   │   ├── services.py
+│   │   ├── system.json
+│   │   ├── system.py
+│   │   ├── tiers.json
+│   │   └── triggers.json
+│   ├── logging/
+│   │   ├── levels.py
+│   │   └── logger.py
+│   ├── platforms/
+│   │   ├── __init__.py
+│   │   └── state.py
+│   ├── public_exports/
+│   │   ├── __init__.py
+│   │   ├── clips.py
+│   │   ├── polls.py
+│   │   └── publisher.py
+│   ├── ratelimiter/
+│   │   └── governor.py
+│   ├── runtime/
+│   │   ├── __init__.py
+│   │   ├── quotas.py
+│   │   ├── quotas_snapshot.py
+│   │   └── scoreboards_snapshot.py
+│   ├── scoreboards/
+│   │   ├── README.md
+│   │   ├── placeholders.py
+│   │   ├── registry.py
+│   │   ├── schema.json
+│   │   └── snapshot.py
+│   ├── state/
+│   │   ├── chat_logs/
+│   │   │   └── .gitkeep
+│   │   ├── creators/
+│   │   │   └── daniel.json
+│   │   ├── discord/
+│   │   │   ├── README.md
+│   │   │   └── runtime.json
+│   │   ├── jobs.json
+│   │   ├── quotas.json
+│   │   ├── scoreboards/
+│   │   │   └── .gitkeep
+│   │   └── system.json
+│   ├── storage/
+│   │   ├── chat_events/
+│   │   │   ├── __init__.py
+│   │   │   ├── index.py
+│   │   │   ├── reader.py
+│   │   │   ├── schema.json
+│   │   │   └── writer.py
+│   │   ├── file_lock.py
+│   │   ├── paths.py
+│   │   ├── scoreboards/
+│   │   │   ├── README.md
+│   │   │   ├── exporter.py
+│   │   │   └── importer.py
+│   │   ├── state_publisher.py
+│   │   └── state_store.py
+│   └── utils/
+│       ├── files.py
+│       ├── hashing.py
+│       ├── retry.py
+│       └── time.py
+├── schemas/
+│   ├── creators.schema.json
+│   ├── platforms.schema.json
+│   ├── system.schema.json
+│   └── triggers.schema.json
+├── clips/
+│   └── output/
+├── media/
+│   ├── capture/
+│   │   ├── rumble.py
+│   │   ├── twitch.py
+│   │   └── youtube.py
+│   ├── jobs/
+│   │   ├── base.py
+│   │   ├── clip_job.py
+│   │   └── upload_job.py
+│   ├── processing/
+│   │   ├── metadata.py
+│   │   ├── transcode.py
+│   │   └── trim.py
+│   └── storage/
+│       ├── buffer.py
+│       ├── cleanup.py
+│       └── clips.py
+├── runtime/
+│   ├── admin/
+│   │   ├── chat_triggers.json
+│   │   ├── creators.json
+│   │   ├── integrations.json
+│   │   ├── jobs.json
+│   │   ├── permissions.json
+│   │   └── rate_limits.json
+│   ├── exports/
+│   │   ├── README.md
+│   │   ├── changelog.json
+│   │   ├── changelog.runtime.json
+│   │   ├── clips.json
+│   │   ├── meta.json
+│   │   ├── polls.json
+│   │   ├── scoreboards.json
+│   │   └── tallies.json
+│   ├── signals/
+│   │   ├── chat_events.json
+│   │   ├── poll_votes.json
+│   │   ├── score_events.json
+│   │   └── tally_events.json
+│   └── version.py
+├── scripts/
+│   ├── bootstrap.py
+│   ├── publish_state.py
+│   ├── update_version.py
+│   └── validate_config.py
+├── tests/
+│   └── __init__.py
+├── rumble_chat_poc.py
+├── rumble_poc/
+├── twitch_chat_poc.py
+├── test_rumble_api.py
+└── requirements.txt
+```
 
 ### Rumble chat ingest modes
 

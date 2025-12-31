@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StreamSuites | Chat Overlay (OBS)</title>
+  <link rel="stylesheet" href="../static/chat.css" />
+  <style>
+    body { margin: 0; background: transparent; }
+  </style>
+</head>
+<body class="overlay-shell">
+  <section class="overlay-log" id="overlay-log" data-overlay="true" aria-label="Overlay chat messages"></section>
+
+  <script src="../static/chat_mock_data.js"></script>
+  <script>
+    const overlayLog = document.getElementById('overlay-log');
+    const maxMessages = 6;
+
+    function renderOverlay(entries) {
+      const recent = entries.slice(-maxMessages);
+      renderChatLog(overlayLog, recent);
+    }
+
+    renderOverlay(chatMessages);
+  </script>
+</body>
+</html>
