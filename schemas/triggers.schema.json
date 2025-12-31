@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "StreamSuites Trigger Config",
+  "type": "object",
+  "properties": {
+    "meta": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "triggers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["trigger_id", "type"],
+        "properties": {
+          "trigger_id": { "type": "string", "minLength": 1 },
+          "creator_id": { "type": "string", "minLength": 1 },
+          "creator": { "type": "string", "minLength": 1 },
+          "type": { "type": "string", "minLength": 1 },
+          "command": { "type": "string" },
+          "keywords": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "pattern": { "type": "string" },
+          "platforms": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "cooldown_seconds": { "type": ["number", "integer"] },
+          "description": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "actions": {
+            "type": "array",
+            "items": { "type": "object" }
+          }
+        },
+        "oneOf": [
+          { "required": ["creator_id"] },
+          { "required": ["creator"] }
+        ],
+        "additionalProperties": true
+      }
+    }
+  },
+  "required": ["triggers"],
+  "additionalProperties": false
+}

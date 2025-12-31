@@ -79,6 +79,7 @@ class RuntimeState:
         self._creators: Dict[str, CreatorRuntimeState] = {}
         self._rumble_chat: Dict[str, Any] = {}
         self._system: Dict[str, Any] = {}
+        self._triggers_source: Optional[str] = None
 
     # ------------------------------------------------------------
     # Configuration ingestion
@@ -143,6 +144,10 @@ class RuntimeState:
         if not isinstance(system_config, dict):
             return
         self._system = dict(system_config)
+
+    def record_triggers_source(self, source: Optional[str]) -> None:
+        if source:
+            self._triggers_source = source
 
     # ------------------------------------------------------------
     # Runtime updates
@@ -381,6 +386,9 @@ class RuntimeState:
             "system": dict(self._system) if self._system else {},
             "platforms": platforms_out,
             "creators": creators_out,
+            "triggers": {
+                "source": self._triggers_source or "shared",
+            },
             "rumble_chat": rumble_chat_out,
         }
 
