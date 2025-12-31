@@ -1,0 +1,136 @@
+{
+  "meta": {
+    "project": "StreamSuites",
+    "scope": "runtime-roadmap",
+    "version": "v0.2.0-alpha",
+    "generated_at": "2026-01-15"
+  },
+  "entries": [
+    {
+      "id": "quota-enforcement",
+      "title": "Quota enforcement",
+      "status": "complete",
+      "progress": 95,
+      "description": "Per-creator and per-platform daily quotas are enforced with buffer and hard caps; runtime wiring is stable with minor observability refinements pending."
+    },
+    {
+      "id": "quota-snapshot-export",
+      "title": "Quota snapshot export",
+      "status": "complete",
+      "progress": 90,
+      "description": "Scheduled quota snapshot exports are produced to shared/state/quotas.json for downstream dashboard use; export cadence is stable and treated as public reference data."
+    },
+    {
+      "id": "discord-control-plane",
+      "title": "Discord control-plane scaffolding",
+      "status": "partial",
+      "progress": 55,
+      "description": "Discord runtime scaffolding exists for control-plane publishing with dashboard state updates; ingestion remains limited and action execution is not enabled."
+    },
+    {
+      "id": "twitch-chat-triggers",
+      "title": "Twitch chat trigger scaffolds",
+      "status": "active",
+      "progress": 60,
+      "description": "Twitch chat workers are active for evaluation-only triggers; ingestion is stable for testing but production-safe trigger execution is not yet enabled."
+    },
+    {
+      "id": "youtube-chat-triggers",
+      "title": "YouTube chat trigger scaffolds",
+      "status": "active",
+      "progress": 55,
+      "description": "YouTube chat workers are online for evaluation-only trigger detection with known gaps around throttling and long-running stream coverage."
+    },
+    {
+      "id": "rumble-chat-workers",
+      "title": "Rumble chat workers",
+      "status": "paused",
+      "progress": 30,
+      "description": "Rumble chat ingestion remains paused; worker code is preserved but disabled due to unstable chat_id discovery and inconsistent endpoints."
+    },
+    {
+      "id": "quota-registry-hardening",
+      "title": "Quota registry hardening",
+      "status": "active",
+      "progress": 70,
+      "description": "Registry wiring across platform workers is being tightened to ensure deterministic quota application and consistent shutdown behavior."
+    },
+    {
+      "id": "dashboard-quota-observability",
+      "title": "Dashboard quota observability",
+      "status": "partial",
+      "progress": 45,
+      "description": "Dashboard surfaces consume quota snapshots for read-only visibility; additional metrics and alerts are planned before declaring completeness."
+    },
+    {
+      "id": "shutdown-ordering",
+      "title": "Shutdown ordering across runtimes",
+      "status": "active",
+      "progress": 50,
+      "description": "Runtime shutdown sequencing is being tightened to avoid orphaned workers and ensure exports flush safely; cross-platform validation is underway."
+    },
+    {
+      "id": "twitch-youtube-validation",
+      "title": "YouTube/Twitch trigger validation",
+      "status": "active",
+      "progress": 65,
+      "description": "Live credential validation for YouTube and Twitch trigger scaffolds is ongoing to prove ingestion stability ahead of broader rollout."
+    },
+    {
+      "id": "config-driven-triggers",
+      "title": "Config-driven trigger definitions",
+      "status": "planned",
+      "progress": 15,
+      "description": "Trigger definitions are slated to move to config with persisted cooldowns; no runtime wiring exists yet beyond design placeholders."
+    },
+    {
+      "id": "dashboard-config-introspection",
+      "title": "Dashboard config introspection",
+      "status": "planned",
+      "progress": 10,
+      "description": "Read-only dashboard tooling for creator configuration is planned; no runtime endpoints or exports have been built."
+    },
+    {
+      "id": "twitter-control-plane",
+      "title": "Twitter/X control-plane parity",
+      "status": "planned",
+      "progress": 5,
+      "description": "Control-plane parity for Twitter/X is planned; no worker scaffolding or integrations exist."
+    },
+    {
+      "id": "scheduler-telemetry-alerting",
+      "title": "Scheduler telemetry and alerts",
+      "status": "planned",
+      "progress": 20,
+      "description": "Scheduler telemetry and alerting surfaces are planned to detect worker health and ingestion failures; only basic logging exists today."
+    },
+    {
+      "id": "trigger-action-dispatch",
+      "title": "Trigger action execution and dispatch",
+      "status": "planned",
+      "progress": 10,
+      "description": "Action dispatch for triggers remains future work; runtime intentionally omits write or execution paths pending deterministic ingestion results."
+    },
+    {
+      "id": "operator-tooling",
+      "title": "Operator tooling",
+      "status": "planned",
+      "progress": 5,
+      "description": "Operator controls for runtime start/stop and desktop tools are planned but not started; current operations are manual."
+    },
+    {
+      "id": "chat-logging-replay",
+      "title": "Historical chat logging and replay",
+      "status": "planned",
+      "progress": 5,
+      "description": "Historical chat logging and replay remains a future capability; runtime currently processes live streams only."
+    },
+    {
+      "id": "dashboard-trigger-controls",
+      "title": "Dashboard trigger editing and live controls",
+      "status": "planned",
+      "progress": 5,
+      "description": "Dashboard-based trigger editing and live controls are not started; runtime keeps dashboard read-only for now."
+    }
+  ]
+}
