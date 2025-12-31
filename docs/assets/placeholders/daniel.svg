@@ -1,0 +1,6 @@
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="120" height="120" rx="18" fill="#162032" />
+  <circle cx="60" cy="48" r="26" fill="#7bb7ff" />
+  <rect x="26" y="72" width="68" height="30" rx="10" fill="#0f1117" stroke="#2c3546" stroke-width="3" />
+  <text x="50%" y="85" text-anchor="middle" fill="#dbe6f4" font-family="Inter, 'Segoe UI', sans-serif" font-size="14">Daniel</text>
+</svg>
