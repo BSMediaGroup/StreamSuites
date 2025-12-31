@@ -1,8 +1,8 @@
 """
 ======================================================================
- StreamSuites Runtime — Version v0.2.0-alpha (Build 2025.01)
- Owner: Daniel Clancy
- Copyright © 2025 Brainstream Media Group
+ StreamSuites™ Runtime — Version v0.2.1-alpha (Build 2025.02)
+Owner: Daniel Clancy
+ Copyright © 2026 Brainstream Media Group
 ======================================================================
 """
 

@@ -6,12 +6,12 @@ other runtime modules without executing side effects on import.
 
 from __future__ import annotations
 
-PROJECT_NAME = "StreamSuites Runtime"
-VERSION = "v0.2.0-alpha"
-BUILD = "2025.01"
+PROJECT_NAME = "StreamSuites™ Runtime"
+VERSION = "v0.2.1-alpha"
+BUILD = "2025.02"
 OWNER = "Daniel Clancy"
-COPYRIGHT = "© 2025 Brainstream Media Group"
-LICENSE = "Proprietary / All Rights Reserved"
+COPYRIGHT = "© 2026 Brainstream Media Group"
+LICENSE = "Proprietary"
 
 __all__ = [
     "PROJECT_NAME",

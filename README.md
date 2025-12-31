@@ -3,7 +3,7 @@
 Development is halted. Rumble chat ingestion instability, inability to deterministically resolve or sustain <code>chat_id</code> ingestion, and repeated failed remediation attempts prevent safe progress to beta.
 </div>
 
-# StreamSuites
+# StreamSuites™
 
 ## Suspension Notice
 
@@ -20,7 +20,7 @@ Development is halted. Rumble chat ingestion instability, inability to determini
   - Any path to beta stabilization: runtime reliability requirements cannot be met under current conditions.
 - **Why This Repo Remains Public:** Preserved as a reference, audit artifact, and learning archive for the suspended runtime; no active maintenance is planned.
 - **No Roadmap / No ETA:** There is no roadmap, no planned fixes, and no estimated resumption.
-- **Versioning note:** v0.2.0-alpha is the final experimental snapshot retained in this archive; no new releases will be produced.
+- **Versioning note:** v0.2.1-alpha is the final experimental snapshot retained in this archive; no new releases will be produced.
 
 The sections below are preserved for historical reference and reflect the runtime state prior to suspension.
 
@@ -33,11 +33,11 @@ scaffolding in place for future dashboard/public visibility.
 
 ## Version & Release Authority
 
-- **Current version**: v0.2.0-alpha (Build 2025.01)
+- **Current version**: v0.2.1-alpha (Build 2025.02)
 - **Development stage**: Late Alpha — features are present but still undergoing hardening, observability work, and lifecycle tightening before beta stabilization.
 - **Versioning policy**: Semantic Versioning with pre-release tags (e.g., `-alpha`, `-beta`) to signal stability and readiness. Pre-release identifiers reflect runtime maturity and do not guarantee API permanence.
 - **Authoritative runtime**: This repository is the authoritative runtime source of truth for StreamSuites. Dashboard and external consumers are strictly read-only and must not mutate runtime-managed state.
-- **Licensing notice**: Proprietary / All Rights Reserved. Redistribution or reuse outside authorized channels is not permitted.
+- **Licensing notice**: Proprietary. Redistribution or reuse outside authorized channels is not permitted.
 - **Production readiness**: Not production ready. Expect breaking changes, schema adjustments, and operational refinements during the late alpha cycle.
 
 The project is built with a strong emphasis on:
@@ -434,7 +434,7 @@ send reliability is preserved even when ingest requirements change:
 ## Project Status
 
 - **Status:** INDEFINITELY SUSPENDED. The runtime is archived in place; no active development or remediation is planned.
-- **Final experimental snapshot:** v0.2.0-alpha (Build 2025.01) remains the last recorded runtime state and should be treated strictly as historical reference material.
+- **Final experimental snapshot:** v0.2.1-alpha (Build 2025.02) remains the last recorded runtime state and should be treated strictly as historical reference material.
 - **Operational impact:** the runtime cannot proceed safely to beta due to unresolved Rumble chat ingestion instability, including non-deterministic `chat_id` discovery and inconsistent endpoint behavior despite repeated remediation attempts.
 - **Dashboard and exports:** existing schemas, exports, and configuration samples remain for reference only and are not being updated or validated against live runtimes.
 
@@ -471,7 +471,7 @@ mutates runtime state; it only reads the published snapshots.
   `scripts/update_version.py` updates the `version` field for every About JSON
   document it can find under `<dashboard-root>/about/` while keeping runtime
   execution paths free of About dependencies.
-  - **Usage**: `python scripts/update_version.py v0.2.0-alpha --build 2025.01 --dashboard-root ../StreamSuites-Dashboard/docs`
+  - **Usage**: `python scripts/update_version.py v0.2.1-alpha --build 2025.02 --dashboard-root ../StreamSuites-Dashboard/docs`
   - If the dashboard checkout is absent, the script safely skips dashboard
     updates while keeping runtime metadata in sync.
 
