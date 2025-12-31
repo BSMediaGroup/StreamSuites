@@ -20,6 +20,7 @@ from shared.platforms.state import (
     apply_default_platform_states,
     normalize_platform_state,
 )
+from shared.utils.hashing import stable_hash_for_paths
 
 log = get_logger("core.config_loader")
 
@@ -52,6 +53,8 @@ class ConfigLoader:
     SYSTEM_PATH = Path("shared/config/system.json")
     TRIGGERS_PATH = Path("shared/config/triggers.json")
     ADMIN_TRIGGERS_PATH = Path("runtime/admin/triggers.json")
+    ADMIN_SYSTEM_PATH = Path("runtime/admin/system.json")
+    ADMIN_CREATORS_PATH = Path("runtime/admin/creators.json")
     SCHEMA_DIR = Path("schemas")
 
     def __init__(self) -> None:
@@ -383,4 +386,24 @@ class ConfigLoader:
         )
 
         return triggers, source
+
+    # ------------------------------------------------------------------
+    # Restart intent helpers
+    # ------------------------------------------------------------------
+
+    def restart_intent_sources(self) -> Dict[str, List[Path]]:
+        """Return the file sources that gate restart-applied configuration."""
+
+        return {
+            "system": [self.ADMIN_SYSTEM_PATH, self.SYSTEM_PATH],
+            "creators": [self.ADMIN_CREATORS_PATH, self.CREATORS_PATH],
+            "triggers": [self.ADMIN_TRIGGERS_PATH, self.TRIGGERS_PATH],
+            "platforms": [self.PLATFORM_OVERRIDES_PATH, self.PLATFORMS_PATH],
+        }
+
+    def compute_restart_baseline_hashes(self) -> Dict[str, Optional[str]]:
+        """Compute stable hashes for restart-applied config categories."""
+
+        sources = self.restart_intent_sources()
+        return {key: stable_hash_for_paths(paths) for key, paths in sources.items()}
 
