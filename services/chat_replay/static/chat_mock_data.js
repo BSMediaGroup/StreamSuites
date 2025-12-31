@@ -1,13 +1,16 @@
 // Placeholder mock data for unified chat replay and live surfaces.
 // This file is intentionally static and will be replaced by runtime-fed data in future stages.
 
+const chatAssetBase = (window.chatAssetBase || "assets/").replace(/\/?$/, "/");
+const withAsset = (path) => `${chatAssetBase}${path.replace(/^\//, "")}`;
+
 const chatMessages = [
   {
     message_id: "ss-001",
     platform: "youtube",
     author: {
       display_name: "Daniel Clancy",
-      avatar_url: "../../../docs/assets/placeholders/daniel.svg",
+      avatar_url: withAsset("placeholders/daniel.svg"),
       color: "#e91e63",
       badges: ["admin", "mod", "pro"],
     },
@@ -20,7 +23,7 @@ const chatMessages = [
     platform: "twitch",
     author: {
       display_name: "PixelPilot",
-      avatar_url: "../../../docs/assets/placeholders/streamsuites.svg",
+      avatar_url: withAsset("placeholders/streamsuites.svg"),
       color: "#9146ff",
       badges: ["vip", "pro"],
     },
@@ -33,7 +36,7 @@ const chatMessages = [
     platform: "rumble",
     author: {
       display_name: "SignalSeeker",
-      avatar_url: "../../../docs/assets/placeholders/daniel-badge.svg",
+      avatar_url: withAsset("placeholders/daniel-badge.svg"),
       color: "#3ddc84",
       badges: ["founder", "admin"],
     },
@@ -46,7 +49,7 @@ const chatMessages = [
     platform: "kick",
     author: {
       display_name: "NightRunner",
-      avatar_url: "../../../docs/assets/placeholders/hotdog.svg",
+      avatar_url: withAsset("placeholders/hotdog.svg"),
       color: "#00e701",
       badges: ["subscriber", "mod"],
     },
@@ -85,7 +88,7 @@ const chatMessages = [
     platform: "unknown",
     author: {
       display_name: "MysteryUser",
-      avatar_url: "../../../docs/assets/icons/ui/profile.svg",
+      avatar_url: withAsset("icons/ui/profile.svg"),
       color: null,
       badges: [],
     },
@@ -138,7 +141,7 @@ function renderBadgeRow(entry) {
 }
 
 function renderChatLog(target, entries) {
-  const defaultAvatarSrc = "../../../docs/assets/icons/ui/profile.svg";
+  const defaultAvatarSrc = withAsset("icons/ui/profile.svg");
 
   target.innerHTML = "";
   entries.forEach((entry) => {
