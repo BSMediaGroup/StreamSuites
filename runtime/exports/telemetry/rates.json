@@ -1,0 +1,24 @@
+{
+  "schema_version": "v1",
+  "generated_at": null,
+  "windows": [
+    {
+      "window": "60s",
+      "metrics": {
+        "messages": {},
+        "triggers": {},
+        "actions": {},
+        "actions_failed": {}
+      }
+    },
+    {
+      "window": "5m",
+      "metrics": {
+        "messages": {},
+        "triggers": {},
+        "actions": {},
+        "actions_failed": {}
+      }
+    }
+  ]
+}

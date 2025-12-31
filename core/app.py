@@ -41,6 +41,11 @@ async def main(stop_event: asyncio.Event):
     load_dotenv()
     log.info("Environment variables loaded")
     log.info("StreamSuites booting")
+    runtime_state.record_event(
+        source="system",
+        severity="info",
+        message="Runtime boot sequence started",
+    )
 
     # --------------------------------------------------
     # CONFIG INGESTION (DASHBOARD-COMPATIBLE)

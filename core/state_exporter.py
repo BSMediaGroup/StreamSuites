@@ -9,8 +9,9 @@ root when configured) via DashboardStatePublisher.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -19,6 +20,7 @@ from runtime import version as runtime_version
 from shared.platforms.state import PlatformState
 
 from shared.logging.logger import get_logger
+from shared.public_exports.publisher import PublicExportPublisher
 from shared.storage.state_publisher import DashboardStatePublisher
 from shared.utils.hashing import stable_hash_for_paths
 
@@ -85,6 +87,8 @@ class RuntimeState:
         self._restart_baseline_hashes: Dict[str, Optional[str]] = {}
         self._restart_source_paths: Dict[str, List[Path]] = {}
         self._restart_pending_logged = False
+        self._telemetry_events: List[Dict[str, Any]] = []
+        self._telemetry_errors: List[Dict[str, Any]] = []
 
     # ------------------------------------------------------------
     # Configuration ingestion
@@ -165,6 +169,75 @@ class RuntimeState:
         self._restart_source_paths = {key: list(paths) for key, paths in source_paths.items()}
 
     # ------------------------------------------------------------
+    # Telemetry helpers
+    # ------------------------------------------------------------
+
+    def _append_bounded(self, collection: List[Dict[str, Any]], entry: Dict[str, Any], limit: int = 200) -> None:
+        collection.append(entry)
+        if len(collection) > limit:
+            del collection[0 : len(collection) - limit]
+
+    def record_event(
+        self,
+        *,
+        source: str,
+        message: str,
+        severity: str = "info",
+        timestamp: Optional[str] = None,
+    ) -> None:
+        """Record a high-level runtime event for telemetry exports."""
+
+        severity_normalized = severity.lower() if severity else "info"
+        if severity_normalized not in {"info", "warning", "error"}:
+            severity_normalized = "info"
+
+        entry = {
+            "timestamp": timestamp or _utc_now_iso(),
+            "source": source,
+            "severity": severity_normalized,
+            "message": message,
+        }
+        self._append_bounded(self._telemetry_events, entry)
+
+    def record_error(
+        self,
+        *,
+        subsystem: str,
+        message: str,
+        error_type: str = "runtime",
+        source: Optional[str] = None,
+        timestamp: Optional[str] = None,
+    ) -> None:
+        """Record a lightweight error entry for telemetry exports."""
+
+        entry = {
+            "timestamp": timestamp or _utc_now_iso(),
+            "subsystem": subsystem,
+            "error_type": error_type,
+            "message": message,
+        }
+        if source:
+            entry["source"] = source
+        self._append_bounded(self._telemetry_errors, entry)
+
+    def telemetry_events(self) -> List[Dict[str, Any]]:
+        events = [dict(evt) for evt in self._telemetry_events]
+        events.sort(key=lambda e: e.get("timestamp") or "")
+        return events
+
+    def telemetry_errors(self) -> List[Dict[str, Any]]:
+        errors = [dict(err) for err in self._telemetry_errors]
+        errors.sort(key=lambda e: e.get("timestamp") or "")
+        return errors
+
+    def platform_counters_snapshot(self) -> Dict[str, Dict[str, int]]:
+        snapshot: Dict[str, Dict[str, int]] = {}
+        for name, state in sorted(self._platforms.items()):
+            state.ensure_counter_keys()
+            snapshot[name] = {key: int(value) for key, value in state.counters.items()}
+        return snapshot
+
+    # ------------------------------------------------------------
     # Runtime updates
     # ------------------------------------------------------------
 
@@ -236,8 +309,25 @@ class RuntimeState:
 
     def record_platform_started(self, platform: str, creator_id: Optional[str] = None) -> None:
         self.record_platform_status(platform, "connected", creator_id=creator_id, success=True)
+        self.record_event(
+            source=platform,
+            severity="info",
+            message="Platform worker started",
+        )
 
     def record_platform_error(self, platform: str, message: str, creator_id: Optional[str] = None) -> None:
+        self.record_error(
+            subsystem="platform",
+            source=platform,
+            error_type="platform_error",
+            message=message,
+        )
+        self.record_event(
+            source=platform,
+            severity="error",
+            message=message,
+        )
+
         state = self._get_platform_state(platform)
         state.last_error = message
         state.active = False
@@ -271,6 +361,12 @@ class RuntimeState:
             return
         state.last_error = message
         self._creators[creator_id] = state
+        self.record_error(
+            subsystem="creator",
+            source=creator_id,
+            error_type="creator_error",
+            message=message,
+        )
 
     def record_platform_event(self, platform: str, creator_id: Optional[str] = None) -> None:
         state = self._get_platform_state(platform)
@@ -436,6 +532,131 @@ class RuntimeState:
         }
 
 
+class TelemetrySnapshotExporter:
+    """
+    Exporter for lightweight, read-only telemetry snapshots.
+
+    Outputs authoritative JSON files into runtime/exports/telemetry for
+    dashboard polling. Snapshots are full overwrites with deterministic
+    structure and safe defaults.
+    """
+
+    DEFAULT_BASE_DIR = Path("runtime/exports/telemetry")
+    EVENTS_FILENAME = "events.json"
+    RATES_FILENAME = "rates.json"
+    ERRORS_FILENAME = "errors.json"
+
+    def __init__(self, *, state: RuntimeState, base_dir: Path | str | None = None) -> None:
+        self._state = state
+        self._publisher = PublicExportPublisher(base_dir=base_dir or self.DEFAULT_BASE_DIR)
+        self._rate_history: List[Dict[str, Any]] = []
+        self._last_counters: Dict[str, Dict[str, int]] = {}
+
+    @staticmethod
+    def _iso(dt: datetime) -> str:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    def _build_events_payload(self, now: datetime) -> Dict[str, Any]:
+        return {
+            "schema_version": "v1",
+            "generated_at": self._iso(now),
+            "events": self._state.telemetry_events(),
+        }
+
+    def _build_errors_payload(self, now: datetime) -> Dict[str, Any]:
+        return {
+            "schema_version": "v1",
+            "generated_at": self._iso(now),
+            "errors": self._state.telemetry_errors(),
+        }
+
+    @staticmethod
+    def _empty_metrics(platforms: List[str]) -> Dict[str, Dict[str, int]]:
+        metrics = {"messages": {}, "triggers": {}, "actions": {}, "actions_failed": {}}
+        for platform in platforms:
+            for key in metrics:
+                metrics[key][platform] = 0
+        return metrics
+
+    def _capture_rate_sample(self, now: datetime) -> None:
+        counters = self._state.platform_counters_snapshot()
+        platforms = sorted(counters.keys())
+        template = {"messages": {}, "triggers": {}, "actions": {}, "actions_failed": {}}
+        sample = {"timestamp": now, "metrics": copy.deepcopy(template)}
+
+        for platform in platforms:
+            current = counters.get(platform, {})
+            previous = self._last_counters.get(platform, {})
+            for key in template:
+                delta = max(0, int(current.get(key, 0)) - int(previous.get(key, 0)))
+                sample["metrics"][key][platform] = delta
+            self._last_counters[platform] = {key: int(current.get(key, 0)) for key in template}
+
+        self._rate_history.append(sample)
+        cutoff = now - timedelta(minutes=5)
+        self._rate_history = [entry for entry in self._rate_history if entry["timestamp"] >= cutoff]
+
+    def _aggregate_window(self, window: timedelta, now: datetime) -> Dict[str, Dict[str, int]]:
+        platforms = sorted(self._last_counters.keys())
+        metrics = self._empty_metrics(platforms)
+        cutoff = now - window
+
+        for entry in self._rate_history:
+            if entry["timestamp"] < cutoff:
+                continue
+            for key, per_platform in entry.get("metrics", {}).items():
+                for platform, value in per_platform.items():
+                    metrics.setdefault(key, {})
+                    metrics[key][platform] = metrics[key].get(platform, 0) + int(value)
+
+        # Ensure deterministic ordering for downstream consumers
+        for key in list(metrics.keys()):
+            metrics[key] = {platform: metrics[key].get(platform, 0) for platform in platforms}
+
+        return metrics
+
+    def _build_rates_payload(self, now: datetime) -> Dict[str, Any]:
+        self._capture_rate_sample(now)
+
+        return {
+            "schema_version": "v1",
+            "generated_at": self._iso(now),
+            "windows": [
+                {"window": "60s", "metrics": self._aggregate_window(timedelta(seconds=60), now)},
+                {"window": "5m", "metrics": self._aggregate_window(timedelta(minutes=5), now)},
+            ],
+        }
+
+    def publish(self) -> Dict[str, Dict[str, Any]]:
+        now = datetime.now(timezone.utc)
+        events_payload = self._build_events_payload(now)
+        rates_payload = self._build_rates_payload(now)
+        errors_payload = self._build_errors_payload(now)
+
+        try:
+            self._publisher.publish(self.EVENTS_FILENAME, events_payload)
+        except Exception as exc:
+            log.warning(f"Failed to publish telemetry events: {exc}")
+
+        try:
+            self._publisher.publish(self.RATES_FILENAME, rates_payload)
+        except Exception as exc:
+            log.warning(f"Failed to publish telemetry rates: {exc}")
+
+        try:
+            self._publisher.publish(self.ERRORS_FILENAME, errors_payload)
+        except Exception as exc:
+            log.warning(f"Failed to publish telemetry errors: {exc}")
+
+        return {
+            "events": events_payload,
+            "rates": rates_payload,
+            "errors": errors_payload,
+        }
+
+
 class RuntimeSnapshotExporter:
     """
     Writes runtime_snapshot.json using DashboardStatePublisher.
@@ -449,9 +670,11 @@ class RuntimeSnapshotExporter:
         base_dir: str = "shared/state",
         publish_root: Optional[str] = None,
         state: Optional[RuntimeState] = None,
+        telemetry_exporter: Optional[TelemetrySnapshotExporter] = None,
     ) -> None:
         self._publisher = DashboardStatePublisher(base_dir=base_dir, publish_root=publish_root)
         self._state = state or RuntimeState()
+        self._telemetry_exporter = telemetry_exporter or TelemetrySnapshotExporter(state=self._state)
 
     @property
     def state(self) -> RuntimeState:
@@ -463,9 +686,17 @@ class RuntimeSnapshotExporter:
             self._publisher.publish(self.DEFAULT_RELATIVE_PATH, payload)
         except Exception as e:
             log.warning(f"Failed to publish runtime snapshot: {e}")
+        if self._telemetry_exporter:
+            try:
+                self._telemetry_exporter.publish()
+            except Exception as e:
+                log.warning(f"Failed to publish telemetry snapshots: {e}")
         return payload
 
 
 # Shared instances for scheduler/app
 runtime_state = RuntimeState()
-runtime_snapshot_exporter = RuntimeSnapshotExporter(state=runtime_state)
+telemetry_exporter = TelemetrySnapshotExporter(state=runtime_state)
+runtime_snapshot_exporter = RuntimeSnapshotExporter(
+    state=runtime_state, telemetry_exporter=telemetry_exporter
+)

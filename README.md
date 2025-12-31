@@ -324,7 +324,11 @@ StreamSuites/
 │   │   ├── meta.json
 │   │   ├── polls.json
 │   │   ├── scoreboards.json
-│   │   └── tallies.json
+│   │   ├── tallies.json
+│   │   └── telemetry/
+│   │       ├── errors.json
+│   │       ├── events.json
+│   │       └── rates.json
 │   ├── signals/
 │   │   ├── chat_events.json
 │   │   ├── poll_votes.json
@@ -451,6 +455,9 @@ mutates runtime state; it only reads the published snapshots.
   execution.
 - **Export generator**: deterministic JSON snapshots are produced for public
   galleries, dashboard-only operations, and internal integration surfaces.
+- **Telemetry snapshots**: `runtime/exports/telemetry/` surfaces read-only
+  operational events, rolling rate aggregates, and trimmed error records so the
+  dashboard can poll live health signals from static hosting surfaces.
 
 ### Version stamping workflow (runtime-owned)
 
@@ -488,6 +495,9 @@ mutates runtime state; it only reads the published snapshots.
 | `tallies.json` | `runtime/exports/` | Public | Aggregate tally counts only. |
 | `scoreboards.json` | `runtime/exports/` | Public | Ranked scoreboard entries with scores. |
 | `meta.json` | `runtime/exports/` | Public | Manifest describing the export surface. |
+| `telemetry/events.json` | `runtime/exports/telemetry/` | Public | High-level runtime events (timestamp, source, severity, message). |
+| `telemetry/rates.json` | `runtime/exports/telemetry/` | Public | Rolling activity counters for chat, triggers, and actions (60s + 5m windows). |
+| `telemetry/errors.json` | `runtime/exports/telemetry/` | Public | Lightweight error records scoped to subsystem/error type without stack traces. |
 | `chat_events.json` | `runtime/signals/` | Dashboard-only | Normalized chat events for inspection. |
 | `poll_votes.json` | `runtime/signals/` | Dashboard-only | Individual poll vote events without personal data. |
 | `tally_events.json` | `runtime/signals/` | Dashboard-only | Increment events for tallies. |
