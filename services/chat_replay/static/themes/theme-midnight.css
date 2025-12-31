@@ -1,0 +1,21 @@
+/* Midnight theme placeholder for darker overlays while retaining avatars. */
+:root[data-theme="midnight"] {
+  --chat-bg: #05070c;
+  --chat-panel: #0b101a;
+  --chat-accent: #6ba7ff;
+  --chat-muted: #a0b8df;
+  --chat-border: #131a29;
+  --chat-scroll: #1c2436;
+  --chat-success: #4dd6a8;
+  --avatar-size: 46px;
+  --avatar-size-overlay: 38px;
+  --avatar-bg: #0c111d;
+  --avatar-border: 1px solid rgba(255, 255, 255, 0.05);
+  --avatar-icon-color: #c5d5f3;
+}
+
+[data-theme="midnight"] .avatar-shell,
+[data-theme="midnight"] .overlay-entry .avatar-shell {
+  background: var(--avatar-bg);
+  border: var(--avatar-border);
+}

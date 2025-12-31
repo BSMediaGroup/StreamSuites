@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>StreamSuites | Chat Replay</title>
   <link rel="stylesheet" href="../static/chat.css" />
+  <link rel="stylesheet" href="../static/themes/theme-default.css" />
+  <link rel="stylesheet" href="../static/themes/theme-slate.css" />
+  <link rel="stylesheet" href="../static/themes/theme-midnight.css" />
 </head>
 <body class="chat-shell">
   <section class="chat-window">
@@ -16,6 +19,11 @@
       <div class="chat-controls">
         <button class="chat-btn" id="toggle-timestamps">Timestamps: On</button>
         <button class="chat-btn" id="toggle-autoscroll">Autoscroll: On</button>
+      </div>
+      <div class="theme-selector" aria-label="Theme selector">
+        <button class="theme-btn is-active" data-theme-target="default">Default</button>
+        <button class="theme-btn" data-theme-target="slate">Slate</button>
+        <button class="theme-btn" data-theme-target="midnight">Midnight</button>
       </div>
     </header>
 
@@ -37,9 +45,19 @@
     let autoscrollEnabled = true;
     let paused = false;
 
+    const themeButtons = document.querySelectorAll('.theme-btn');
+
+    function applyTheme(theme) {
+      if (!theme || theme === 'default') {
+        document.documentElement.removeAttribute('data-theme');
+      } else {
+        document.documentElement.setAttribute('data-theme', theme);
+      }
+    }
+
     function applyToggles() {
       document.querySelectorAll('.timestamp').forEach((el) => {
-        el.style.display = timestampsVisible ? 'block' : 'none';
+        el.style.display = timestampsVisible ? 'inline-flex' : 'none';
       });
     }
 
@@ -73,6 +91,14 @@
 
     document.getElementById('clear-feed').addEventListener('click', () => {
       chatLog.innerHTML = '';
+    });
+
+    themeButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const theme = btn.dataset.themeTarget;
+        applyTheme(theme);
+        themeButtons.forEach((b) => b.classList.toggle('is-active', b === btn));
+      });
     });
 
     appendMessages(chatMessages);

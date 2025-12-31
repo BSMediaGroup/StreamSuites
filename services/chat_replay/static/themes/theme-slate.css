@@ -1,0 +1,21 @@
+/* Slate theme placeholder: keeps avatar support aligned with base layout. */
+:root[data-theme="slate"] {
+  --chat-bg: #0b0d12;
+  --chat-panel: #111623;
+  --chat-accent: #8dc5ff;
+  --chat-muted: #9fb4d3;
+  --chat-border: #1b2232;
+  --chat-scroll: #283246;
+  --chat-success: #64f2bc;
+  --avatar-size: 46px;
+  --avatar-size-overlay: 38px;
+  --avatar-bg: #101523;
+  --avatar-border: 1px solid rgba(255, 255, 255, 0.08);
+  --avatar-icon-color: #d7e3fb;
+}
+
+[data-theme="slate"] .avatar-shell,
+[data-theme="slate"] .overlay-entry .avatar-shell {
+  background: var(--avatar-bg);
+  border: var(--avatar-border);
+}

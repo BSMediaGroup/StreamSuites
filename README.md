@@ -68,9 +68,14 @@ re-enablement.
   - `contracts/chat_message.schema.json`: placeholder unified chat replay contract for future ingestion.
   - `templates/chat_replay_window.html`: standalone pop-out style chat replay window that renders static mock messages.
   - `templates/chat_overlay_obs.html`: transparent browser-source overlay for OBS/Meld/Streamlabs with fade-in entries.
+  - `templates/partials/theme_selector.html`: UI stub for swapping bundled chat replay themes without runtime wiring yet.
   - `static/chat.css`: scoped styling shared by the pop-out and overlay templates.
+  - `static/themes/`: additive theme overrides (`theme-default.css`, `theme-slate.css`, `theme-midnight.css`) that keep avatar
+    sizing consistent across surfaces.
   - `static/chat_mock_data.js`: labeled placeholder message set used by both templates (no live data yet).
   - `README.md`: documentation describing the scaffolding purpose and future integration path.
+  - Avatars: circular avatar column is reserved in markup and styles; missing or failed images automatically fall back to
+    `docs/assets/icons/ui/profile.svg` so replay operators never ship a broken or empty avatar state.
 
 ### Repository tree (updated with chat replay scaffolding)
 
@@ -115,8 +120,14 @@ StreamSuites/
 │   │   │   └── chat_message.schema.json
 │   │   ├── static/
 │   │   │   ├── chat.css
+│   │   │   ├── themes/
+│   │   │   │   ├── theme-default.css
+│   │   │   │   ├── theme-midnight.css
+│   │   │   │   └── theme-slate.css
 │   │   │   └── chat_mock_data.js
 │   │   └── templates/
+│   │       ├── partials/
+│   │       │   └── theme_selector.html
 │   │       ├── chat_overlay_obs.html
 │   │       └── chat_replay_window.html
 │   ├── clips/

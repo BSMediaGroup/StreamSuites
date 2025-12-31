@@ -1,0 +1,28 @@
+:root {
+  --chat-bg: #0f1117;
+  --chat-panel: #151924;
+  --chat-accent: #5ad7ff;
+  --chat-muted: #8fa3bf;
+  --chat-border: #1f2633;
+  --chat-scroll: #2c3546;
+  --chat-success: #57e39b;
+  --avatar-size: 46px;
+  --avatar-size-overlay: 38px;
+  --avatar-bg: #141a27;
+  --avatar-border: 1px solid rgba(255, 255, 255, 0.06);
+  --avatar-icon-color: #c8d4e8;
+}
+
+/* Default theme keeps avatars neutral without glow or shadow */
+.avatar-shell,
+.overlay-entry .avatar-shell {
+  background: var(--avatar-bg);
+  border: var(--avatar-border);
+  box-shadow: none;
+}
+
+.avatar-shell img.avatar,
+.overlay-entry .avatar-shell img.avatar {
+  background: transparent;
+  box-shadow: none;
+}
