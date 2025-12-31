@@ -37,6 +37,7 @@ scaffolding in place for future dashboard/public visibility.
 - **Development stage**: Late Alpha — features are present but still undergoing hardening, observability work, and lifecycle tightening before beta stabilization.
 - **Versioning policy**: Semantic Versioning with pre-release tags (e.g., `-alpha`, `-beta`) to signal stability and readiness. Pre-release identifiers reflect runtime maturity and do not guarantee API permanence.
 - **Authoritative runtime**: This repository is the authoritative runtime source of truth for StreamSuites. Dashboard and external consumers are strictly read-only and must not mutate runtime-managed state.
+- **Export-driven UI surfaces**: Runtime publishes state via file-based exports (JSON snapshots and HTML replay templates). Dashboards/overlays are expected to read these artifacts without introducing their own write paths.
 - **Licensing notice**: Proprietary. Redistribution or reuse outside authorized channels is not permitted.
 - **Production readiness**: Not production ready. Expect breaking changes, schema adjustments, and operational refinements during the late alpha cycle.
 
@@ -63,9 +64,9 @@ re-enablement.
 - `changelog/` + `scripts/`: version stamping and release utilities.
 - `services/{twitch,youtube,discord}/`: other platform runtimes and control
   plane implementations.
-- `services/chat_replay/`: neutral chat replay scaffolding (pop-out window, OBS overlay, and placeholder contract) to be fed by
-  future unified replay ingestion.
-  - `contracts/chat_message.schema.json`: placeholder unified chat replay contract for future ingestion.
+- `services/chat_replay/`: neutral chat replay scaffolding that ships static, exportable HTML surfaces (pop-out window and OBS
+  overlay) plus a placeholder schema for future replay ingestion; all visuals are mock-data only and avoid live wiring.
+  - `contracts/chat_message.schema.json`: placeholder unified chat replay contract for future ingestion and export validation.
   - `templates/chat_replay_window.html`: standalone pop-out style chat replay window that renders static mock messages.
   - `templates/chat_overlay_obs.html`: transparent browser-source overlay for OBS/Meld/Streamlabs with fade-in entries.
   - `templates/partials/theme_selector.html`: UI stub for swapping bundled chat replay themes without runtime wiring yet.
@@ -360,7 +361,7 @@ StreamSuites/
 └── requirements.txt
 ```
 
-### Repository tree (additive update: unified chat window + live input scaffolding)
+### Repository tree (additive update: unified chat window + exportable mock-data scaffolding)
 
 ```
 StreamSuites/

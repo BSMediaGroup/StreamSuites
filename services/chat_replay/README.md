@@ -2,6 +2,13 @@
 
 This directory now ships a single HTML surface that can present either **replay** or **live** visuals, plus an OBS overlay that reuses the same renderer and mock data. All assets remain static and avoid sockets, APIs, or backend wiring.
 
+## Status
+
+- Replay and live surfaces are **scaffolds only**. They use mock data and do not hydrate from runtime exporters yet.
+- OBS/browser captures are file-based and safe to host as static artifacts (no websocket, no API calls).
+- The `contracts/chat_message.schema.json` model is the expected contract for any future replay export wiring.
+- Live input footer and send/emoji controls are placeholders; no live ingestion or posting occurs.
+
 ## Files and layout
 
 - `templates/chat_window.html`: Unified window. Use `?mode=replay` (default) or `?mode=live` plus optional `?theme=`.
