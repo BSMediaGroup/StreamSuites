@@ -1,22 +1,31 @@
-# Chat Replay Scaffolding (Runtime)
+# Chat Replay and Live Scaffolding (Runtime)
 
-This directory holds the initial runtime-side scaffolding for unified chat replay surfaces. It is intentionally static and does not implement live chat ingestion, sockets, or backend connectivity.
+This directory now ships a single HTML surface that can present either **replay** or **live** visuals, plus an OBS overlay that reuses the same renderer and mock data. All assets remain static and avoid sockets, APIs, or backend wiring.
 
-## Components
+## Files and layout
 
-- **contracts/chat_message.schema.json**: Placeholder data contract describing the neutral unified chat message shape for future replay ingestion.
-- **templates/chat_replay_window.html**: Pop-out style chat window modeled after modern livestream chats. Includes mock controls for pause, autoscroll, clear, and timestamp visibility.
-- **templates/chat_overlay_obs.html**: Transparent browser-source-friendly overlay intended for OBS, Meld, Streamlabs, and similar tools. Limited history with fade-in message treatment.
-- **static/chat.css**: Locally scoped styling shared by both templates.
-- **static/chat_mock_data.js**: Static mock messages spanning multiple platforms; used by both templates until live replay engines supply data.
+- `templates/chat_window.html`: Unified window. Use `?mode=replay` (default) or `?mode=live` plus optional `?theme=`.
+- `templates/chat_overlay_obs.html`: OBS/browser source-friendly overlay that reuses the renderer and honors `?theme=`.
+- `templates/partials/theme_menu.html`: Theme selector markup kept from **Uiverse.io by Na3ar-17** (dropdown card structure preserved per requirement).
+- `templates/partials/footer_replay.html`: Slim replay footer with theme selector and status pill.
+- `templates/partials/footer_live.html`: Live footer with the required Lakshay-art input scaffold, emoji stub, and send icon.
+- `static/chat.css`: Shared styling for chat layouts, avatars, badge row positioning, and footer chrome.
+- `static/chat_live_input.css`: Adapted styling from **Uiverse.io by Lakshay-art** (layered borders and masking preserved, animation intensity reduced, StreamSuites color variables applied).
+- `static/themes/*.css`: Theme token files (default, slate, midnight).
+- `static/chat_mock_data.js`: Mock messages with avatars, platform diversity, and badge combinations; also exports the renderer used by all HTML surfaces.
+- `contracts/chat_message.schema.json`: Placeholder neutral message contract.
 
-## Behavior and Limitations
+## Reference components (why they remain intact)
 
-- **No live data**: Both HTML surfaces rely on the static mock data file and do not connect to any runtime service.
-- **No sockets or APIs**: Networking is not enabled; all behaviors are local-only placeholders.
-- **Scaffolding only**: Controls such as pause, autoscroll, and timestamp visibility are implemented on top of mock data to illustrate UX intent without wiring to runtime events.
-- **Avatars enforced early**: Each chat row reserves a fixed avatar column so future replay ingestion can drop in per-user imagery without layout shifts. Missing or failed avatars automatically fall back to `docs/assets/icons/ui/profile.svg` rendered in a neutral tone.
+- **Theme selector (Na3ar-17)**: The dropdown uses the original `.card`, `.list`, `.element`, and `.separator` structure from Uiverse. Only colors, borders, and typography were adjusted to match StreamSuites’ dark palette and fonts. The reference is cited directly to honor the locked visual contract and avoid refactoring risk.
+- **Live input (Lakshay-art)**: The footer input keeps the layered borders, masking, and icon placement from the Uiverse example. Animations were softened and gradients retuned to StreamSuites blues, but the structural HTML/CSS remains to satisfy the locked baseline.
 
-## Future Integration Notes
+These components were not rewritten to prevent drift from the authoritative visuals and to keep future QA aligned with the provided references.
 
-Future chat replay engines can feed these templates by replacing the mock data import with runtime-managed payloads that conform to `contracts/chat_message.schema.json`. Once a unified replay source exists, the templates can consume rendered JSON via local file reads, bundled static exports, or another runtime-safe injection path without altering the current aesthetic scaffolding. Avatar URLs will be provided alongside message payloads and will respect the enforced fallback so replay operators never ship a blank or broken image state.
+## Modes and roadmap
+
+- **Replay mode**: Shows mock messages, timestamp toggles, autoscroll controls, pause/clear, and a footer theme selector. Platform/role badges render in the top-right corner of each message for OBS-safe alignment.
+- **Live mode**: Shares the same renderer and mock data but swaps in the live input footer and disables replay controls. Emoji and send actions are stubbed only; no network traffic is emitted.
+- **Overlay**: The OBS overlay renders replay-only content with top-right badge placement, avatar fallbacks, and theme support. Footers and inputs are omitted for capture cleanliness.
+
+Future integration can replace `chat_mock_data.js` with runtime-fed data matching `contracts/chat_message.schema.json`, preserving the avatar column and badge layout guarantees without altering this scaffold.

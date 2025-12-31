@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StreamSuites | Unified Chat Window</title>
+  <link rel="stylesheet" href="../static/chat.css" />
+  <link rel="stylesheet" href="../static/chat_live_input.css" />
+  <link rel="stylesheet" href="../static/themes/theme-default.css" />
+  <link rel="stylesheet" href="../static/themes/theme-slate.css" />
+  <link rel="stylesheet" href="../static/themes/theme-midnight.css" />
+</head>
+<body class="chat-shell" data-mode="replay">
+  <section class="chat-window" id="chat-window">
+    <header class="chat-header">
+      <div class="header-copy">
+        <h1 id="mode-title">Unified Chat Window</h1>
+        <div class="subtext">Mode-aware scaffold • Mock data only • OBS-safe</div>
+      </div>
+      <div class="chat-controls" id="replay-controls" hidden>
+        <button class="chat-btn" id="toggle-timestamps">Timestamps: On</button>
+        <button class="chat-btn" id="toggle-autoscroll">Autoscroll: On</button>
+        <button class="chat-btn" id="pause-feed">Pause</button>
+        <button class="chat-btn" id="clear-feed">Clear</button>
+      </div>
+    </header>
+
+    <main class="chat-log" id="chat-log" aria-label="Chat messages"></main>
+
+    <div id="footer-slot"></div>
+  </section>
+
+  <script src="../static/chat_mock_data.js"></script>
+  <script>
+    // Unified chat window wiring. One HTML surface, two modes.
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get('mode') === 'live' ? 'live' : 'replay';
+    const startingTheme = params.get('theme');
+
+    const chatLog = document.getElementById('chat-log');
+    chatLog.dataset.overlay = 'false';
+    let timestampsVisible = true;
+    let autoscrollEnabled = true;
+    let paused = false;
+
+    document.body.dataset.mode = mode;
+
+    function applyTheme(theme) {
+      const validTheme = theme && theme !== 'default' ? theme : '';
+      if (validTheme) {
+        document.documentElement.setAttribute('data-theme', validTheme);
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+      }
+    }
+
+    function applyToggles() {
+      document.querySelectorAll('.timestamp').forEach((el) => {
+        el.style.display = timestampsVisible ? 'inline-flex' : 'none';
+      });
+    }
+
+    function appendMessages(entries) {
+      if (paused) return;
+      renderChatLog(chatLog, entries);
+      applyToggles();
+      if (autoscrollEnabled) {
+        chatLog.scrollTop = chatLog.scrollHeight;
+      }
+    }
+
+    async function loadPartial(path, targetId) {
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      try {
+        const response = await fetch(path);
+        const markup = await response.text();
+        target.innerHTML = markup;
+      } catch (err) {
+        target.innerHTML = `<div class="footer-fallback">Footer unavailable</div>`;
+      }
+    }
+
+    function wireReplayControls() {
+      const replayControls = document.getElementById('replay-controls');
+      replayControls.hidden = false;
+      document.getElementById('toggle-timestamps').addEventListener('click', () => {
+        timestampsVisible = !timestampsVisible;
+        document.getElementById('toggle-timestamps').textContent = `Timestamps: ${timestampsVisible ? 'On' : 'Off'}`;
+        applyToggles();
+      });
+
+      document.getElementById('toggle-autoscroll').addEventListener('click', () => {
+        autoscrollEnabled = !autoscrollEnabled;
+        document.getElementById('toggle-autoscroll').textContent = `Autoscroll: ${autoscrollEnabled ? 'On' : 'Off'}`;
+        if (autoscrollEnabled) {
+          chatLog.scrollTop = chatLog.scrollHeight;
+        }
+      });
+
+      document.getElementById('pause-feed').addEventListener('click', () => {
+        paused = !paused;
+        document.getElementById('pause-feed').textContent = paused ? 'Resume' : 'Pause';
+      });
+
+      document.getElementById('clear-feed').addEventListener('click', () => {
+        chatLog.innerHTML = '';
+      });
+    }
+
+    function setupThemeMenu() {
+      const trigger = document.querySelector('.theme-menu-toggle');
+      const popover = document.querySelector('.theme-menu-popover');
+      const statusLabel = document.querySelector('.theme-status-label');
+      if (!trigger || !popover) return;
+
+      function closeMenu() {
+        popover.hidden = true;
+        trigger.setAttribute('aria-expanded', 'false');
+      }
+
+      trigger.addEventListener('click', () => {
+        const isOpen = popover.hidden === false;
+        popover.hidden = isOpen;
+        trigger.setAttribute('aria-expanded', String(!isOpen));
+      });
+
+      document.addEventListener('click', (event) => {
+        if (!popover.contains(event.target) && !trigger.contains(event.target)) {
+          closeMenu();
+        }
+      });
+
+      popover.querySelectorAll('[data-theme-target]').forEach((item) => {
+        item.addEventListener('click', () => {
+          const theme = item.dataset.themeTarget;
+          const disabled = item.getAttribute('aria-disabled') === 'true';
+          if (disabled) return;
+          applyTheme(theme);
+          popover.querySelectorAll('[data-theme-target]').forEach((el) => el.classList.toggle('is-active', el === item));
+          if (statusLabel) {
+            statusLabel.textContent = `${theme.charAt(0).toUpperCase() + theme.slice(1)} theme`;
+          }
+          closeMenu();
+        });
+      });
+    }
+
+    function setupLiveInput() {
+      const input = document.querySelector('.live-input .input');
+      const sendBtn = document.getElementById('send-button');
+      const emojiBtn = document.getElementById('emoji-button');
+      if (!input || !sendBtn || !emojiBtn) return;
+      sendBtn.addEventListener('click', () => {
+        // Placeholder only; no live send wiring yet.
+        const bubble = document.querySelector('.live-input-status');
+        if (bubble) {
+          bubble.textContent = 'Send disabled (scaffold only)';
+          bubble.classList.add('visible');
+          setTimeout(() => bubble.classList.remove('visible'), 2000);
+        }
+      });
+      emojiBtn.addEventListener('click', () => {
+        const bubble = document.querySelector('.live-input-status');
+        if (bubble) {
+          bubble.textContent = 'Emoji picker coming soon';
+          bubble.classList.add('visible');
+          setTimeout(() => bubble.classList.remove('visible'), 2000);
+        }
+      });
+    }
+
+    async function hydrateFooter() {
+      const footerPath = mode === 'live' ? './partials/footer_live.html' : './partials/footer_replay.html';
+      await loadPartial(footerPath, 'footer-slot');
+      const themeMount = document.querySelector('.theme-menu-popover');
+      if (themeMount) {
+        await loadPartial('./partials/theme_menu.html', 'theme-menu-container');
+      }
+
+      const resolvedTheme = startingTheme || 'default';
+      const activeButton = document.querySelector(`[data-theme-target="${resolvedTheme}"]`);
+      if (activeButton) {
+        document.querySelectorAll('[data-theme-target]').forEach((el) => el.classList.remove('is-active'));
+        activeButton.classList.add('is-active');
+        const statusLabel = document.querySelector('.theme-status-label');
+        if (statusLabel) {
+          statusLabel.textContent = `${resolvedTheme.charAt(0).toUpperCase() + resolvedTheme.slice(1)} theme`;
+        }
+      }
+
+      setupThemeMenu();
+      if (mode === 'live') {
+        setupLiveInput();
+      }
+    }
+
+    function setHeaderForMode() {
+      const titleEl = document.getElementById('mode-title');
+      const subtext = document.querySelector('.subtext');
+      if (mode === 'live') {
+        titleEl.textContent = 'Live Chat (Preview)';
+        subtext.textContent = 'Live mode visuals only • No backend wiring yet';
+      } else {
+        titleEl.textContent = 'Replay Chat (Preview)';
+        subtext.textContent = 'Static mock data • No live ingestion yet';
+        wireReplayControls();
+      }
+    }
+
+    if (startingTheme) {
+      applyTheme(startingTheme);
+    }
+
+    setHeaderForMode();
+    hydrateFooter().then(() => {
+      appendMessages(chatMessages);
+    });
+  </script>
+</body>
+</html>

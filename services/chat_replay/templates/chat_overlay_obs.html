@@ -12,17 +12,32 @@
     body { margin: 0; background: transparent; }
   </style>
 </head>
-<body class="overlay-shell">
+<body class="overlay-shell" data-mode="replay">
   <section class="overlay-log" id="overlay-log" data-overlay="true" aria-label="Overlay chat messages"></section>
 
   <script src="../static/chat_mock_data.js"></script>
   <script>
     const overlayLog = document.getElementById('overlay-log');
     const maxMessages = 6;
+    const params = new URLSearchParams(window.location.search);
+    const startingTheme = params.get('theme');
+
+    function applyTheme(theme) {
+      const validTheme = theme && theme !== 'default' ? theme : '';
+      if (validTheme) {
+        document.documentElement.setAttribute('data-theme', validTheme);
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+      }
+    }
 
     function renderOverlay(entries) {
       const recent = entries.slice(-maxMessages);
       renderChatLog(overlayLog, recent);
+    }
+
+    if (startingTheme) {
+      applyTheme(startingTheme);
     }
 
     renderOverlay(chatMessages);

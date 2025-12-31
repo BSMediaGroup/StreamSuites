@@ -1,0 +1,243 @@
+/* Input styling adapted from Uiverse.io by Lakshay-art */
+:root {
+  --input-bg: #0f1117;
+  --input-surface: #12182a;
+  --input-accent: #7bb7ff;
+  --input-highlight: #cdd5e2;
+}
+
+.live-input {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 320px;
+  max-width: 520px;
+  position: relative;
+}
+
+.grid {
+  display: none;
+}
+
+.white,
+.border,
+.darkBorderBg,
+.glow {
+  max-height: 70px;
+  max-width: 314px;
+  height: 100%;
+  width: 100%;
+  position: absolute;
+  overflow: hidden;
+  z-index: -1;
+  border-radius: 12px;
+  filter: blur(2px);
+}
+
+.input {
+  background-color: var(--input-surface);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  width: 301px;
+  height: 56px;
+  border-radius: 10px;
+  color: #f4f6fb;
+  padding-inline: 59px;
+  font-size: 16px;
+  box-shadow: inset 0 0 0 1px rgba(123, 183, 255, 0.12);
+}
+
+.live-input #poda {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.input::placeholder {
+  color: #c0c8d8;
+}
+
+.input:focus {
+  outline: 1px solid rgba(123, 183, 255, 0.35);
+}
+
+#main:focus-within > #input-mask {
+  display: none;
+}
+
+#input-mask {
+  pointer-events: none;
+  width: 100px;
+  height: 20px;
+  position: absolute;
+  background: linear-gradient(90deg, transparent, #0f1117);
+  top: 18px;
+  left: 70px;
+}
+
+#pink-mask {
+  pointer-events: none;
+  width: 30px;
+  height: 20px;
+  position: absolute;
+  background: #5f8dff;
+  top: 10px;
+  left: 5px;
+  filter: blur(18px);
+  opacity: 0.5;
+  transition: all 0.6s ease;
+}
+
+#main:hover > #pink-mask {
+  opacity: 0.2;
+}
+
+.white {
+  max-height: 63px;
+  max-width: 307px;
+  border-radius: 10px;
+  filter: blur(2px);
+}
+
+.white::before {
+  content: "";
+  z-index: -2;
+  text-align: center;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(83deg);
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  filter: brightness(1.4);
+  background-image: conic-gradient(
+    rgba(0, 0, 0, 0) 0%,
+    #a0b8ff,
+    rgba(0, 0, 0, 0) 8%,
+    rgba(0, 0, 0, 0) 50%,
+    #7bb7ff,
+    rgba(0, 0, 0, 0) 58%
+  );
+  transition: all 0.6s ease;
+}
+
+.border {
+  max-height: 59px;
+  max-width: 303px;
+  border-radius: 11px;
+  filter: blur(1px);
+}
+
+.border::before {
+  content: "";
+  z-index: -2;
+  text-align: center;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(70deg);
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  filter: brightness(1.2);
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-image: conic-gradient(
+    #1c191c,
+    #3a7bff 5%,
+    #1c191c 14%,
+    #1c191c 50%,
+    #5f8dff 60%,
+    #1c191c 64%
+  );
+  transition: all 0.8s ease;
+}
+
+.darkBorderBg {
+  max-height: 65px;
+  max-width: 312px;
+}
+
+.darkBorderBg::before {
+  content: "";
+  z-index: -2;
+  text-align: center;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(82deg);
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-image: conic-gradient(
+    rgba(0, 0, 0, 0),
+    #18116a,
+    rgba(0, 0, 0, 0) 10%,
+    rgba(0, 0, 0, 0) 50%,
+    #6e1b60,
+    rgba(0, 0, 0, 0) 60%
+  );
+  transition: all 0.8s ease;
+}
+
+#main {
+  position: relative;
+}
+
+#filter-icon {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  max-height: 40px;
+  max-width: 38px;
+  height: 100%;
+  width: 100%;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #161329, #0f1117, #1d1b4b);
+  border: 1px solid transparent;
+}
+
+.filterBorder {
+  height: 42px;
+  width: 40px;
+  position: absolute;
+  overflow: hidden;
+  top: 7px;
+  right: 7px;
+  border-radius: 10px;
+}
+
+.filterBorder::before {
+  content: "";
+  text-align: center;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(90deg);
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  filter: brightness(1.1);
+  background-image: conic-gradient(
+    rgba(0, 0, 0, 0),
+    #3d3a4f,
+    rgba(0, 0, 0, 0) 50%,
+    rgba(0, 0, 0, 0) 50%,
+    #3d3a4f,
+    rgba(0, 0, 0, 0) 100%
+  );
+}
+
+#search-icon {
+  position: absolute;
+  left: 20px;
+  top: 15px;
+}

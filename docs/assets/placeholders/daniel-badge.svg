@@ -1,0 +1,6 @@
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="120" height="120" rx="18" fill="#141824" />
+  <circle cx="60" cy="50" r="26" fill="#ff7b7b" />
+  <path d="M30 92H90L84 76H36L30 92Z" fill="#1c2331" stroke="#3a7bff" stroke-width="3" />
+  <text x="50%" y="86" text-anchor="middle" fill="#e5ecf5" font-family="Inter, 'Segoe UI', sans-serif" font-size="13">Admin</text>
+</svg>

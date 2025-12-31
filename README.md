@@ -360,6 +360,32 @@ StreamSuites/
 └── requirements.txt
 ```
 
+### Repository tree (additive update: unified chat window + live input scaffolding)
+
+```
+StreamSuites/
+└── services/
+    └── chat_replay/
+        ├── README.md
+        ├── contracts/
+        │   └── chat_message.schema.json
+        ├── static/
+        │   ├── chat.css
+        │   ├── chat_live_input.css
+        │   ├── chat_mock_data.js
+        │   └── themes/
+        │       ├── theme-default.css
+        │       ├── theme-midnight.css
+        │       └── theme-slate.css
+        └── templates/
+            ├── chat_overlay_obs.html
+            ├── chat_window.html
+            └── partials/
+                ├── footer_live.html
+                ├── footer_replay.html
+                └── theme_menu.html
+```
+
 ### Rumble chat ingest modes
 
 - **SSE_BEST_EFFORT (default)**: connects to
