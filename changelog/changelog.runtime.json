@@ -8,6 +8,14 @@
     "version": "v0.2.1-alpha"
   },
   {
+    "id": "2026-01-chat-replay-scaffold",
+    "date": "2026-01-01",
+    "title": "Chat replay scaffolding exported",
+    "description": "Introduced the chat_replay service with export-safe HTML window and OBS overlay surfaces backed by the schema-defined replay message model; all surfaces remain static, mock-data driven, and non-interactive until runtime ingestion is wired.",
+    "scope": "runtime",
+    "version": "v0.2.1-alpha"
+  },
+  {
     "id": "2025-02-runtime-quotas",
     "date": "2025-12-20",
     "title": "Quota enforcement hardened",
