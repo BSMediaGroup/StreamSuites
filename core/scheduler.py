@@ -11,6 +11,7 @@ from services.twitch.workers.chat_worker import TwitchChatWorker
 from services.youtube.workers.chat_worker import YouTubeChatWorker
 from services.youtube.api.livestream import YouTubeLivestreamAPI
 from services.discord.runtime.supervisor import DiscordSupervisor
+from services.triggers.actions import ActionExecutor
 from shared.logging.logger import get_logger
 from shared.config.services import get_services_config
 
@@ -41,6 +42,9 @@ class Scheduler:
 
         # Discord control-plane supervisor (process-scoped)
         self._discord_supervisor: Optional[DiscordSupervisor] = None
+
+        # Action executors per creator
+        self._action_executors: Dict[str, ActionExecutor] = {}
 
         # --------------------------------------------------
         # Load global service configuration ONCE
@@ -95,6 +99,14 @@ class Scheduler:
                 normalized[name] = {"enabled": False, "telemetry_enabled": False}
         return normalized
 
+    def _get_action_executor(self, creator_id: str) -> ActionExecutor:
+        if creator_id not in self._action_executors:
+            self._action_executors[creator_id] = ActionExecutor(
+                creator_id=creator_id,
+                job_registry=self._get_job_registry(),
+            )
+        return self._action_executors[creator_id]
+
     # ------------------------------------------------------------
 
     async def start_creator(self, ctx: CreatorContext):
@@ -107,6 +119,8 @@ class Scheduler:
         self._tasks[ctx.creator_id] = []
         self._job_counts[ctx.creator_id] = {}
         self._creator_platforms_started[ctx.creator_id] = set()
+
+        executor = self._get_action_executor(ctx.creator_id)
 
         # --------------------------------------------------
         # Heartbeat (always on)
@@ -125,6 +139,7 @@ class Scheduler:
             elif not ctx.platform_enabled("rumble"):
                 log.info(f"[{ctx.creator_id}] Rumble skipped (disabled for creator)")
             else:
+                runtime_state.record_platform_status("rumble", "connecting", creator_id=ctx.creator_id)
                 log.info(f"[{ctx.creator_id}] Rumble ENABLED — starting worker")
                 self._platforms_started.add("rumble")
                 self._creator_platforms_started[ctx.creator_id].add("rumble")
@@ -138,7 +153,7 @@ class Scheduler:
                 self._tasks[ctx.creator_id].append(task)
         except Exception as e:
             runtime_state.record_platform_error("rumble", str(e), ctx.creator_id)
-            raise
+            log.error(f"[{ctx.creator_id}] Rumble failed to start: {e}")
 
         # --------------------------------------------------
         # Twitch chat orchestration
@@ -152,28 +167,36 @@ class Scheduler:
             else:
                 log.info(f"[{ctx.creator_id}] Twitch ENABLED — starting worker")
 
-                if not self._twitch_oauth_token or not self._twitch_channel:
-                    raise RuntimeError(
-                        "Twitch enabled but required env vars are missing "
-                        "(TWITCH_OAUTH_TOKEN_DANIEL, TWITCH_CHANNEL_DANIEL)"
+                missing_env: List[str] = []
+                if not self._twitch_oauth_token:
+                    missing_env.append("TWITCH_OAUTH_TOKEN_DANIEL")
+                if not self._twitch_channel:
+                    missing_env.append("TWITCH_CHANNEL_DANIEL")
+                if missing_env:
+                    message = "Twitch enabled but missing env vars: " + ", ".join(missing_env)
+                    runtime_state.record_platform_error("twitch", message, ctx.creator_id)
+                    log.warning(f"[{ctx.creator_id}] {message}")
+                else:
+                    runtime_state.record_platform_status("twitch", "connecting", creator_id=ctx.creator_id)
+                    self._platforms_started.add("twitch")
+                    self._creator_platforms_started[ctx.creator_id].add("twitch")
+                    runtime_state.record_platform_started("twitch", ctx.creator_id)
+
+                    twitch_worker = TwitchChatWorker(
+                        ctx=ctx,
+                        oauth_token=self._twitch_oauth_token,
+                        channel=self._twitch_channel,
+                        nickname=self._twitch_nickname,
+                        action_executor=executor,
                     )
 
-                self._platforms_started.add("twitch")
-                self._creator_platforms_started[ctx.creator_id].add("twitch")
-                runtime_state.record_platform_started("twitch", ctx.creator_id)
+                    executor.register_platform_sender("twitch", twitch_worker.send_message)
 
-                twitch_worker = TwitchChatWorker(
-                    ctx=ctx,
-                    oauth_token=self._twitch_oauth_token,
-                    channel=self._twitch_channel,
-                    nickname=self._twitch_nickname,
-                )
-
-                task = asyncio.create_task(twitch_worker.run())
-                self._tasks[ctx.creator_id].append(task)
+                    task = asyncio.create_task(twitch_worker.run())
+                    self._tasks[ctx.creator_id].append(task)
         except Exception as e:
             runtime_state.record_platform_error("twitch", str(e), ctx.creator_id)
-            raise
+            log.error(f"[{ctx.creator_id}] Twitch failed to start: {e}")
 
         # --------------------------------------------------
         # YouTube chat orchestration
@@ -188,43 +211,46 @@ class Scheduler:
                 log.info(f"[{ctx.creator_id}] YouTube ENABLED — checking livestream")
 
                 if not self._youtube_api_key:
-                    raise RuntimeError(
-                        "YouTube enabled but YOUTUBE_API_KEY_DANIEL is missing"
-                    )
-
-                youtube_api = YouTubeLivestreamAPI(
-                    api_key=self._youtube_api_key
-                )
-
-                livestream = await youtube_api.get_active_livestream(
-                    channel_id=ctx.creator_id
-                )
-
-                if not livestream:
-                    log.info(
-                        f"[{ctx.creator_id}] No active YouTube livestream — worker not started"
-                    )
+                    message = "YouTube enabled but YOUTUBE_API_KEY_DANIEL is missing"
+                    runtime_state.record_platform_error("youtube", message, ctx.creator_id)
+                    log.warning(f"[{ctx.creator_id}] {message}")
                 else:
-                    log.info(
-                        f"[{ctx.creator_id}] Active YouTube livestream detected — "
-                        f"liveChatId={livestream.live_chat_id}"
+                    youtube_api = YouTubeLivestreamAPI(
+                        api_key=self._youtube_api_key
                     )
 
-                    self._platforms_started.add("youtube")
-                    self._creator_platforms_started[ctx.creator_id].add("youtube")
-                    runtime_state.record_platform_started("youtube", ctx.creator_id)
-
-                    youtube_worker = YouTubeChatWorker(
-                        ctx=ctx,
-                        api_key=self._youtube_api_key,
-                        live_chat_id=livestream.live_chat_id,
+                    livestream = await youtube_api.get_active_livestream(
+                        channel_id=ctx.creator_id
                     )
 
-                    task = asyncio.create_task(youtube_worker.run())
-                    self._tasks[ctx.creator_id].append(task)
+                    if not livestream:
+                        log.info(
+                            f"[{ctx.creator_id}] No active YouTube livestream — worker not started"
+                        )
+                        runtime_state.record_platform_status("youtube", "inactive", creator_id=ctx.creator_id)
+                    else:
+                        log.info(
+                            f"[{ctx.creator_id}] Active YouTube livestream detected — "
+                            f"liveChatId={livestream.live_chat_id}"
+                        )
+
+                        runtime_state.record_platform_status("youtube", "connecting", creator_id=ctx.creator_id)
+                        self._platforms_started.add("youtube")
+                        self._creator_platforms_started[ctx.creator_id].add("youtube")
+                        runtime_state.record_platform_started("youtube", ctx.creator_id)
+
+                        youtube_worker = YouTubeChatWorker(
+                            ctx=ctx,
+                            api_key=self._youtube_api_key,
+                            live_chat_id=livestream.live_chat_id,
+                            action_executor=executor,
+                        )
+
+                        task = asyncio.create_task(youtube_worker.run())
+                        self._tasks[ctx.creator_id].append(task)
         except Exception as e:
             runtime_state.record_platform_error("youtube", str(e), ctx.creator_id)
-            raise
+            log.error(f"[{ctx.creator_id}] YouTube failed to start: {e}")
 
         # --------------------------------------------------
         # Discord control-plane runtime
@@ -334,6 +360,7 @@ class Scheduler:
         self._tasks.clear()
         self._job_counts.clear()
         self._creator_platforms_started.clear()
+        self._action_executors.clear()
 
         if self._discord_supervisor:
             try:
