@@ -12,7 +12,10 @@
     body { margin: 0; background: transparent; }
   </style>
 </head>
-<body class="overlay-shell" data-mode="replay">
+<body class="overlay-shell" data-mode="replay" data-asset-base="assets/">
+  <script>
+    window.chatAssetBase = (document.body.dataset.assetBase || "assets/").replace(/\/?$/, "/");
+  </script>
   <section class="overlay-log" id="overlay-log" data-overlay="true" aria-label="Overlay chat messages"></section>
 
   <script src="../static/chat_mock_data.js"></script>

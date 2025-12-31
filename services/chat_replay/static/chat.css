@@ -111,7 +111,7 @@
   border: 1px solid var(--chat-border);
   border-radius: 10px;
   animation: fadeIn 180ms ease;
-  align-items: start;
+  align-items: flex-start;
 }
 
 .overlay-entry {
@@ -135,6 +135,11 @@
 .overlay-entry .avatar-shell {
   width: var(--avatar-size-overlay);
   height: var(--avatar-size-overlay);
+}
+
+.chat-entry .avatar-shell,
+.overlay-entry .avatar-shell {
+  align-self: flex-start;
 }
 
 .avatar-shell img.avatar {
@@ -163,13 +168,14 @@
 
 .meta-line {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
   flex-wrap: wrap;
 }
 
 .author {
   font-weight: 600;
+  font-size: 0.95rem;
 }
 
 .badges-inline {
@@ -245,7 +251,7 @@
 .timestamp {
   color: var(--chat-muted);
   font-size: 11px;
-  margin-left: auto;
+  margin-left: 6px;
 }
 
 .chat-footer {

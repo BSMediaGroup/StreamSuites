@@ -10,7 +10,10 @@
   <link rel="stylesheet" href="../static/themes/theme-slate.css" />
   <link rel="stylesheet" href="../static/themes/theme-midnight.css" />
 </head>
-<body class="chat-shell" data-mode="replay">
+<body class="chat-shell" data-mode="replay" data-asset-base="assets/">
+  <script>
+    window.chatAssetBase = (document.body.dataset.assetBase || "assets/").replace(/\/?$/, "/");
+  </script>
   <section class="chat-window" id="chat-window">
     <header class="chat-header">
       <div class="header-copy">
