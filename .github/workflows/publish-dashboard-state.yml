@@ -1,0 +1,43 @@
+name: Publish Runtime State to Dashboard
+
+on:
+  push:
+    paths:
+      - "runtime/exports/**"
+      - "shared/state/**"
+      - "runtime/admin/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-dashboard-state:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Runtime Repo
+        uses: actions/checkout@v4
+
+      - name: Checkout Dashboard Repo
+        uses: actions/checkout@v4
+        with:
+          repository: BSMediaGroup/StreamSuites-Dashboard
+          token: ${{ secrets.DASHBOARD_REPO_TOKEN }}
+          path: dashboard
+
+      - name: Sync Runtime Snapshots
+        run: |
+          mkdir -p dashboard/docs/shared/state
+          rsync -av --delete \
+            runtime/exports/ \
+            dashboard/docs/shared/state/
+
+      - name: Commit and Push Changes
+        run: |
+          cd dashboard
+          git config user.name "StreamSuites Runtime Bot"
+          git config user.email "actions@github.com"
+          git add docs/shared/state
+          git commit -m "chore: sync runtime snapshots" || echo "No changes to commit"
+          git push
