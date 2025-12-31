@@ -58,6 +58,7 @@ async def main(stop_event: asyncio.Event):
     system_config = config_loader.load_system_config()
     platform_config = config_loader.load_platforms_config()
     creators_config = config_loader.load_creators_config()
+    job_enable_flags = system_config.system.jobs
 
     # Seed runtime state for snapshot export (includes disabled creators)
     runtime_state.apply_platform_config(platform_config)
@@ -68,6 +69,7 @@ async def main(stop_event: asyncio.Event):
             "platforms": dict(system_config.system.platforms),
         }
     )
+    runtime_state.apply_job_config(job_enable_flags)
 
     if not system_config.system.platform_polling_enabled:
         log.info(
@@ -102,17 +104,22 @@ async def main(stop_event: asyncio.Event):
         platform_polling_enabled=system_config.system.platform_polling_enabled,
         platform_enable_flags=system_config.system.platforms,
     )
-    jobs = JobRegistry()
+    jobs = JobRegistry(job_enable_flags=job_enable_flags)
     _GLOBAL_JOB_REGISTRY = jobs
 
     # --------------------------------------------------
     # REGISTER JOB TYPES (FEATURE-GATED)
     # --------------------------------------------------
-    clip_enabled = any(
+    clip_feature_enabled = any(
         getattr(ctx, "features", {}).get("clips", False)
         for ctx in creators.values()
     )
+    clip_enabled = job_enable_flags.get("clips", True) and clip_feature_enabled
 
+    if job_enable_flags.get("clips", True) and not clip_feature_enabled:
+        log.info("Clip job NOT registered (no tier permits clips)")
+    elif not job_enable_flags.get("clips", True):
+        log.info("Clip job disabled via system config — registration skipped")
     if clip_enabled:
         jobs.register("clip", ClipJob)
         log.info("Clip job registered (tier feature enabled)")
@@ -121,8 +128,6 @@ async def main(stop_event: asyncio.Event):
             clip_runtime_started = True
         except Exception as e:
             log.error(f"Clip runtime failed to start: {e}")
-    else:
-        log.info("Clip job NOT registered (no tier permits clips)")
 
     # --------------------------------------------------
     # INITIAL SNAPSHOT EXPORT

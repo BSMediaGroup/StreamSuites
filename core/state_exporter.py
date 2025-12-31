@@ -83,6 +83,7 @@ class RuntimeState:
         self._creators: Dict[str, CreatorRuntimeState] = {}
         self._rumble_chat: Dict[str, Any] = {}
         self._system: Dict[str, Any] = {}
+        self._jobs: Dict[str, Dict[str, Any]] = {}
         self._triggers_source: Optional[str] = None
         self._restart_baseline_hashes: Dict[str, Optional[str]] = {}
         self._restart_source_paths: Dict[str, List[Path]] = {}
@@ -153,6 +154,28 @@ class RuntimeState:
         if not isinstance(system_config, dict):
             return
         self._system = dict(system_config)
+
+    def apply_job_config(self, job_config: Dict[str, Any]) -> None:
+        if not isinstance(job_config, dict):
+            self._jobs = {}
+            return
+
+        normalized: Dict[str, Dict[str, Any]] = {}
+        for name, value in job_config.items():
+            enabled = None
+            if isinstance(value, dict):
+                enabled = value.get("enabled")
+            elif isinstance(value, bool):
+                enabled = value
+
+            if isinstance(enabled, bool):
+                normalized[str(name)] = {
+                    "enabled": enabled,
+                    "applied": True,
+                    "reason": "disabled via config" if not enabled else None,
+                }
+
+        self._jobs = normalized
 
     def record_triggers_source(self, source: Optional[str]) -> None:
         if source:
@@ -486,6 +509,25 @@ class RuntimeState:
         rumble_chat_out = dict(self._rumble_chat) if self._rumble_chat else None
 
         restart_intent = self._restart_intent()
+        system_pending_restart = restart_intent.get("pending", {}).get("system", False)
+
+        jobs_out: List[Dict[str, Any]] = []
+        for name in sorted(self._jobs.keys()):
+            job_entry = self._jobs[name]
+            enabled = bool(job_entry.get("enabled", False))
+            applied = False if system_pending_restart else bool(job_entry.get("applied", True))
+            reason = "restart required" if not applied else (
+                "disabled via config" if not enabled else None
+            )
+
+            jobs_out.append(
+                {
+                    "name": name,
+                    "enabled": enabled,
+                    "applied": applied,
+                    "reason": reason,
+                }
+            )
 
         return {
             "schema_version": "v1",
@@ -497,6 +539,7 @@ class RuntimeState:
                 "build": runtime_version.BUILD,
             },
             "system": dict(self._system) if self._system else {},
+            "jobs": jobs_out,
             "platforms": platforms_out,
             "creators": creators_out,
             "triggers": {

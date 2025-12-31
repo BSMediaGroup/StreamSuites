@@ -5,6 +5,11 @@
       "youtube": { "enabled": true },
       "twitch": { "enabled": true },
       "discord": { "enabled": true }
+    },
+    "jobs": {
+      "clips": { "enabled": true },
+      "polls": { "enabled": true },
+      "tallies": { "enabled": true }
     }
   },
   "clips": {

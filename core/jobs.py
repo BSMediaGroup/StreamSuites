@@ -1,7 +1,7 @@
 import asyncio
 import uuid
 import time
-from typing import Dict, Type
+from typing import Dict, Optional, Type
 
 from shared.logging.logger import get_logger
 from shared.storage.state_store import append_job, update_job
@@ -25,9 +25,10 @@ class Job:
 
 
 class JobRegistry:
-    def __init__(self):
+    def __init__(self, job_enable_flags: Optional[Dict[str, bool]] = None):
         self._job_types: Dict[str, Type[Job]] = {}
         self._active_jobs: Dict[str, asyncio.Task] = {}
+        self._job_enable_flags: Dict[str, bool] = self._normalize_job_flags(job_enable_flags)
 
         # --------------------------------------------------
         # METRICS (READ-ONLY, ADDITIVE)
@@ -96,9 +97,34 @@ class JobRegistry:
 
     # ------------------------------------------------------------
 
+    @staticmethod
+    def _normalize_job_flags(job_enable_flags: Optional[Dict[str, bool]]) -> Dict[str, bool]:
+        normalized: Dict[str, bool] = {}
+        if isinstance(job_enable_flags, dict):
+            for name, flag in job_enable_flags.items():
+                if isinstance(flag, bool):
+                    normalized[str(name)] = flag
+        return normalized
+
+    def _job_enabled(self, job_type: str) -> bool:
+        if job_type in self._job_enable_flags:
+            return bool(self._job_enable_flags[job_type])
+
+        plural_name = f"{job_type}s" if not job_type.endswith("s") else job_type
+        return bool(self._job_enable_flags.get(plural_name, True))
+
+    # ------------------------------------------------------------
+
     async def dispatch(self, job_type: str, ctx, payload: dict):
         if job_type not in self._job_types:
             raise ValueError(f"Unknown job type: {job_type}")
+
+        if not self._job_enabled(job_type):
+            log.info(
+                f"[{getattr(ctx, 'creator_id', 'unknown')}] Job '{job_type}' "
+                "rejected: disabled via config (restart required)"
+            )
+            return None
 
         # --------------------------------------------------
         # TIER ENFORCEMENT (AUTHORITATIVE)
