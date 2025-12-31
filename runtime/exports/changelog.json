@@ -1,15 +1,15 @@
 {
   "meta": {
     "source": "runtime",
-    "project": "StreamSuites",
-    "version": "v0.2.0-alpha",
+    "project": "StreamSuites™",
+    "version": "v0.2.1-alpha",
     "generated_at": "2026-01-15"
   },
   "entries": [
     {
       "id": "2026-01-runtime-resumed",
       "date": "2026-01-15",
-      "version": "v0.2.0-alpha",
+      "version": "v0.2.1-alpha",
       "scope": "runtime",
       "title": "Runtime development resumed",
       "summary": "Runtime execution resumed with Rumble paused and YouTube/Twitch prioritized for ingestion.",
@@ -23,7 +23,7 @@
     {
       "id": "2025-12-project-suspended",
       "date": "2025-12-28",
-      "version": "v0.2.0-alpha",
+      "version": "v0.2.1-alpha",
       "scope": "runtime",
       "title": "Runtime development suspended",
       "summary": "Runtime execution and ingestion development has been suspended.",
@@ -37,7 +37,7 @@
     {
       "id": "2025-02-runtime-quotas",
       "date": "2025-12-20",
-      "version": "v0.2.0-alpha",
+      "version": "v0.2.1-alpha",
       "scope": "runtime",
       "title": "Quota enforcement hardened",
       "summary": "Daily quota enforcement stabilized across platforms.",
