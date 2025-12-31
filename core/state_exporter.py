@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from runtime import version as runtime_version
@@ -19,6 +20,7 @@ from shared.platforms.state import PlatformState
 
 from shared.logging.logger import get_logger
 from shared.storage.state_publisher import DashboardStatePublisher
+from shared.utils.hashing import stable_hash_for_paths
 
 log = get_logger("core.state_exporter")
 
@@ -80,6 +82,9 @@ class RuntimeState:
         self._rumble_chat: Dict[str, Any] = {}
         self._system: Dict[str, Any] = {}
         self._triggers_source: Optional[str] = None
+        self._restart_baseline_hashes: Dict[str, Optional[str]] = {}
+        self._restart_source_paths: Dict[str, List[Path]] = {}
+        self._restart_pending_logged = False
 
     # ------------------------------------------------------------
     # Configuration ingestion
@@ -148,6 +153,16 @@ class RuntimeState:
     def record_triggers_source(self, source: Optional[str]) -> None:
         if source:
             self._triggers_source = source
+
+    def record_restart_baseline(
+        self,
+        baseline_hashes: Dict[str, Optional[str]],
+        source_paths: Dict[str, List[Path]],
+    ) -> None:
+        """Capture baseline hashes and sources for restart-intent detection."""
+
+        self._restart_baseline_hashes = dict(baseline_hashes)
+        self._restart_source_paths = {key: list(paths) for key, paths in source_paths.items()}
 
     # ------------------------------------------------------------
     # Runtime updates
@@ -374,6 +389,8 @@ class RuntimeState:
 
         rumble_chat_out = dict(self._rumble_chat) if self._rumble_chat else None
 
+        restart_intent = self._restart_intent()
+
         return {
             "schema_version": "v1",
             "generated_at": runtime_heartbeat,
@@ -390,6 +407,32 @@ class RuntimeState:
                 "source": self._triggers_source or "shared",
             },
             "rumble_chat": rumble_chat_out,
+            "restart_intent": restart_intent,
+        }
+
+    def _restart_intent(self) -> Dict[str, Any]:
+        categories = ["system", "creators", "triggers", "platforms"]
+        pending_flags = {cat: False for cat in categories}
+
+        if self._restart_source_paths:
+            current_hashes = {
+                key: stable_hash_for_paths(paths)
+                for key, paths in self._restart_source_paths.items()
+            }
+            for category in categories:
+                pending_flags[category] = (
+                    current_hashes.get(category) != self._restart_baseline_hashes.get(category)
+                )
+
+        required = any(pending_flags.values())
+
+        if required and not self._restart_pending_logged:
+            log.info("Configuration changes detected — restart required to apply")
+            self._restart_pending_logged = True
+
+        return {
+            "required": required,
+            "pending": pending_flags,
         }
 
 

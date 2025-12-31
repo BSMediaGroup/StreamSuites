@@ -46,6 +46,10 @@ async def main(stop_event: asyncio.Event):
     # CONFIG INGESTION (DASHBOARD-COMPATIBLE)
     # --------------------------------------------------
     config_loader = ConfigLoader()
+    restart_sources = config_loader.restart_intent_sources()
+    runtime_state.record_restart_baseline(
+        config_loader.compute_restart_baseline_hashes(), restart_sources
+    )
     system_config = config_loader.load_system_config()
     platform_config = config_loader.load_platforms_config()
     creators_config = config_loader.load_creators_config()
