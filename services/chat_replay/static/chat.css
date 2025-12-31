@@ -103,22 +103,28 @@
 .overlay-entry {
   position: relative;
   display: grid;
-  grid-template-columns: var(--avatar-size) 1fr;
-  gap: 10px;
-  padding: 12px;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    'avatar meta'
+    'avatar body';
+  column-gap: 10px;
+  row-gap: 6px;
+  padding: 12px 14px;
   margin-bottom: 12px;
   background: #131826;
   border: 1px solid var(--chat-border);
   border-radius: 10px;
   animation: fadeIn 180ms ease;
   align-items: flex-start;
+  padding-right: 134px;
 }
 
 .overlay-entry {
   grid-template-columns: var(--avatar-size-overlay) 1fr;
-  background: rgba(19, 24, 38, 0.8);
+  background: rgba(19, 24, 38, 0.82);
   border: 1px solid rgba(47, 62, 92, 0.6);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+  padding-right: 116px;
 }
 
 .avatar-shell {
@@ -140,6 +146,7 @@
 .chat-entry .avatar-shell,
 .overlay-entry .avatar-shell {
   align-self: flex-start;
+  grid-area: avatar;
 }
 
 .avatar-shell img.avatar {
@@ -155,15 +162,13 @@
 }
 
 .entry-body {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-areas:
+    'meta'
+    'message';
   gap: 6px;
   min-width: 0;
-  padding-right: 120px;
-}
-
-.overlay-entry .entry-body {
-  padding-right: 96px;
+  grid-area: body;
 }
 
 .meta-line {
@@ -171,6 +176,7 @@
   align-items: baseline;
   gap: 8px;
   flex-wrap: wrap;
+  grid-area: meta;
 }
 
 .author {
@@ -202,8 +208,8 @@
 
 .badge-row {
   position: absolute;
-  top: 10px;
-  right: 12px;
+  top: 12px;
+  right: 14px;
   display: inline-flex;
   gap: 6px;
   align-items: center;
@@ -246,6 +252,7 @@
   line-height: 1.5;
   word-break: break-word;
   font-size: 0.85rem;
+  grid-area: message;
 }
 
 .timestamp {
