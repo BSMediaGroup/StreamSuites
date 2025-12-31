@@ -150,23 +150,65 @@
       const input = document.querySelector('.live-input .input');
       const sendBtn = document.getElementById('send-button');
       const emojiBtn = document.getElementById('emoji-button');
-      if (!input || !sendBtn || !emojiBtn) return;
-      sendBtn.addEventListener('click', () => {
-        // Placeholder only; no live send wiring yet.
-        const bubble = document.querySelector('.live-input-status');
-        if (bubble) {
-          bubble.textContent = 'Send disabled (scaffold only)';
-          bubble.classList.add('visible');
-          setTimeout(() => bubble.classList.remove('visible'), 2000);
+      const liveInputShell = document.querySelector('.live-input-wrapper');
+      if (!input || !sendBtn || !emojiBtn || !liveInputShell) return;
+
+      const statusBubble = document.querySelector('.live-input-status');
+      function showStatus(message) {
+        if (!statusBubble) return;
+        statusBubble.textContent = message;
+        statusBubble.classList.add('visible');
+        setTimeout(() => statusBubble.classList.remove('visible'), 2200);
+      }
+
+      const emojiMenu = document.createElement('div');
+      emojiMenu.className = 'emoji-menu';
+      emojiMenu.hidden = true;
+      emojiMenu.innerHTML = `
+        <div class="emoji-menu-header">Quick emoji</div>
+        <div class="emoji-grid">
+          ${['😀', '😁', '😂', '😊', '😉', '😍', '🤔', '😎', '😇', '🎉', '🚀', '🔥', '👍', '🙌', '🙏', '💡', '🌟', '🧠']
+            .map((emoji) => `<button type="button" aria-label="${emoji}">${emoji}</button>`)
+            .join('')}
+        </div>
+      `;
+      liveInputShell.appendChild(emojiMenu);
+
+      ['#filter-icon', '#search-icon', '#input-mask', '#pink-mask', '.filterBorder'].forEach((selector) => {
+        const target = document.querySelector(selector);
+        if (target && target.parentNode) {
+          target.parentNode.removeChild(target);
         }
       });
-      emojiBtn.addEventListener('click', () => {
-        const bubble = document.querySelector('.live-input-status');
-        if (bubble) {
-          bubble.textContent = 'Emoji picker coming soon';
-          bubble.classList.add('visible');
-          setTimeout(() => bubble.classList.remove('visible'), 2000);
+
+      function closeEmojiMenu() {
+        emojiMenu.hidden = true;
+        emojiBtn.setAttribute('aria-expanded', 'false');
+      }
+
+      sendBtn.addEventListener('click', () => {
+        showStatus('Send disabled (scaffold only)');
+      });
+
+      emojiBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const isOpen = emojiMenu.hidden === false;
+        emojiMenu.hidden = isOpen;
+        emojiBtn.setAttribute('aria-expanded', String(!isOpen));
+      });
+
+      document.addEventListener('click', (event) => {
+        if (emojiMenu.hidden) return;
+        if (!emojiMenu.contains(event.target) && !emojiBtn.contains(event.target)) {
+          closeEmojiMenu();
         }
+      });
+
+      emojiMenu.querySelectorAll('button').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          showStatus(`Emoji ${btn.textContent} ready`);
+          closeEmojiMenu();
+        });
       });
     }
 
