@@ -491,20 +491,17 @@ re-enablement once official API access or platform whitelisting is available.
 
 ```text
 StreamSuites/
+├── .env.example
+├── .gitignore
+├── LICENSE
+├── README.md
+├── RUNTIME_AUDIT_REPORT.md
 ├── changelog/
 │   ├── README.md              # Canonical runtime changelog expectations (manual/CI copy to dashboard)
 │   └── changelog.runtime.json # Authoritative runtime changelog JSON format (structure only)
-├── runtime/
-│   └── exports/
-│       ├── changelog.json         # Legacy runtime changelog shape
-│       ├── changelog.runtime.json # Authoritative runtime changelog entries (client-side merged by dashboard)
-│       ├── clips.json             # Clips export snapshot (public)
-│       ├── meta.json              # Export manifest
-│       ├── polls.json             # Polls export snapshot (public)
-│       ├── scoreboards.json       # Scoreboards export snapshot (public)
-│       └── tallies.json           # Tallies export snapshot (public)
 ├── core/
 │   ├── README.md             # Core runtime boundaries and status
+│   ├── __init__.py           # Package init
 │   ├── app.py                # Streaming runtime entrypoint & lifecycle
 │   ├── config_loader.py      # Dashboard-compatible config ingestion + validation
 │   ├── context.py            # Per-creator runtime context
@@ -520,6 +517,12 @@ StreamSuites/
 │       ├── README.md         # Scope and future readiness for tallies
 │       ├── __init__.py       # Export surface for tally dataclasses
 │       └── models.py         # Tally, category, option dataclasses + serialization
+├── data/
+│   └── streamsuites.db       # SQLite runtime store (auto-created)
+├── docs/
+│   └── POST_MORTEM.md        # Rumble ingest investigation summary
+├── exports/
+│   └── public/               # Static snapshot root for public gallery exports
 │
 ├── services/
 │   ├── clips/
@@ -529,6 +532,7 @@ StreamSuites/
 │   │   ├── manager.py         # Clip runtime facade (queue + worker + export)
 │   │   ├── models.py          # Clip identifiers, title formatting, states
 │   │   ├── storage.py         # SQLite-backed clip persistence
+│   │   ├── uploader.py        # Clip upload helper
 │   │   └── worker.py          # Background worker + concurrency guardrails
 │   ├── discord/
 │   │   ├── README.md         # Discord control-plane runtime architecture
@@ -568,11 +572,12 @@ StreamSuites/
 │   │   │   ├── chat.py
 │   │   │   └── chat_post.py
 │   │   ├── browser/
+│   │   │   ├── __init__.py
 │   │   │   └── browser_client.py   # Persistent Playwright browser control
 │   │   ├── chat/
 │   │   │   ├── rest_client.py
-│   │   │   ├── sse_client.py      # SSE ingest client (optional; falls back to API poll)
-│   │   │   └── ws_listener.py
+│   │   │   ├── sse.py             # SSE ingest client (optional; falls back to API poll)
+│   │   │   └── tombi_stream.py    # SSE ingest helper
 │   │   ├── chat_client.py
 │   │   ├── models/
 │   │   │   ├── chat_event.py
@@ -583,6 +588,7 @@ StreamSuites/
 │   │       └── livestream_worker.py
 │   ├── triggers/                   # Platform-agnostic trigger registry
 │   │   ├── __init__.py
+│   │   ├── actions.py              # Built-in trigger actions
 │   │   ├── base.py                 # Trigger interface (matches + build_action)
 │   │   ├── README.md               # Trigger pipeline concepts and score event notes
 │   │   └── registry.py             # Creator-scoped trigger evaluation (emit actions)
@@ -627,9 +633,12 @@ StreamSuites/
 │   │   ├── system.json
 │   │   ├── system.py
 │   │   └── tiers.json
-│   ├── logging/
+│   ├── logging/              # Structured logging helpers and adapters
 │   │   ├── levels.py
 │   │   └── logger.py
+│   ├── platforms/            # Platform-neutral state tracking
+│   │   ├── __init__.py
+│   │   └── state.py
 │   ├── public_exports/       # Read-only builders for public gallery exports
 │   │   ├── __init__.py
 │   │   ├── clips.py
@@ -650,22 +659,16 @@ StreamSuites/
 │   │   └── snapshot.py
 │   ├── state/
 │   │   ├── chat_logs/
-│   │   │   ├── .gitkeep
-│   │   │   └── rumble/
-│   │   │       └── .gitkeep
+│   │   │   └── .gitkeep
 │   │   ├── creators/
 │   │   │   └── daniel.json
 │   │   ├── discord/
 │   │   │   ├── README.md
-│   │   │   └── guilds/
-│   │   │       └── .gitkeep
+│   │   │   └── runtime.json
 │   │   ├── jobs.json
+│   │   ├── quotas.json
 │   │   ├── scoreboards/
-│   │   │   ├── .gitkeep
-│   │   │   ├── creators/
-│   │   │   │   └── .gitkeep
-│   │   │   └── snapshots/
-│   │   │       └── .gitkeep
+│   │   │   └── .gitkeep
 │   │   └── system.json
 │   ├── storage/
 │   │   ├── chat_events/        # Placeholder for chat event persistence
@@ -676,9 +679,6 @@ StreamSuites/
 │   │   │   └── writer.py
 │   │   ├── file_lock.py
 │   │   ├── paths.py
-│   │   ├── state/
-│   │   │   └── discord/
-│   │   │       └── discord_status.json
 │   │   ├── scoreboards/
 │   │   │   ├── README.md
 │   │   │   ├── exporter.py
@@ -692,39 +692,9 @@ StreamSuites/
 │       └── time.py
 ├── schemas/
 │   ├── creators.schema.json
-│   ├── platforms.schema.json
-│   └── ...                   # Additional dashboard schemas (chat, jobs, quotas, etc.)
-│
+│   └── platforms.schema.json
 ├── clips/
 │   └── output/                # Deterministic clip outputs (clip_id).mp4
-│       └── .gitkeep
-├── exports/
-│   └── public/                # Static snapshot root for public gallery exports
-│       └── .gitkeep
-│
-├── runtime/
-│   ├── exports/               # Deterministic public-facing snapshot files
-│   │   ├── clips.json
-│   │   ├── polls.json
-│   │   ├── tallies.json
-│   │   ├── scoreboards.json
-│   │   └── meta.json
-│   ├── signals/               # Dashboard-only normalized events
-│   │   ├── chat_events.json
-│   │   ├── poll_votes.json
-│   │   ├── tally_events.json
-│   │   └── score_events.json
-│   ├── admin/                 # Dashboard/internal operational snapshots
-│   │   ├── creators.json
-│   │   ├── chat_triggers.json
-│   │   ├── jobs.json
-│   │   ├── rate_limits.json
-│   │   ├── integrations.json
-│   │   └── permissions.json
-│   └── version.py             # Application/runtime version information
-│
-├── data/
-│   └── streamsuites.db        # SQLite runtime store (auto-created)
 │
 ├── media/
 │   ├── capture/
@@ -744,6 +714,30 @@ StreamSuites/
 │       ├── cleanup.py
 │       └── clips.py
 │
+├── runtime/
+│   ├── admin/                 # Dashboard/internal operational snapshots
+│   │   ├── chat_triggers.json
+│   │   ├── creators.json
+│   │   ├── integrations.json
+│   │   ├── jobs.json
+│   │   ├── permissions.json
+│   │   └── rate_limits.json
+│   ├── exports/               # Deterministic public-facing snapshot files
+│   │   ├── README.md
+│   │   ├── changelog.json
+│   │   ├── changelog.runtime.json
+│   │   ├── clips.json
+│   │   ├── meta.json
+│   │   ├── polls.json
+│   │   ├── scoreboards.json
+│   │   └── tallies.json
+│   ├── signals/               # Dashboard-only normalized events
+│   │   ├── chat_events.json
+│   │   ├── poll_votes.json
+│   │   ├── score_events.json
+│   │   └── tally_events.json
+│   └── version.py             # Application/runtime version information
+│
 ├── scripts/
 │   ├── bootstrap.py
 │   ├── publish_state.py
@@ -754,14 +748,13 @@ StreamSuites/
 │   └── __init__.py
 │
 ├── rumble_chat_poc.py        # Rumble chat validation script
+├── rumble_poc/               # Persistent browser profile for Rumble PoC
 ├── twitch_chat_poc.py        # Twitch chat IRC smoke test
 ├── test_rumble_api.py        # Rumble API probe
-├── requirements.txt
-├── .env.example
-├── .gitignore
-├── rumble_poc/               # Persistent browser profile for Rumble PoC
-└── README.md
+└── requirements.txt
 ```
+
+
 --- 
 
 ## Design Principles
