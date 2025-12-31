@@ -1,6 +1,6 @@
 # ======================================================================
 # StreamSuites — Local Dashboard State Publisher
-# Mirrors GitHub Action behavior
+# SAFE MODE (NO DELETIONS)
 # Owner: Brainstream Media Group
 # ======================================================================
 
@@ -16,7 +16,7 @@ $Dest   = Join-Path $DashboardRoot "docs\shared\state"
 
 Write-Host ""
 Write-Host "------------------------------------------------------------"
-Write-Host "StreamSuites — Publishing Runtime State to Dashboard"
+Write-Host "StreamSuites — Publishing Runtime State to Dashboard (SAFE)"
 Write-Host "------------------------------------------------------------"
 Write-Host "Runtime source:   $Source"
 Write-Host "Dashboard target: $Dest"
@@ -35,14 +35,18 @@ if (!(Test-Path $Dest)) {
     New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 }
 
-Write-Host "Syncing runtime snapshots → dashboard..."
+Write-Host "Copying runtime snapshots → dashboard (no deletions)..."
 Write-Host ""
 
-robocopy $Source $Dest /MIR /NFL /NDL /NJH /NJS /NC /NS
+# IMPORTANT:
+# /E  = copy subdirectories
+# NO /MIR
+# NO /PURGE
+robocopy $Source $Dest /E /NFL /NDL /NJH /NJS /NC /NS
 
 Write-Host ""
 Write-Host "------------------------------------------------------------"
-Write-Host "Dashboard state sync complete."
+Write-Host "Dashboard state copy complete."
 Write-Host "------------------------------------------------------------"
 Write-Host ""
 Write-Host "Press any key to close..."
