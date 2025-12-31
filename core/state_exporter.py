@@ -78,6 +78,7 @@ class RuntimeState:
         self._platforms: Dict[str, PlatformRuntimeState] = {}
         self._creators: Dict[str, CreatorRuntimeState] = {}
         self._rumble_chat: Dict[str, Any] = {}
+        self._system: Dict[str, Any] = {}
 
     # ------------------------------------------------------------
     # Configuration ingestion
@@ -137,6 +138,11 @@ class RuntimeState:
                 enabled=enabled,
                 platforms=platforms,
             )
+
+    def apply_system_config(self, system_config: Dict[str, Any]) -> None:
+        if not isinstance(system_config, dict):
+            return
+        self._system = dict(system_config)
 
     # ------------------------------------------------------------
     # Runtime updates
@@ -372,6 +378,7 @@ class RuntimeState:
                 "version": runtime_version.VERSION,
                 "build": runtime_version.BUILD,
             },
+            "system": dict(self._system) if self._system else {},
             "platforms": platforms_out,
             "creators": creators_out,
             "rumble_chat": rumble_chat_out,

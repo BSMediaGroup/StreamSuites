@@ -46,12 +46,23 @@ async def main(stop_event: asyncio.Event):
     # CONFIG INGESTION (DASHBOARD-COMPATIBLE)
     # --------------------------------------------------
     config_loader = ConfigLoader()
+    system_config = config_loader.load_system_config()
     platform_config = config_loader.load_platforms_config()
     creators_config = config_loader.load_creators_config()
 
     # Seed runtime state for snapshot export (includes disabled creators)
     runtime_state.apply_platform_config(platform_config)
     runtime_state.apply_creators_config(creators_config)
+    runtime_state.apply_system_config(
+        {
+            "platform_polling_enabled": system_config.system.platform_polling_enabled,
+        }
+    )
+
+    if not system_config.system.platform_polling_enabled:
+        log.info(
+            "[BOOT] Platform polling disabled by system config — chat workers will not start"
+        )
 
     # --------------------------------------------------
     # LOAD CREATORS (runtime-enabled only)
@@ -65,7 +76,10 @@ async def main(stop_event: asyncio.Event):
     # --------------------------------------------------
     # CORE SYSTEMS
     # --------------------------------------------------
-    scheduler = Scheduler(platforms_config=platform_config)
+    scheduler = Scheduler(
+        platforms_config=platform_config,
+        platform_polling_enabled=system_config.system.platform_polling_enabled,
+    )
     jobs = JobRegistry()
     _GLOBAL_JOB_REGISTRY = jobs
 

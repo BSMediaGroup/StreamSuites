@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from shared.logging.logger import get_logger
 from shared.config.services import get_services_config
+from shared.config.system import SystemConfig, load_system_config
 from shared.platforms.state import (
     PlatformState,
     apply_default_platform_states,
@@ -48,11 +49,13 @@ class ConfigLoader:
     CREATORS_PATH = Path("shared/config/creators.json")
     PLATFORMS_PATH = Path("shared/config/platforms.json")
     PLATFORM_OVERRIDES_PATH = Path("shared/config/platform_overrides.json")
+    SYSTEM_PATH = Path("shared/config/system.json")
     SCHEMA_DIR = Path("schemas")
 
     def __init__(self) -> None:
         self._creators_schema_path = self.SCHEMA_DIR / "creators.schema.json"
         self._platforms_schema_path = self.SCHEMA_DIR / "platforms.schema.json"
+        self._system_schema_path = self.SCHEMA_DIR / "system.schema.json"
 
     # ------------------------------------------------------------------
     # Helpers
@@ -202,6 +205,13 @@ class ConfigLoader:
             }
 
         return apply_default_platform_states(updated)
+
+    def load_system_config(self) -> SystemConfig:
+        """Load and validate system.json."""
+
+        raw = self._load_json(self.SYSTEM_PATH, "system")
+        self._validate(raw, self._system_schema_path, "system")
+        return load_system_config(raw)
 
     # ------------------------------------------------------------------
     # Public API
