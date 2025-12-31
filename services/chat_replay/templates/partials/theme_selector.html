@@ -1,0 +1,17 @@
+<!-- Theme selector stub for future runtime wiring. -->
+<div class="theme-selector" role="group" aria-label="Theme selector">
+  <button type="button" data-theme-target="default" class="theme-btn is-active">Default</button>
+  <button type="button" data-theme-target="slate" class="theme-btn">Slate</button>
+  <button type="button" data-theme-target="midnight" class="theme-btn">Midnight</button>
+</div>
+
+<script>
+  // Placeholder hook: runtime wiring can swap the data-theme attribute to apply bundled theme CSS files.
+  document.querySelectorAll('.theme-selector .theme-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const theme = btn.dataset.themeTarget;
+      document.documentElement.setAttribute('data-theme', theme === 'default' ? '' : theme);
+      document.querySelectorAll('.theme-selector .theme-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
+    });
+  });
+</script>

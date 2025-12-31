@@ -20,8 +20,12 @@
           "type": "string",
           "description": "Display name rendered by the platform."
         },
+        "avatar_url": {
+          "type": ["string", "null"],
+          "description": "URL to the author's avatar at message time; may be null or empty and will fallback in UI rendering."
+        },
         "color": {
-          "type": "string",
+          "type": ["string", "null"],
           "description": "Author color hex or CSS string supplied by the platform."
         },
         "badges": {
@@ -32,7 +36,8 @@
           "description": "Ordered list of badge identifiers or labels."
         }
       },
-      "description": "Author metadata captured at message time."
+      "description": "Author metadata captured at message time.",
+      "required": ["display_name", "avatar_url", "color", "badges"]
     },
     "message": {
       "type": "object",

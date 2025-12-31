@@ -15,7 +15,8 @@ This directory holds the initial runtime-side scaffolding for unified chat repla
 - **No live data**: Both HTML surfaces rely on the static mock data file and do not connect to any runtime service.
 - **No sockets or APIs**: Networking is not enabled; all behaviors are local-only placeholders.
 - **Scaffolding only**: Controls such as pause, autoscroll, and timestamp visibility are implemented on top of mock data to illustrate UX intent without wiring to runtime events.
+- **Avatars enforced early**: Each chat row reserves a fixed avatar column so future replay ingestion can drop in per-user imagery without layout shifts. Missing or failed avatars automatically fall back to `docs/assets/icons/ui/profile.svg` rendered in a neutral tone.
 
 ## Future Integration Notes
 
-Future chat replay engines can feed these templates by replacing the mock data import with runtime-managed payloads that conform to `contracts/chat_message.schema.json`. Once a unified replay source exists, the templates can consume rendered JSON via local file reads, bundled static exports, or another runtime-safe injection path without altering the current aesthetic scaffolding.
+Future chat replay engines can feed these templates by replacing the mock data import with runtime-managed payloads that conform to `contracts/chat_message.schema.json`. Once a unified replay source exists, the templates can consume rendered JSON via local file reads, bundled static exports, or another runtime-safe injection path without altering the current aesthetic scaffolding. Avatar URLs will be provided alongside message payloads and will respect the enforced fallback so replay operators never ship a blank or broken image state.
