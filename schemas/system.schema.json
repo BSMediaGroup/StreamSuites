@@ -36,6 +36,27 @@
             }
           },
           "additionalProperties": true
+        },
+        "jobs": {
+          "type": "object",
+          "properties": {
+            "clips": {
+              "type": "object",
+              "properties": { "enabled": { "type": "boolean", "default": true } },
+              "additionalProperties": true
+            },
+            "polls": {
+              "type": "object",
+              "properties": { "enabled": { "type": "boolean", "default": true } },
+              "additionalProperties": true
+            },
+            "tallies": {
+              "type": "object",
+              "properties": { "enabled": { "type": "boolean", "default": true } },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
         }
       },
       "additionalProperties": true

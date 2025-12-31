@@ -45,6 +45,13 @@ class SystemSettings:
         "twitch": True,
         "discord": True,
     })
+    jobs: Dict[str, bool] = field(
+        default_factory=lambda: {
+            "clips": True,
+            "polls": True,
+            "tallies": True,
+        }
+    )
 
 
 @dataclass
@@ -129,9 +136,28 @@ def _load_system_settings(raw: Optional[Dict[str, Any]]) -> SystemSettings:
             elif isinstance(entry, bool):
                 platforms_enabled[name] = entry
 
+    jobs_raw = raw.get("jobs")
+    jobs_enabled: Dict[str, bool] = {
+        "clips": True,
+        "polls": True,
+        "tallies": True,
+    }
+
+    if isinstance(jobs_raw, dict):
+        for name, value in jobs_raw.items():
+            flag = None
+            if isinstance(value, dict):
+                flag = value.get("enabled")
+            elif isinstance(value, bool):
+                flag = value
+
+            if isinstance(flag, bool):
+                jobs_enabled[str(name)] = flag
+
     return SystemSettings(
         platform_polling_enabled=value,
         platforms=platforms_enabled,
+        jobs=jobs_enabled,
     )
 
 
