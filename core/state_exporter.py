@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from runtime import version as runtime_version
+
 from shared.platforms.state import PlatformState
 
 from shared.logging.logger import get_logger
@@ -326,13 +328,16 @@ class RuntimeState:
         return state.status or "inactive"
 
     def build_snapshot(self) -> Dict[str, Any]:
+        runtime_heartbeat = _utc_now_iso()
         platforms_out: List[Dict[str, Any]] = []
         for name in sorted(self._platforms.keys()):
             state = self._platforms[name]
             state.ensure_counter_keys()
             platforms_out.append({
+                "name": name,
                 "platform": name,
                 "enabled": state.enabled,
+                "paused": state.state == PlatformState.PAUSED,
                 "telemetry_enabled": state.telemetry_enabled,
                 "state": state.state.value,
                 "status": self._platform_status(state),
@@ -360,7 +365,13 @@ class RuntimeState:
 
         return {
             "schema_version": "v1",
-            "generated_at": _utc_now_iso(),
+            "generated_at": runtime_heartbeat,
+            "heartbeat": runtime_heartbeat,
+            "runtime": {
+                "project": runtime_version.PROJECT_NAME,
+                "version": runtime_version.VERSION,
+                "build": runtime_version.BUILD,
+            },
             "platforms": platforms_out,
             "creators": creators_out,
             "rumble_chat": rumble_chat_out,

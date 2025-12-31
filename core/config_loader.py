@@ -47,6 +47,7 @@ class ConfigLoader:
 
     CREATORS_PATH = Path("shared/config/creators.json")
     PLATFORMS_PATH = Path("shared/config/platforms.json")
+    PLATFORM_OVERRIDES_PATH = Path("shared/config/platform_overrides.json")
     SCHEMA_DIR = Path("schemas")
 
     def __init__(self) -> None:
@@ -118,6 +119,90 @@ class ConfigLoader:
             "paused_reason": paused_reason,
         }
 
+    @staticmethod
+    def _normalize_platform_override(entry: Any) -> Optional[tuple[str, bool]]:
+        if isinstance(entry, dict):
+            name = entry.get("platform_id") or entry.get("platform") or entry.get("name")
+            if isinstance(name, str) and "enabled" in entry:
+                return name, bool(entry.get("enabled"))
+        elif isinstance(entry, (list, tuple)):
+            return None
+        return None
+
+    def _load_platform_overrides(self) -> Dict[str, bool]:
+        raw = self._load_json(self.PLATFORM_OVERRIDES_PATH, "platform_overrides")
+        overrides: Dict[str, bool] = {}
+
+        if not raw:
+            return overrides
+
+        entries = None
+        if isinstance(raw, dict):
+            if "platforms" in raw:
+                entries = raw.get("platforms")
+            else:
+                entries = raw
+        elif isinstance(raw, list):
+            entries = raw
+
+        if isinstance(entries, dict):
+            for name, value in entries.items():
+                if isinstance(value, dict):
+                    enabled_flag = value.get("enabled")
+                    if isinstance(enabled_flag, bool):
+                        overrides[str(name)] = enabled_flag
+                    else:
+                        log.warning(
+                            f"platform_overrides entry for '{name}' missing bool enabled; skipping"
+                        )
+                elif isinstance(value, bool):
+                    overrides[str(name)] = value
+                else:
+                    log.warning(
+                        f"platform_overrides entry for '{name}' must be bool or object; skipping"
+                    )
+        elif isinstance(entries, list):
+            for entry in entries:
+                normalized = self._normalize_platform_override(entry)
+                if normalized:
+                    name, enabled_flag = normalized
+                    overrides[name] = enabled_flag
+                else:
+                    log.warning("Skipping invalid platform override entry")
+        else:
+            log.warning(
+                "platform_overrides.json has invalid shape (expected object or array); ignoring"
+            )
+
+        return overrides
+
+    def _apply_platform_overrides(
+        self, config: Dict[str, Dict[str, Any]], overrides: Dict[str, bool]
+    ) -> Dict[str, Dict[str, Any]]:
+        if not overrides:
+            return config
+
+        updated = dict(config)
+        for name, enabled_flag in overrides.items():
+            existing = updated.get(name, {}) if isinstance(updated.get(name), dict) else {}
+            state = normalize_platform_state(
+                name, existing.get("state"), enabled=bool(enabled_flag)
+            )
+            telemetry_enabled = bool(existing.get("telemetry_enabled", enabled_flag))
+            paused_reason = existing.get("paused_reason")
+
+            if state == PlatformState.PAUSED and not paused_reason:
+                paused_reason = "Platform ingestion paused"
+
+            updated[name] = {
+                "enabled": state != PlatformState.DISABLED,
+                "telemetry_enabled": telemetry_enabled if state != PlatformState.DISABLED else False,
+                "state": state.value,
+                "paused_reason": paused_reason,
+            }
+
+        return apply_default_platform_states(updated)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -184,6 +269,16 @@ class ConfigLoader:
                 }
 
         apply_default_platform_states(platforms_cfg)
+
+        overrides = self._load_platform_overrides()
+        if overrides:
+            log.info(
+                f"Applying platform overrides for {sorted(overrides.keys())} (restart required)"
+            )
+            try:
+                return self._apply_platform_overrides(platforms_cfg, overrides)
+            except Exception as e:  # pragma: no cover - defensive
+                log.warning(f"Failed to apply platform overrides; using base config: {e}")
 
         return platforms_cfg
 
