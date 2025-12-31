@@ -56,6 +56,7 @@ async def main(stop_event: asyncio.Event):
     runtime_state.apply_system_config(
         {
             "platform_polling_enabled": system_config.system.platform_polling_enabled,
+            "platforms": dict(system_config.system.platforms),
         }
     )
 
@@ -79,6 +80,7 @@ async def main(stop_event: asyncio.Event):
     scheduler = Scheduler(
         platforms_config=platform_config,
         platform_polling_enabled=system_config.system.platform_polling_enabled,
+        platform_enable_flags=system_config.system.platforms,
     )
     jobs = JobRegistry()
     _GLOBAL_JOB_REGISTRY = jobs

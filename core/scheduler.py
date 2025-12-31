@@ -33,6 +33,7 @@ class Scheduler:
         platforms_config: Optional[Dict[str, Dict[str, bool]]] = None,
         *,
         platform_polling_enabled: bool = True,
+        platform_enable_flags: Optional[Dict[str, bool]] = None,
     ):
         # creator_id -> list[asyncio.Task]
         self._tasks: Dict[str, List[asyncio.Task]] = {}
@@ -49,6 +50,15 @@ class Scheduler:
         # Track which platforms were started (global, not per-creator)
         self._platforms_started: Set[str] = set()
         self._platform_polling_enabled = bool(platform_polling_enabled)
+        self._platform_enable_flags: Dict[str, bool] = {
+            "youtube": True,
+            "twitch": True,
+            "discord": True,
+        }
+        if isinstance(platform_enable_flags, dict):
+            for name, flag in platform_enable_flags.items():
+                if isinstance(flag, bool):
+                    self._platform_enable_flags[name] = flag
 
         # Discord control-plane supervisor (process-scoped)
         self._discord_supervisor: Optional[DiscordSupervisor] = None
@@ -61,6 +71,11 @@ class Scheduler:
         # --------------------------------------------------
         self._services_cfg = self._normalize_platform_config(platforms_config or get_services_config())
         log.info(f"[BOOT] Loaded services configuration: {self._services_cfg}")
+
+        log.info(
+            "[BOOT] System platform enable flags: "
+            f"{ {k: v for k, v in sorted(self._platform_enable_flags.items())} }"
+        )
 
         for svc in ["youtube", "twitch", "rumble", "twitter", "discord"]:
             cfg = self._services_cfg.get(svc, {})
@@ -116,6 +131,9 @@ class Scheduler:
                     "paused_reason": None,
                 }
         return normalized
+
+    def _platform_enabled(self, platform: str) -> bool:
+        return bool(self._platform_enable_flags.get(platform, True))
 
     def _get_action_executor(self, creator_id: str) -> ActionExecutor:
         if creator_id not in self._action_executors:
@@ -205,6 +223,16 @@ class Scheduler:
                 log.info(
                     f"[{ctx.creator_id}] Platform polling disabled — Twitch worker not started"
                 )
+            elif not self._platform_enabled("twitch"):
+                runtime_state.record_platform_state(
+                    "twitch",
+                    PlatformState.DISABLED,
+                    creator_id=ctx.creator_id,
+                    paused_reason="Disabled by system config",
+                )
+                log.info(
+                    f"[{ctx.creator_id}] Twitch disabled by system config — worker not started"
+                )
             elif twitch_state == PlatformState.DISABLED or not twitch_cfg.get("enabled", True):
                 log.info(f"[{ctx.creator_id}] Twitch skipped (disabled by services.json)")
             elif twitch_state == PlatformState.PAUSED:
@@ -261,6 +289,16 @@ class Scheduler:
             if not self._platform_polling_enabled:
                 log.info(
                     f"[{ctx.creator_id}] Platform polling disabled — YouTube worker not started"
+                )
+            elif not self._platform_enabled("youtube"):
+                runtime_state.record_platform_state(
+                    "youtube",
+                    PlatformState.DISABLED,
+                    creator_id=ctx.creator_id,
+                    paused_reason="Disabled by system config",
+                )
+                log.info(
+                    f"[{ctx.creator_id}] YouTube disabled by system config — worker not started"
                 )
             elif youtube_state == PlatformState.DISABLED or not youtube_cfg.get("enabled", True):
                 log.info(f"[{ctx.creator_id}] YouTube skipped (disabled by services.json)")
