@@ -50,12 +50,15 @@ class ConfigLoader:
     PLATFORMS_PATH = Path("shared/config/platforms.json")
     PLATFORM_OVERRIDES_PATH = Path("shared/config/platform_overrides.json")
     SYSTEM_PATH = Path("shared/config/system.json")
+    TRIGGERS_PATH = Path("shared/config/triggers.json")
+    ADMIN_TRIGGERS_PATH = Path("runtime/admin/triggers.json")
     SCHEMA_DIR = Path("schemas")
 
     def __init__(self) -> None:
         self._creators_schema_path = self.SCHEMA_DIR / "creators.schema.json"
         self._platforms_schema_path = self.SCHEMA_DIR / "platforms.schema.json"
         self._system_schema_path = self.SCHEMA_DIR / "system.schema.json"
+        self._triggers_schema_path = self.SCHEMA_DIR / "triggers.schema.json"
 
     # ------------------------------------------------------------------
     # Helpers
@@ -99,6 +102,37 @@ class ConfigLoader:
             for err in errors:
                 loc = "/".join(str(p) for p in err.path)
                 log.warning(f"{name} config validation warning at '{loc}': {err.message}")
+
+    def _validate_or_raise(self, payload: Dict[str, Any], schema_path: Path, name: str) -> None:
+        """Validate a payload and raise on any errors."""
+
+        if not Draft7Validator:
+            log.debug("jsonschema not installed; skipping validation")
+            return
+
+        if not schema_path.exists():
+            log.debug(f"Schema for {name} not found at {schema_path}; skipping")
+            return
+
+        try:
+            schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        except Exception as e:  # pragma: no cover - defensive
+            raise RuntimeError(f"Failed to load {name} schema: {e}") from e
+
+        validator = Draft7Validator(schema)
+        errors = sorted(validator.iter_errors(payload), key=lambda e: list(e.path))
+
+        if errors:
+            for err in errors:
+                loc = "/".join(str(p) for p in err.path)
+                trigger_id = None
+                if isinstance(err.instance, dict):
+                    trigger_id = err.instance.get("trigger_id")
+                context = f" (trigger_id={trigger_id})" if trigger_id else ""
+                log.error(
+                    f"{name} config validation failed at '{loc}'{context}: {err.message}"
+                )
+            raise RuntimeError(f"{name} config failed validation")
 
     @staticmethod
     def _normalize_platform_entry(entry: Any) -> Optional[tuple[str, Dict[str, Any]]]:
@@ -291,4 +325,62 @@ class ConfigLoader:
                 log.warning(f"Failed to apply platform overrides; using base config: {e}")
 
         return platforms_cfg
+
+    # ------------------------------------------------------------------
+    # TRIGGERS
+    # ------------------------------------------------------------------
+
+    def _resolve_trigger_source(self) -> tuple[Path, str]:
+        if self.ADMIN_TRIGGERS_PATH.exists():
+            return self.ADMIN_TRIGGERS_PATH, "dashboard"
+        return self.TRIGGERS_PATH, "shared"
+
+    def load_triggers_config(
+        self, *, creator_ids: Optional[List[str]] = None
+    ) -> tuple[List[Dict[str, Any]], str]:
+        """
+        Load trigger configuration with dashboard priority and strict validation.
+
+        Returns a tuple: (triggers, source), where source is "dashboard" or
+        "shared" depending on which config file was used.
+        """
+
+        path, source = self._resolve_trigger_source()
+        creator_set = set(creator_ids or [])
+
+        data = self._load_json(path, "triggers")
+
+        if not data:
+            log.info(f"Trigger config at {path} is empty; no triggers loaded")
+            return [], source
+
+        self._validate_or_raise(data, self._triggers_schema_path, "triggers")
+
+        triggers_raw = data.get("triggers") if isinstance(data, dict) else None
+        if triggers_raw is None:
+            raise RuntimeError("triggers.json missing required 'triggers' array")
+        if not isinstance(triggers_raw, list):
+            raise RuntimeError("triggers.json 'triggers' must be an array")
+
+        triggers: List[Dict[str, Any]] = []
+        for entry in triggers_raw:
+            if not isinstance(entry, dict):
+                raise RuntimeError("Invalid trigger entry (expected object)")
+
+            creator_id = entry.get("creator_id") or entry.get("creator")
+            if not creator_id:
+                raise RuntimeError(
+                    "Invalid trigger entry missing creator_id/creator (schema bypassed?)"
+                )
+
+            if creator_set and creator_id not in creator_set:
+                continue
+
+            triggers.append(entry)
+
+        log.info(
+            f"Loaded {len(triggers)} trigger(s) from {source} config (path={path})"
+        )
+
+        return triggers, source
 

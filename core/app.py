@@ -74,6 +74,17 @@ async def main(stop_event: asyncio.Event):
     )
     log.info(f"Loaded {len(creators)} creator(s)")
 
+    triggers_config, trigger_source = config_loader.load_triggers_config(
+        creator_ids=list(creators.keys())
+    )
+    runtime_state.record_triggers_source(trigger_source)
+    if triggers_config:
+        log.info(
+            f"Loaded {len(triggers_config)} trigger(s) for active creators from {trigger_source} config"
+        )
+    else:
+        log.info("No triggers configured for active creators")
+
     # --------------------------------------------------
     # CORE SYSTEMS
     # --------------------------------------------------

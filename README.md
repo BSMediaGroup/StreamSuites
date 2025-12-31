@@ -632,7 +632,8 @@ StreamSuites/
 │   │   ├── services.py
 │   │   ├── system.json
 │   │   ├── system.py
-│   │   └── tiers.json
+│   │   ├── tiers.json
+│   │   └── triggers.json
 │   ├── logging/              # Structured logging helpers and adapters
 │   │   ├── levels.py
 │   │   └── logger.py
@@ -692,7 +693,9 @@ StreamSuites/
 │       └── time.py
 ├── schemas/
 │   ├── creators.schema.json
-│   └── platforms.schema.json
+│   ├── platforms.schema.json
+│   ├── system.schema.json
+│   └── triggers.schema.json
 ├── clips/
 │   └── output/                # Deterministic clip outputs (clip_id).mp4
 │
