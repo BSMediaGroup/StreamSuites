@@ -1,4 +1,7 @@
 {
+  "system": {
+    "platform_polling_enabled": true
+  },
   "clips": {
     "default_destination": {
       "platform": "rumble",

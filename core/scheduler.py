@@ -28,7 +28,12 @@ class Scheduler:
     _last_quota_publish_ts: float = 0.0
     _quota_publish_interval: float = 60.0  # seconds
 
-    def __init__(self, platforms_config: Optional[Dict[str, Dict[str, bool]]] = None):
+    def __init__(
+        self,
+        platforms_config: Optional[Dict[str, Dict[str, bool]]] = None,
+        *,
+        platform_polling_enabled: bool = True,
+    ):
         # creator_id -> list[asyncio.Task]
         self._tasks: Dict[str, List[asyncio.Task]] = {}
 
@@ -43,6 +48,7 @@ class Scheduler:
 
         # Track which platforms were started (global, not per-creator)
         self._platforms_started: Set[str] = set()
+        self._platform_polling_enabled = bool(platform_polling_enabled)
 
         # Discord control-plane supervisor (process-scoped)
         self._discord_supervisor: Optional[DiscordSupervisor] = None
@@ -195,7 +201,11 @@ class Scheduler:
             default=PlatformState.ACTIVE if twitch_cfg.get("enabled", True) else PlatformState.DISABLED,
         )
         try:
-            if twitch_state == PlatformState.DISABLED or not twitch_cfg.get("enabled", True):
+            if not self._platform_polling_enabled:
+                log.info(
+                    f"[{ctx.creator_id}] Platform polling disabled — Twitch worker not started"
+                )
+            elif twitch_state == PlatformState.DISABLED or not twitch_cfg.get("enabled", True):
                 log.info(f"[{ctx.creator_id}] Twitch skipped (disabled by services.json)")
             elif twitch_state == PlatformState.PAUSED:
                 runtime_state.record_platform_state("twitch", PlatformState.PAUSED, creator_id=ctx.creator_id)
@@ -248,7 +258,11 @@ class Scheduler:
             default=PlatformState.ACTIVE if youtube_cfg.get("enabled", True) else PlatformState.DISABLED,
         )
         try:
-            if youtube_state == PlatformState.DISABLED or not youtube_cfg.get("enabled", True):
+            if not self._platform_polling_enabled:
+                log.info(
+                    f"[{ctx.creator_id}] Platform polling disabled — YouTube worker not started"
+                )
+            elif youtube_state == PlatformState.DISABLED or not youtube_cfg.get("enabled", True):
                 log.info(f"[{ctx.creator_id}] YouTube skipped (disabled by services.json)")
             elif youtube_state == PlatformState.PAUSED:
                 runtime_state.record_platform_state("youtube", PlatformState.PAUSED, creator_id=ctx.creator_id)

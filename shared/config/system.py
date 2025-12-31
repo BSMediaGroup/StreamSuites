@@ -38,8 +38,14 @@ class ClipSystemConfig:
 
 
 @dataclass
+class SystemSettings:
+    platform_polling_enabled: bool = True
+
+
+@dataclass
 class SystemConfig:
     clips: ClipSystemConfig
+    system: SystemSettings
 
 
 def _load_json(path: Path) -> Dict[str, Any]:
@@ -90,8 +96,22 @@ def _load_clip_export(raw: Optional[Dict[str, Any]]) -> ClipExportConfig:
     return ClipExportConfig(state_path=str(path), interval_seconds=interval_int)
 
 
-def load_system_config() -> SystemConfig:
-    raw = _load_json(_CONFIG_PATH)
+def _load_system_settings(raw: Optional[Dict[str, Any]]) -> SystemSettings:
+    if not isinstance(raw, dict):
+        return SystemSettings()
+
+    polling_enabled = raw.get("platform_polling_enabled", SystemSettings.platform_polling_enabled)
+    if isinstance(polling_enabled, bool):
+        value = polling_enabled
+    else:
+        log.warning("platform_polling_enabled must be boolean; defaulting to true")
+        value = SystemSettings.platform_polling_enabled
+
+    return SystemSettings(platform_polling_enabled=value)
+
+
+def load_system_config(raw: Optional[Dict[str, Any]] = None) -> SystemConfig:
+    raw = raw if raw is not None else _load_json(_CONFIG_PATH)
 
     clips_raw = raw.get("clips", {}) if isinstance(raw, dict) else {}
     default_destination = _load_clip_destination(clips_raw.get("default_destination", {}))
@@ -104,4 +124,7 @@ def load_system_config() -> SystemConfig:
         export=export_cfg,
     )
 
-    return SystemConfig(clips=clip_config)
+    system_raw = raw.get("system", {}) if isinstance(raw, dict) else {}
+    system_cfg = _load_system_settings(system_raw)
+
+    return SystemConfig(clips=clip_config, system=system_cfg)
