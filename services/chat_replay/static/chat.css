@@ -204,6 +204,10 @@
   justify-content: flex-end;
 }
 
+.badge-row .badge:not([data-badge-type='platform']) {
+  display: none;
+}
+
 .badge-row .badge {
   text-transform: uppercase;
 }
@@ -391,6 +395,7 @@
   width: 100%;
   justify-content: flex-end;
   flex-wrap: wrap;
+  position: relative;
 }
 
 .live-actions {
@@ -403,12 +408,23 @@
   width: 38px;
   height: 38px;
   border-radius: 10px;
-  border: 1px solid var(--chat-border);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   background: #1c2331;
   color: #dbe6f4;
   cursor: pointer;
   display: grid;
   place-items: center;
+  transition: border 0.18s ease, background 0.18s ease, transform 0.14s ease;
+}
+
+.icon-btn:hover {
+  background: #20293a;
+  border-color: rgba(123, 183, 255, 0.38);
+  transform: translateY(-1px);
+}
+
+.icon-btn:active {
+  transform: translateY(0);
 }
 
 .icon-btn img {
