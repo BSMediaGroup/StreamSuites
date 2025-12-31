@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -40,6 +40,11 @@ class ClipSystemConfig:
 @dataclass
 class SystemSettings:
     platform_polling_enabled: bool = True
+    platforms: Dict[str, bool] = field(default_factory=lambda: {
+        "youtube": True,
+        "twitch": True,
+        "discord": True,
+    })
 
 
 @dataclass
@@ -107,7 +112,27 @@ def _load_system_settings(raw: Optional[Dict[str, Any]]) -> SystemSettings:
         log.warning("platform_polling_enabled must be boolean; defaulting to true")
         value = SystemSettings.platform_polling_enabled
 
-    return SystemSettings(platform_polling_enabled=value)
+    platforms_raw = raw.get("platforms")
+    platforms_enabled = {
+        "youtube": True,
+        "twitch": True,
+        "discord": True,
+    }
+
+    if isinstance(platforms_raw, dict):
+        for name in list(platforms_enabled.keys()):
+            entry = platforms_raw.get(name)
+            if isinstance(entry, dict):
+                flag = entry.get("enabled")
+                if isinstance(flag, bool):
+                    platforms_enabled[name] = flag
+            elif isinstance(entry, bool):
+                platforms_enabled[name] = entry
+
+    return SystemSettings(
+        platform_polling_enabled=value,
+        platforms=platforms_enabled,
+    )
 
 
 def load_system_config(raw: Optional[Dict[str, Any]] = None) -> SystemConfig:

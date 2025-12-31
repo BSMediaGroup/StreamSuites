@@ -1,6 +1,11 @@
 {
   "system": {
-    "platform_polling_enabled": true
+    "platform_polling_enabled": true,
+    "platforms": {
+      "youtube": { "enabled": true },
+      "twitch": { "enabled": true },
+      "discord": { "enabled": true }
+    }
   },
   "clips": {
     "default_destination": {
