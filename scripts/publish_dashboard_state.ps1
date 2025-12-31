@@ -1,13 +1,14 @@
 # ======================================================================
 # StreamSuites — Local Dashboard State Publisher
-# Mirrors GitHub Action: publish-dashboard-state.yml
+# Mirrors GitHub Action behavior
 # ======================================================================
 
-$RuntimeRoot = Resolve-Path ".."
-$DashboardRoot = Resolve-Path "../../StreamSuites-Dashboard"
+# Resolve paths
+$RuntimeRoot   = Resolve-Path ".."
+$DashboardRoot = Resolve-Path "..\..\StreamSuites-Dashboard"
 
-$Source = Join-Path $RuntimeRoot "runtime/exports"
-$Dest   = Join-Path $DashboardRoot "docs/shared/state"
+$Source = Join-Path $RuntimeRoot "runtime\exports"
+$Dest   = Join-Path $DashboardRoot "docs\shared\state"
 
 if (!(Test-Path $Source)) {
     Write-Error "Runtime exports not found: $Source"
