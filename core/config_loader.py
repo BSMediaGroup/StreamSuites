@@ -14,6 +14,11 @@ from typing import Any, Dict, List, Optional
 
 from shared.logging.logger import get_logger
 from shared.config.services import get_services_config
+from shared.platforms.state import (
+    PlatformState,
+    apply_default_platform_states,
+    normalize_platform_state,
+)
 
 log = get_logger("core.config_loader")
 
@@ -92,7 +97,7 @@ class ConfigLoader:
                 log.warning(f"{name} config validation warning at '{loc}': {err.message}")
 
     @staticmethod
-    def _normalize_platform_entry(entry: Any) -> Optional[tuple[str, Dict[str, bool]]]:
+    def _normalize_platform_entry(entry: Any) -> Optional[tuple[str, Dict[str, Any]]]:
         if not isinstance(entry, dict):
             return None
 
@@ -100,12 +105,17 @@ class ConfigLoader:
         if not name or not isinstance(name, str):
             return None
 
-        enabled = bool(entry.get("enabled", False))
-        telemetry_enabled = bool(entry.get("telemetry_enabled", enabled))
+        enabled_flag = bool(entry.get("enabled", False))
+        state = normalize_platform_state(name, entry.get("state"), enabled=enabled_flag)
+        enabled = state != PlatformState.DISABLED
+        telemetry_enabled = bool(entry.get("telemetry_enabled", enabled_flag)) if enabled else False
+        paused_reason = entry.get("paused_reason")
 
         return name, {
             "enabled": enabled,
             "telemetry_enabled": telemetry_enabled,
+            "state": state.value,
+            "paused_reason": paused_reason,
         }
 
     # ------------------------------------------------------------------
@@ -165,10 +175,15 @@ class ConfigLoader:
             for name, cfg in get_services_config().items():
                 enabled = bool(cfg.get("enabled", False))
                 telemetry_enabled = bool(cfg.get("telemetry_enabled", enabled))
+                state = normalize_platform_state(name, cfg.get("state"), enabled=enabled)
                 platforms_cfg[name] = {
-                    "enabled": enabled,
-                    "telemetry_enabled": telemetry_enabled,
+                    "enabled": state != PlatformState.DISABLED,
+                    "telemetry_enabled": telemetry_enabled if state != PlatformState.DISABLED else False,
+                    "state": state.value,
+                    "paused_reason": cfg.get("paused_reason"),
                 }
+
+        apply_default_platform_states(platforms_cfg)
 
         return platforms_cfg
 

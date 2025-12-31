@@ -164,8 +164,10 @@ class YouTubeChatWorker:
         event = message.to_event()
         event["creator_id"] = self.ctx.creator_id
         event["channel"] = message.live_chat_id
+        event["platform"] = "youtube"
 
         runtime_state.record_platform_event("youtube", creator_id=self.ctx.creator_id)
+        runtime_state.record_platform_heartbeat("youtube")
 
         log.debug(
             f"[{self.ctx.creator_id}] [YouTube liveChat={message.live_chat_id}] "

@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from typing import Dict, Any, Optional
 import os
 
+from shared.platforms.state import PlatformState
+
 
 @dataclass
 class CreatorContext:
@@ -12,6 +14,7 @@ class CreatorContext:
     display_name: str
     platforms: Dict[str, bool]
     limits: Dict[str, Any]
+    platform_states: Optional[Dict[str, PlatformState]] = None
 
     # -------------------------------------------------
     # RUMBLE (MODEL A)
@@ -41,6 +44,10 @@ class CreatorContext:
     # -------------------------------------------------
 
     def __post_init__(self):
+        platform_state = (self.platform_states or {}).get("rumble")
+        if platform_state in {PlatformState.PAUSED, PlatformState.DISABLED}:
+            return
+
         if not self.platform_enabled("rumble"):
             return
 

@@ -56,6 +56,9 @@ class ActionExecutor:
                 continue
 
             try:
+                log.info(
+                    f"[{self.creator_id}] Executing action descriptor: {descriptor}"
+                )
                 await self._dispatch(descriptor)
                 runtime_state.record_action_result(
                     descriptor["platform"],

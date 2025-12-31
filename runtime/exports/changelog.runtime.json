@@ -1,5 +1,14 @@
 [
   {
+    "id": "2026-01-runtime-resumed",
+    "date": "2026-01-15",
+    "title": "Runtime resumed",
+    "description": "Runtime execution resumed with explicit platform states; Rumble remains PAUSED while YouTube and Twitch move forward.",
+    "version": "v0.2.0-alpha",
+    "scope": "runtime",
+    "tags": ["resumed", "runtime", "status"]
+  },
+  {
     "id": "2025-12-project-suspended",
     "date": "2025-12-28",
     "title": "Runtime suspended",

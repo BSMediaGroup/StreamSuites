@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from shared.platforms.state import PlatformState
+
 from shared.logging.logger import get_logger
 from shared.storage.state_publisher import DashboardStatePublisher
 
@@ -36,8 +38,10 @@ def _default_counters() -> Dict[str, int]:
 class PlatformRuntimeState:
     enabled: bool = False
     telemetry_enabled: bool = False
+    state: PlatformState = PlatformState.DISABLED
     active: bool = False
     status: str = "inactive"
+    paused_reason: Optional[str] = None
     last_heartbeat: Optional[str] = None
     last_success_ts: Optional[str] = None
     last_error: Optional[str] = None
@@ -80,11 +84,22 @@ class RuntimeState:
     def apply_platform_config(self, config: Dict[str, Dict[str, bool]]) -> None:
         for name, cfg in sorted(config.items()):
             current = self._platforms.get(name, PlatformRuntimeState())
-            current.enabled = bool(cfg.get("enabled", False))
-            current.telemetry_enabled = bool(cfg.get("telemetry_enabled", current.enabled))
+            state = PlatformState.from_value(
+                cfg.get("state"),
+                default=PlatformState.ACTIVE if cfg.get("enabled") else PlatformState.DISABLED,
+            )
+            current.state = state
+            current.enabled = state != PlatformState.DISABLED
+            current.telemetry_enabled = bool(cfg.get("telemetry_enabled", current.enabled)) if current.enabled else False
             current.active = False  # reset on new config to avoid stale flags
-            current.status = "disabled" if not current.enabled else "inactive"
+            if state == PlatformState.DISABLED:
+                current.status = "disabled"
+            elif state == PlatformState.PAUSED:
+                current.status = PlatformState.PAUSED.value
+            else:
+                current.status = "inactive"
             current.last_error = None
+            current.paused_reason = cfg.get("paused_reason") if state == PlatformState.PAUSED else None
             current.ensure_counter_keys()
             self._platforms[name] = current
 
@@ -129,9 +144,27 @@ class RuntimeState:
         state = self._platforms.get(platform)
         if not state:
             state = PlatformRuntimeState()
-            self._platforms[platform] = state
+        self._platforms[platform] = state
         state.ensure_counter_keys()
         return state
+
+    def record_platform_state(
+        self,
+        platform: str,
+        state: PlatformState,
+        *,
+        paused_reason: Optional[str] = None,
+        creator_id: Optional[str] = None,
+    ) -> None:
+        current = self._get_platform_state(platform)
+        current.state = state
+        current.enabled = state != PlatformState.DISABLED
+        current.paused_reason = paused_reason if state == PlatformState.PAUSED else None
+        current.status = state.value if state != PlatformState.ACTIVE else current.status
+        self._platforms[platform] = current
+
+        if creator_id and creator_id in self._creators and current.last_error:
+            self._creators[creator_id].last_error = current.last_error
 
     def record_platform_status(
         self,
@@ -144,11 +177,15 @@ class RuntimeState:
         last_event: bool = False,
     ) -> None:
         state = self._get_platform_state(platform)
-        state.status = status
-        if status == "failed":
+        if state.state == PlatformState.PAUSED:
+            state.status = PlatformState.PAUSED.value
             state.active = False
-        elif status in {"connected", "running"}:
-            state.active = True
+        else:
+            state.status = status
+            if status == "failed":
+                state.active = False
+            elif status in {"connected", "running"}:
+                state.active = True
 
         if error:
             state.last_error = error
@@ -176,7 +213,10 @@ class RuntimeState:
         state = self._get_platform_state(platform)
         state.last_error = message
         state.active = False
-        state.status = "failed"
+        if state.state == PlatformState.PAUSED:
+            state.status = PlatformState.PAUSED.value
+        else:
+            state.status = "failed"
         self._platforms[platform] = state
 
         if creator_id and creator_id in self._creators:
@@ -275,8 +315,10 @@ class RuntimeState:
 
     @staticmethod
     def _platform_status(state: PlatformRuntimeState) -> str:
-        if not state.enabled:
-            return "disabled"
+        if not state.enabled or state.state == PlatformState.DISABLED:
+            return PlatformState.DISABLED.value
+        if state.state == PlatformState.PAUSED:
+            return PlatformState.PAUSED.value
         if state.last_error and state.status == "failed":
             return "error"
         if state.active:
@@ -292,7 +334,9 @@ class RuntimeState:
                 "platform": name,
                 "enabled": state.enabled,
                 "telemetry_enabled": state.telemetry_enabled,
+                "state": state.state.value,
                 "status": self._platform_status(state),
+                "paused_reason": state.paused_reason,
                 "last_heartbeat": state.last_heartbeat,
                 "last_success_ts": state.last_success_ts,
                 "last_event_ts": state.last_event_ts,
