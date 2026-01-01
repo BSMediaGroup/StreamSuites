@@ -1,5 +1,13 @@
 [
   {
+    "id": "2026-01-alpha-version-refresh",
+    "date": "2026-01-01",
+    "title": "Alpha metadata refresh",
+    "description": "Version metadata promoted to v0.2.2-alpha with build 2025.03 while preserving the existing runtime changelog history.",
+    "scope": "runtime",
+    "version": "v0.2.2-alpha"
+  },
+  {
     "id": "2025-12-project-suspended",
     "date": "2025-12-28",
     "title": "Project suspended",

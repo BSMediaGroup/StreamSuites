@@ -1,28 +1,17 @@
-<div style="background-color:#ffdddd; border:1px solid #d9534f; padding:12px;">
-<strong>STATUS: INDEFINITELY SUSPENDED — StreamSuites Runtime Engine</strong><br/>
-Development is halted. Rumble chat ingestion instability, inability to deterministically resolve or sustain <code>chat_id</code> ingestion, and repeated failed remediation attempts prevent safe progress to beta.
+<div style="background-color:#fffae6; border:1px solid #e0a800; padding:12px;">
+<strong>STATUS: ALPHA PREVIEW — StreamSuites Runtime Engine</strong><br/>
+Runtime exports remain the single source of truth but are not yet wired to the dashboard UI or any live chat socket feeds. Chat and overlay surfaces render preview/mock data until runtime plumbing is connected.
 </div>
 
 # StreamSuites™
 
-## Suspension Notice
+## Runtime Positioning
 
-- **Project Status:** INDEFINITELY SUSPENDED. The runtime is archived in place and no further development is planned.
-- **Reason for Suspension (technical summary only):**
-  - Rumble chat ingestion is unstable and cannot deterministically discover or sustain the required `chat_id` for SSE or HTTP-based ingestion.
-  - Endpoint behavior is inconsistent and non-deterministic across attempts, preventing reliable chat event capture.
-  - Multiple remediation attempts were executed and failed to restore deterministic ingestion, blocking any safe path to beta readiness.
-- **What Works (reference only):**
-  - Repository layout, historical architecture descriptions, and prior scaffolding remain available for audit and learning.
-  - Existing exports, schemas, and configuration samples remain readable as a static archive of the late-alpha runtime surface.
-- **What Does Not Work (explicit):**
-  - Rumble chat ingestion: `chat_id` discovery is unstable, endpoints respond inconsistently, and ingestion cannot be maintained deterministically.
-  - Any path to beta stabilization: runtime reliability requirements cannot be met under current conditions.
-- **Why This Repo Remains Public:** Preserved as a reference, audit artifact, and learning archive for the suspended runtime; no active maintenance is planned.
-- **No Roadmap / No ETA:** There is no roadmap, no planned fixes, and no estimated resumption.
-- **Versioning note:** v0.2.1-alpha is the final experimental snapshot retained in this archive; no new releases will be produced.
-
-The sections below are preserved for historical reference and reflect the runtime state prior to suspension.
+- **Project Status:** Late alpha (v0.2.2-alpha, Build 2025.03). Runtime execution is preserved for export generation; dashboard UI remains a separate repository and is not coupled at runtime.
+- **Runtime ↔ Dashboard separation:** This repo owns the Runtime Engine. Dashboard UI lives in a different repo and only consumes exported artifacts; no UI elements initiate runtime execution.
+- **What is live:** Export generation, schemas, and historical scaffolding. Existing exports stay authoritative for read-only inspection.
+- **Not live yet:** Chat runtime plumbing, live chat socket ingestion, OBS overlay feeds, and browser extension hydration remain preview-only and have no active runtime wiring.
+- **Ownership boundary:** The runtime continues to guard data-plane correctness; dashboards, overlays, and extensions must remain read-only and avoid mutation paths.
 
 StreamSuites is a modular, multi-platform livestream automation system. It is
 the single canonical runtime source for orchestrating streaming data-plane
@@ -33,10 +22,11 @@ scaffolding in place for future dashboard/public visibility.
 
 ## Version & Release Authority
 
-- **Current version**: v0.2.1-alpha (Build 2025.02)
+- **Current version**: v0.2.2-alpha (Build 2025.03)
 - **Development stage**: Late Alpha — features are present but still undergoing hardening, observability work, and lifecycle tightening before beta stabilization.
 - **Versioning policy**: Semantic Versioning with pre-release tags (e.g., `-alpha`, `-beta`) to signal stability and readiness. Pre-release identifiers reflect runtime maturity and do not guarantee API permanence.
 - **Authoritative runtime**: This repository is the authoritative runtime source of truth for StreamSuites. Dashboard and external consumers are strictly read-only and must not mutate runtime-managed state.
+- **Runtime/UI separation**: The dashboard UI (separate repo) is not yet connected to runtime execution paths; it consumes published exports only.
 - **Export-driven UI surfaces**: Runtime publishes state via file-based exports (JSON snapshots and HTML replay templates). Dashboards/overlays are expected to read these artifacts without introducing their own write paths.
 - **Licensing notice**: Proprietary. Redistribution or reuse outside authorized channels is not permitted.
 - **Production readiness**: Not production ready. Expect breaking changes, schema adjustments, and operational refinements during the late alpha cycle.
@@ -84,6 +74,8 @@ re-enablement.
 StreamSuites/
 ├── .env.example
 ├── .gitignore
+├── .github/
+│   └── workflows/
 ├── LICENSE
 ├── README.md
 ├── RUNTIME_AUDIT_REPORT.md
@@ -471,10 +463,10 @@ send reliability is preserved even when ingest requirements change:
 
 ## Project Status
 
-- **Status:** INDEFINITELY SUSPENDED. The runtime is archived in place; no active development or remediation is planned.
-- **Final experimental snapshot:** v0.2.1-alpha (Build 2025.02) remains the last recorded runtime state and should be treated strictly as historical reference material.
-- **Operational impact:** the runtime cannot proceed safely to beta due to unresolved Rumble chat ingestion instability, including non-deterministic `chat_id` discovery and inconsistent endpoint behavior despite repeated remediation attempts.
-- **Dashboard and exports:** existing schemas, exports, and configuration samples remain for reference only and are not being updated or validated against live runtimes.
+- **Status:** Alpha preview, export-driven. Runtime stays authoritative for data snapshots but is not yet connected to the dashboard UI or any live chat socket feeds.
+- **Current snapshot:** v0.2.2-alpha (Build 2025.03) remains the active late-alpha reference state.
+- **Operational impact:** chat runtime plumbing, live socket ingestion, and overlay feeds are not live; dashboard and overlay views are preview-only and rely on exported/mock data.
+- **Dashboard and exports:** schemas and exports continue to be maintained for read-only consumption; UI consumers must not assume live connectivity until runtime wiring is delivered.
 
 ## Runtime data, signals, and exports (Data & Signals readiness)
 
@@ -509,7 +501,7 @@ mutates runtime state; it only reads the published snapshots.
   `scripts/update_version.py` updates the `version` field for every About JSON
   document it can find under `<dashboard-root>/about/` while keeping runtime
   execution paths free of About dependencies.
-  - **Usage**: `python scripts/update_version.py v0.2.1-alpha --build 2025.02 --dashboard-root ../StreamSuites-Dashboard/docs`
+  - **Usage**: `python scripts/update_version.py v0.2.2-alpha --build 2025.03 --dashboard-root ../StreamSuites-Dashboard/docs`
   - If the dashboard checkout is absent, the script safely skips dashboard
     updates while keeping runtime metadata in sync.
 
@@ -1172,26 +1164,32 @@ runtimes remain unchanged.
 
 ## Roadmap
 
-### Implemented
+### Implemented (export-ready)
 - Quota enforcement (per-creator/platform, daily, buffer + hard cap)
 - Quota snapshot export (runtime cadence → `shared/state/quotas.json`)
 - Discord control-plane runtime scaffolding + dashboard state publish
 - Twitch and YouTube chat trigger scaffolds (evaluation-only)
 - Rumble chat workers (paused, preserved)
 
-### Short-term
+### In-flight / hardening
 - Harden quota registry wiring across platform workers
 - Expand dashboard quota surface for observability only
 - Tighten shutdown ordering across runtimes
 - Validate YouTube/Twitch trigger scaffolds with live credentials
 
-### Medium-term
+### Preview / Not Live Yet (dashboard overlays + extensions)
+- Chat runtime plumbing — **Not yet live**; dashboard chat/overlay views render preview/mock data only.
+- Browser extension feed hydration — **In planning / not started**; extensions continue showing placeholder content until runtime feeds exist.
+- OBS overlay runtime feeds — **UI ready / runtime pending**; overlay templates ship mock data only.
+- Live chat socket ingestion — **Planned**; no active socket ingestion is wired yet.
+- Multi-platform identity routing — **Planned**; identity mapping across platforms is not connected to runtime exports.
+- Deterministic replay ingestion — **Planned**; chat replay overlays remain mock-data driven until ingestion wiring lands.
+
+### Longer-term
 - Config-driven trigger definitions and cooldown persistence
 - Dashboard tooling for creator config introspection (read-only first)
 - Additional platform workers (Twitter/X control-plane parity)
 - Scheduler telemetry + alert surfaces
-
-### Long-term
 - Trigger action execution + job dispatch
 - Operator tooling (desktop control, runtime start/stop)
 - Historical chat logging + replay (opt-in)
