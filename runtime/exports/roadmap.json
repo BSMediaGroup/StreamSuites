@@ -2,7 +2,7 @@
   "meta": {
     "project": "StreamSuites™",
     "scope": "runtime-roadmap",
-    "version": "v0.2.1-alpha",
+    "version": "v0.2.2-alpha",
     "generated_at": "2026-01-15"
   },
   "entries": [
@@ -131,6 +131,48 @@
       "status": "planned",
       "progress": 5,
       "description": "Dashboard-based trigger editing and live controls are not started; runtime keeps dashboard read-only for now."
+    },
+    {
+      "id": "chat-runtime-plumbing",
+      "title": "Chat runtime plumbing",
+      "status": "planned",
+      "progress": 10,
+      "description": "Chat runtime plumbing remains not yet live; dashboard chat surfaces render preview-only data with no runtime socket wiring."
+    },
+    {
+      "id": "browser-extension-feed-hydration",
+      "title": "Browser extension feed hydration",
+      "status": "planned",
+      "progress": 5,
+      "description": "Extension feed hydration is in planning and not started; extensions continue to show placeholder content until runtime ingestion exists."
+    },
+    {
+      "id": "obs-overlay-runtime-feeds",
+      "title": "OBS overlay runtime feeds",
+      "status": "partial",
+      "progress": 35,
+      "description": "OBS overlay UI surfaces are ready using mock data; runtime feed wiring is pending and overlays remain preview-only."
+    },
+    {
+      "id": "live-chat-socket-ingestion",
+      "title": "Live chat socket ingestion",
+      "status": "planned",
+      "progress": 15,
+      "description": "Live chat socket ingestion is planned but not wired; dashboard previews rely on exported placeholders instead of active sockets."
+    },
+    {
+      "id": "multi-platform-identity-routing",
+      "title": "Multi-platform identity routing",
+      "status": "planned",
+      "progress": 10,
+      "description": "Identity routing across platforms remains planned; no runtime linkage exists between chat identities in preview surfaces."
+    },
+    {
+      "id": "deterministic-replay-ingestion",
+      "title": "Deterministic replay ingestion",
+      "status": "planned",
+      "progress": 10,
+      "description": "Deterministic replay ingestion is planned; chat replay overlays continue to use mock data until runtime export wiring is added."
     }
   ]
 }
