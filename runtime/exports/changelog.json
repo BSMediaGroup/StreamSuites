@@ -7,6 +7,20 @@
   },
   "entries": [
     {
+      "id": "2026-01-alpha-version-refresh",
+      "date": "2026-01-01",
+      "version": "v0.2.2-alpha",
+      "scope": "runtime",
+      "title": "Alpha metadata refresh",
+      "summary": "Version metadata promoted to v0.2.2-alpha with build 2025.03 while preserving prior release history.",
+      "details": [
+        "Runtime metadata and exports now advertise v0.2.2-alpha.",
+        "Changelog history remains intact with prior entries pinned to v0.2.1-alpha.",
+        "Dashboard about views should surface the refreshed version string."
+      ],
+      "tags": ["alpha", "metadata", "version"]
+    },
+    {
       "id": "2026-01-runtime-resumed",
       "date": "2026-01-15",
       "version": "v0.2.2-alpha",
