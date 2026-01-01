@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Update StreamSuites runtime version metadata")
-    parser.add_argument("version", help="Version string to stamp (e.g., v0.2.1-alpha)")
+    parser.add_argument("version", help="Version string to stamp (e.g., v0.2.2-alpha)")
     parser.add_argument(
         "--build",
         help="Optional build identifier to stamp in runtime/version.py",
