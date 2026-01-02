@@ -9,6 +9,7 @@ from services.rumble.workers.livestream_worker import RumbleLivestreamWorker
 from services.rumble.browser.browser_client import RumbleBrowserClient
 from services.twitch.workers.chat_worker import TwitchChatWorker
 from services.youtube.workers.chat_worker import YouTubeChatWorker
+from services.kick.workers.chat_worker import KickChatWorker
 from services.youtube.api.livestream import YouTubeLivestreamAPI
 from services.discord.runtime.supervisor import DiscordSupervisor
 from services.triggers.actions import ActionExecutor
@@ -54,6 +55,8 @@ class Scheduler:
             "youtube": True,
             "twitch": True,
             "discord": True,
+            "kick": False,
+            "rumble": True,
         }
         if isinstance(platform_enable_flags, dict):
             for name, flag in platform_enable_flags.items():
@@ -77,7 +80,7 @@ class Scheduler:
             f"{ {k: v for k, v in sorted(self._platform_enable_flags.items())} }"
         )
 
-        for svc in ["youtube", "twitch", "rumble", "twitter", "discord"]:
+        for svc in ["youtube", "twitch", "rumble", "twitter", "discord", "kick"]:
             cfg = self._services_cfg.get(svc, {})
             enabled = cfg.get("enabled", True)
             telemetry_enabled = cfg.get("telemetry_enabled", enabled)
@@ -108,6 +111,20 @@ class Scheduler:
         log.debug(
             "[BOOT] YouTube API key resolved: "
             f"{'SET' if self._youtube_api_key else 'MISSING'}"
+        )
+
+        # --------------------------------------------------
+        # Kick runtime credentials (resolved once)
+        # --------------------------------------------------
+        self._kick_client_id = os.getenv("KICK_CLIENT_ID_DANIEL")
+        self._kick_client_secret = os.getenv("KICK_CLIENT_SECRET")
+        self._kick_username = os.getenv("KICK_USERNAME_DANIEL") or os.getenv("KICK_BOT_NAME")
+
+        log.debug(
+            "[BOOT] Kick credentials resolved: "
+            f"client_id={'SET' if self._kick_client_id else 'MISSING'}, "
+            f"client_secret={'SET' if self._kick_client_secret else 'MISSING'}, "
+            f"username={'SET' if self._kick_username else 'MISSING'}"
         )
 
     @staticmethod
@@ -193,19 +210,36 @@ class Scheduler:
             elif not ctx.platform_enabled("rumble"):
                 log.info(f"[{ctx.creator_id}] Rumble skipped (disabled for creator)")
             else:
-                runtime_state.record_platform_status("rumble", "connecting", creator_id=ctx.creator_id)
-                log.info(f"[{ctx.creator_id}] Rumble ENABLED — starting worker")
-                self._platforms_started.add("rumble")
-                self._creator_platforms_started[ctx.creator_id].add("rumble")
-                self._creator_platforms_tracked[ctx.creator_id].add("rumble")
-                runtime_state.record_platform_started("rumble", ctx.creator_id)
+                missing_config: List[str] = []
+                if not ctx.rumble_manual_watch_url:
+                    missing_config.append("rumble_manual_watch_url")
+                if not ctx.rumble_livestream_api_env_key:
+                    missing_config.append("rumble_livestream_api_env_key")
+                else:
+                    env_value = os.getenv(ctx.rumble_livestream_api_env_key)
+                    if not env_value:
+                        missing_config.append(ctx.rumble_livestream_api_env_key)
 
-                livestream_worker = RumbleLivestreamWorker(
-                    ctx=ctx,
-                    jobs=self._get_job_registry()
-                )
-                task = asyncio.create_task(livestream_worker.run())
-                self._tasks[ctx.creator_id].append(task)
+                if missing_config:
+                    message = "Rumble enabled but missing config/env: " + ", ".join(missing_config)
+                    runtime_state.record_platform_error("rumble", message, ctx.creator_id)
+                    runtime_state.record_platform_status("rumble", "inactive", creator_id=ctx.creator_id)
+                    self._creator_platforms_tracked[ctx.creator_id].add("rumble")
+                    log.warning(f"[{ctx.creator_id}] {message}")
+                else:
+                    runtime_state.record_platform_status("rumble", "connecting", creator_id=ctx.creator_id)
+                    log.info(f"[{ctx.creator_id}] Rumble ENABLED — starting worker")
+                    self._platforms_started.add("rumble")
+                    self._creator_platforms_started[ctx.creator_id].add("rumble")
+                    self._creator_platforms_tracked[ctx.creator_id].add("rumble")
+                    runtime_state.record_platform_started("rumble", ctx.creator_id)
+
+                    livestream_worker = RumbleLivestreamWorker(
+                        ctx=ctx,
+                        jobs=self._get_job_registry()
+                    )
+                    task = asyncio.create_task(livestream_worker.run())
+                    self._tasks[ctx.creator_id].append(task)
         except Exception as e:
             runtime_state.record_platform_error("rumble", str(e), ctx.creator_id)
             log.error(f"[{ctx.creator_id}] Rumble failed to start: {e}")
@@ -354,6 +388,77 @@ class Scheduler:
         except Exception as e:
             runtime_state.record_platform_error("youtube", str(e), ctx.creator_id)
             log.error(f"[{ctx.creator_id}] YouTube failed to start: {e}")
+
+        # --------------------------------------------------
+        # Kick chat orchestration (stubbed/offline)
+        # --------------------------------------------------
+        kick_cfg = self._services_cfg.get("kick", {})
+        kick_state = PlatformState.from_value(
+            kick_cfg.get("state"),
+            default=PlatformState.ACTIVE if kick_cfg.get("enabled", True) else PlatformState.DISABLED,
+        )
+
+        try:
+            if not self._platform_polling_enabled:
+                log.info(f"[{ctx.creator_id}] Platform polling disabled — Kick worker not started")
+            elif not self._platform_enabled("kick"):
+                runtime_state.record_platform_state(
+                    "kick",
+                    PlatformState.DISABLED,
+                    creator_id=ctx.creator_id,
+                    paused_reason="Disabled by system config",
+                )
+                log.info(f"[{ctx.creator_id}] Kick disabled by system config — worker not started")
+            elif kick_state == PlatformState.DISABLED or not kick_cfg.get("enabled", True):
+                log.info(f"[{ctx.creator_id}] Kick skipped (disabled by services/platforms config)")
+            elif kick_state == PlatformState.PAUSED:
+                runtime_state.record_platform_state("kick", PlatformState.PAUSED, creator_id=ctx.creator_id)
+                runtime_state.record_platform_status("kick", "paused", creator_id=ctx.creator_id)
+                self._creator_platforms_tracked[ctx.creator_id].add("kick")
+                log.info(f"[{ctx.creator_id}] Kick PAUSED — worker not started")
+            elif not ctx.platform_enabled("kick"):
+                log.info(f"[{ctx.creator_id}] Kick skipped (disabled for creator)")
+            else:
+                missing_env: List[str] = []
+                if not self._kick_client_id:
+                    missing_env.append("KICK_CLIENT_ID_DANIEL")
+                if not self._kick_client_secret:
+                    missing_env.append("KICK_CLIENT_SECRET")
+                if not self._kick_username:
+                    missing_env.append("KICK_USERNAME_DANIEL/KICK_BOT_NAME")
+
+                channel = self._kick_username or ctx.creator_id
+
+                if missing_env:
+                    message = "Kick enabled but missing env vars: " + ", ".join(missing_env)
+                    runtime_state.record_platform_error("kick", message, ctx.creator_id)
+                    runtime_state.record_platform_status("kick", "inactive", creator_id=ctx.creator_id)
+                    self._creator_platforms_tracked[ctx.creator_id].add("kick")
+                    log.warning(f"[{ctx.creator_id}] {message}")
+                elif not channel:
+                    message = "Kick channel not resolved; worker not started"
+                    runtime_state.record_platform_error("kick", message, ctx.creator_id)
+                    runtime_state.record_platform_status("kick", "inactive", creator_id=ctx.creator_id)
+                    self._creator_platforms_tracked[ctx.creator_id].add("kick")
+                    log.warning(f"[{ctx.creator_id}] {message}")
+                else:
+                    runtime_state.record_platform_status("kick", "connecting", creator_id=ctx.creator_id)
+                    self._platforms_started.add("kick")
+                    self._creator_platforms_started[ctx.creator_id].add("kick")
+                    self._creator_platforms_tracked[ctx.creator_id].add("kick")
+                    runtime_state.record_platform_started("kick", ctx.creator_id)
+
+                    kick_worker = KickChatWorker(
+                        ctx=ctx,
+                        channel=channel,
+                        action_executor=executor,
+                    )
+
+                    task = asyncio.create_task(kick_worker.run())
+                    self._tasks[ctx.creator_id].append(task)
+        except Exception as e:
+            runtime_state.record_platform_error("kick", str(e), ctx.creator_id)
+            log.error(f"[{ctx.creator_id}] Kick failed to start: {e}")
 
         # --------------------------------------------------
         # Discord control-plane runtime

@@ -38,12 +38,20 @@ class ClipSystemConfig:
 
 
 @dataclass
+class HotReloadSettings:
+    enabled: bool = False
+    watch_path: str = "runtime/exports"
+    interval_seconds: int = 5
+
+
+@dataclass
 class SystemSettings:
     platform_polling_enabled: bool = True
     platforms: Dict[str, bool] = field(default_factory=lambda: {
         "youtube": True,
         "twitch": True,
         "discord": True,
+        "kick": False,
     })
     jobs: Dict[str, bool] = field(
         default_factory=lambda: {
@@ -52,6 +60,7 @@ class SystemSettings:
             "tallies": True,
         }
     )
+    hot_reload: HotReloadSettings = field(default_factory=HotReloadSettings)
 
 
 @dataclass
@@ -124,6 +133,7 @@ def _load_system_settings(raw: Optional[Dict[str, Any]]) -> SystemSettings:
         "youtube": True,
         "twitch": True,
         "discord": True,
+        "kick": False,
     }
 
     if isinstance(platforms_raw, dict):
@@ -154,10 +164,25 @@ def _load_system_settings(raw: Optional[Dict[str, Any]]) -> SystemSettings:
             if isinstance(flag, bool):
                 jobs_enabled[str(name)] = flag
 
+    hot_reload_raw = raw.get("hot_reload", {})
+    hot_reload_cfg = HotReloadSettings()
+    if isinstance(hot_reload_raw, dict):
+        hot_reload_cfg.enabled = bool(hot_reload_raw.get("enabled", hot_reload_cfg.enabled))
+        hot_reload_cfg.watch_path = str(
+            hot_reload_raw.get("watch_path", hot_reload_cfg.watch_path)
+        )
+        try:
+            hot_reload_cfg.interval_seconds = int(
+                hot_reload_raw.get("interval_seconds", hot_reload_cfg.interval_seconds)
+            )
+        except Exception:
+            hot_reload_cfg.interval_seconds = HotReloadSettings.interval_seconds
+
     return SystemSettings(
         platform_polling_enabled=value,
         platforms=platforms_enabled,
         jobs=jobs_enabled,
+        hot_reload=hot_reload_cfg,
     )
 
 
