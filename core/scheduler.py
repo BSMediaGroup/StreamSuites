@@ -222,8 +222,20 @@ class Scheduler:
 
                 if missing_config:
                     message = "Rumble enabled but missing config/env: " + ", ".join(missing_config)
-                    runtime_state.record_platform_error("rumble", message, ctx.creator_id)
-                    runtime_state.record_platform_status("rumble", "inactive", creator_id=ctx.creator_id)
+                    runtime_state.record_platform_state(
+                        "rumble",
+                        PlatformState.PAUSED,
+                        paused_reason=message,
+                        creator_id=ctx.creator_id,
+                    )
+                    runtime_state.record_platform_status(
+                        "rumble", "paused", creator_id=ctx.creator_id
+                    )
+                    runtime_state.record_event(
+                        source="rumble",
+                        severity="warning",
+                        message=message,
+                    )
                     self._creator_platforms_tracked[ctx.creator_id].add("rumble")
                     log.warning(f"[{ctx.creator_id}] {message}")
                 else:

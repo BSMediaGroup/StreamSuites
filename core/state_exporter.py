@@ -714,10 +714,16 @@ class RuntimeSnapshotExporter:
         publish_root: Optional[str] = None,
         state: Optional[RuntimeState] = None,
         telemetry_exporter: Optional[TelemetrySnapshotExporter] = None,
+        runtime_export_root: Optional[str] = "runtime/exports",
     ) -> None:
         self._publisher = DashboardStatePublisher(base_dir=base_dir, publish_root=publish_root)
         self._state = state or RuntimeState()
         self._telemetry_exporter = telemetry_exporter or TelemetrySnapshotExporter(state=self._state)
+        self._runtime_exporter = (
+            PublicExportPublisher(base_dir=runtime_export_root)
+            if runtime_export_root
+            else None
+        )
 
     @property
     def state(self) -> RuntimeState:
@@ -729,6 +735,11 @@ class RuntimeSnapshotExporter:
             self._publisher.publish(self.DEFAULT_RELATIVE_PATH, payload)
         except Exception as e:
             log.warning(f"Failed to publish runtime snapshot: {e}")
+        if self._runtime_exporter:
+            try:
+                self._runtime_exporter.publish(self.DEFAULT_RELATIVE_PATH, payload)
+            except Exception as e:
+                log.warning(f"Failed to publish runtime snapshot export: {e}")
         if self._telemetry_exporter:
             try:
                 self._telemetry_exporter.publish()
