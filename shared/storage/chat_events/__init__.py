@@ -1,6 +1,20 @@
-"""Chat event storage placeholder package.
+"""Chat event storage utilities.
 
-This module reserves the namespace for future persistent chat event logging
-mechanisms. It intentionally contains no runtime logic and should not be
-imported until the logging feature is implemented.
+This package currently exposes read-only helpers for inspecting persisted chat
+logs so runtime exports can derive replay availability without mutating
+underlying files.
 """
+
+from .reader import (
+    CHAT_EVENT_STORAGE_ROOT,
+    CHAT_LOG_ROOT,
+    ReplayMetadata,
+    build_replay_metadata,
+)
+
+__all__ = [
+    "ReplayMetadata",
+    "build_replay_metadata",
+    "CHAT_EVENT_STORAGE_ROOT",
+    "CHAT_LOG_ROOT",
+]

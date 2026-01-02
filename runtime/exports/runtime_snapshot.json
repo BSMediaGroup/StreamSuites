@@ -3,7 +3,7 @@
   "generated_at": "2026-01-02T07:33:57.817890Z",
   "heartbeat": "2026-01-02T07:33:57.817890Z",
   "runtime": {
-    "project": "StreamSuites\u2122 Runtime",
+    "project": "StreamSuites™ Runtime",
     "version": "v0.2.2-alpha",
     "build": "2025.03"
   },
@@ -15,6 +15,13 @@
     "source": "shared"
   },
   "rumble_chat": null,
+  "replay": {
+    "available": false,
+    "platforms": [],
+    "event_count": 0,
+    "last_event_timestamp": null,
+    "overlay_safe": false
+  },
   "restart_intent": {
     "required": false,
     "pending": {

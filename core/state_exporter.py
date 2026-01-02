@@ -17,10 +17,11 @@ from typing import Any, Dict, List, Optional
 
 from runtime import version as runtime_version
 
-from shared.platforms.state import PlatformState
+from shared.platforms.state import PlatformState, replay_capabilities
 
 from shared.logging.logger import get_logger
 from shared.public_exports.publisher import PublicExportPublisher
+from shared.storage.chat_events.reader import ReplayMetadata, build_replay_metadata
 from shared.storage.state_publisher import DashboardStatePublisher
 from shared.utils.hashing import stable_hash_for_paths
 
@@ -472,12 +473,38 @@ class RuntimeState:
             return "running"
         return state.status or "inactive"
 
+    @staticmethod
+    def _empty_replay_snapshot() -> Dict[str, Any]:
+        return {
+            "available": False,
+            "platforms": [],
+            "event_count": 0,
+            "last_event_timestamp": None,
+            "overlay_safe": False,
+        }
+
+    def _build_replay_snapshot(self) -> Dict[str, Any]:
+        try:
+            metadata: ReplayMetadata = build_replay_metadata()
+        except Exception as exc:  # pragma: no cover - defensive
+            log.warning(f"Failed to build replay metadata: {exc}")
+            return self._empty_replay_snapshot()
+
+        return {
+            "available": bool(metadata.available),
+            "platforms": list(metadata.platforms),
+            "event_count": int(metadata.event_count),
+            "last_event_timestamp": metadata.last_event_timestamp,
+            "overlay_safe": bool(metadata.overlay_safe),
+        }
+
     def build_snapshot(self) -> Dict[str, Any]:
         runtime_heartbeat = _utc_now_iso()
         platforms_out: List[Dict[str, Any]] = []
         for name in sorted(self._platforms.keys()):
             state = self._platforms[name]
             state.ensure_counter_keys()
+            capabilities = replay_capabilities(name, state.state)
             platforms_out.append({
                 "name": name,
                 "platform": name,
@@ -492,6 +519,8 @@ class RuntimeState:
                 "last_event_ts": state.last_event_ts,
                 "error": state.last_error,
                 "counters": dict(state.counters),
+                "replay_supported": capabilities.get("replay_supported", False),
+                "overlay_supported": capabilities.get("overlay_supported", False),
             })
 
         creators_out: List[Dict[str, Any]] = []
@@ -529,6 +558,8 @@ class RuntimeState:
                 }
             )
 
+        replay_snapshot = self._build_replay_snapshot()
+
         return {
             "schema_version": "v1",
             "generated_at": runtime_heartbeat,
@@ -546,6 +577,7 @@ class RuntimeState:
                 "source": self._triggers_source or "shared",
             },
             "rumble_chat": rumble_chat_out,
+            "replay": replay_snapshot,
             "restart_intent": restart_intent,
         }
 
