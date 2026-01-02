@@ -1,0 +1,2 @@
+"""Kick platform runtime scaffold."""
+

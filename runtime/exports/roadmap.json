@@ -178,8 +178,8 @@
       "id": "kick-chatbot-scaffold",
       "title": "Kick chatbot scaffold",
       "status": "active",
-      "progress": 35,
-      "description": "Kick auth/chat stubs created to mirror Twitch/YouTube interfaces with validation trigger wiring; scheduler integration is next."
+      "progress": 50,
+      "description": "Kick chat scaffold now validates env credentials, emits normalized messages through scheduler triggers, and remains feature-flagged for future live sockets."
     },
     {
       "id": "pilled-ingest-plan",
@@ -192,8 +192,8 @@
       "id": "desktop-admin-control-plane",
       "title": "Desktop Admin control surface",
       "status": "planned",
-      "progress": 20,
-      "description": "Local Desktop Admin EXE will read runtime exports/config with restart-safe write boundaries; IPC/HTTP parity planned after file-based validation."
+      "progress": 30,
+      "description": "Local Desktop Admin EXE will read runtime exports/config with restart-safe write boundaries; admin contract now defines read/write/restart touch points for upcoming desktop apps."
     }
   ]
 }

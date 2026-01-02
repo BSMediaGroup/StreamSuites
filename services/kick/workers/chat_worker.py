@@ -1,55 +1,61 @@
+from __future__ import annotations
+
 import asyncio
 from typing import Optional
 
 from core.state_exporter import runtime_state
-from services.kick.api.chat import KickChatClient, load_default_session
+from services.kick.api.chat import KickChatClient, load_env_credentials
+from services.triggers.actions import ActionExecutor
 from services.triggers.registry import TriggerRegistry
 from services.triggers.validation import NonEmptyChatValidationTrigger
-from services.triggers.actions import ActionExecutor
 from shared.logging.logger import get_logger
 
 log = get_logger("kick.chat_worker", runtime="streamsuites")
 
 
 class KickChatWorker:
-    """Scheduler-owned Kick chat worker (stubbed).
+    """Scheduler-owned Kick chat worker."""
 
-    Responsibilities:
-    - Perform env-based auth handshake using the Kick stub client
-    - Emit normalized chat events for trigger evaluation
-    - Exercise trigger registry + action executor hooks even while offline
-    """
-
-    def __init__(self, *, ctx, channel: str, action_executor: Optional[ActionExecutor] = None):
+    def __init__(
+        self,
+        *,
+        ctx,
+        channel: str,
+        action_executor: Optional[ActionExecutor] = None,
+    ) -> None:
         if not channel:
             raise RuntimeError("Kick channel is required")
 
         self.ctx = ctx
         self.channel = channel
         self._actions = action_executor
-        self._client = KickChatClient(channel=channel, auth=load_default_session())
+        self._client = KickChatClient(credentials=load_env_credentials(channel))
 
         self._stop_event = asyncio.Event()
         self._triggers = TriggerRegistry(creator_id=ctx.creator_id)
         self._triggers.register(NonEmptyChatValidationTrigger())
 
     async def run(self) -> None:
-        log.info(f"[{self.ctx.creator_id}] Kick chat worker starting (stub)")
-        runtime_state.record_platform_status("kick", "connecting", creator_id=self.ctx.creator_id)
-
+        runtime_state.record_platform_status(
+            "kick", "connecting", creator_id=self.ctx.creator_id
+        )
         try:
             await self._client.connect()
-            runtime_state.record_platform_status("kick", "connected", creator_id=self.ctx.creator_id, success=True)
+            runtime_state.record_platform_status(
+                "kick", "connected", creator_id=self.ctx.creator_id, success=True
+            )
 
-            async for message in self._client.iter_messages():
-                await self._handle_message(message)
-                if self._stop_event.is_set():
-                    break
+            while not self._stop_event.is_set():
+                message = await self._client.poll()
+                if message:
+                    await self._handle_message(message)
+                    continue
+                await asyncio.sleep(0.25)
         except asyncio.CancelledError:
             raise
-        except Exception as e:
-            runtime_state.record_platform_error("kick", str(e), self.ctx.creator_id)
-            log.warning(f"[{self.ctx.creator_id}] Kick chat worker error: {e}")
+        except Exception as exc:
+            runtime_state.record_platform_error("kick", str(exc), self.ctx.creator_id)
+            log.warning(f"[{self.ctx.creator_id}] Kick chat worker error: {exc}")
         finally:
             await self.shutdown()
 
@@ -84,3 +90,7 @@ class KickChatWorker:
 
         if self._actions and actions:
             await self._actions.execute(actions, default_platform="kick")
+
+
+__all__ = ["KickChatWorker"]
+

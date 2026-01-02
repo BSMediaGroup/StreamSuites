@@ -1,7 +1,12 @@
+"""Kick chat API scaffold (runtime-authoritative)."""
+
+from __future__ import annotations
+
 import asyncio
 import os
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import AsyncGenerator, Dict, Optional
 
 from services.kick.models.message import KickChatMessage
 from shared.logging.logger import get_logger
@@ -9,94 +14,152 @@ from shared.logging.logger import get_logger
 log = get_logger("kick.chat", runtime="streamsuites")
 
 
-class KickAuthSession:
-    """Stubbed auth handshake for Kick.
+@dataclass
+class KickCredentials:
+    """Resolved Kick credentials loaded from environment variables."""
 
-    The runtime already carries Kick env vars. This stub only verifies their
-    presence and produces a placeholder token payload so downstream workers can
-    prove wiring without emitting secrets.
+    client_id: str
+    client_secret: str
+    username: str
+    channel: str
+
+    def validate(self) -> None:
+        missing = []
+        if not self.client_id:
+            missing.append("KICK_CLIENT_ID_DANIEL")
+        if not self.client_secret:
+            missing.append("KICK_CLIENT_SECRET")
+        if not self.username:
+            missing.append("KICK_USERNAME_DANIEL/KICK_BOT_NAME")
+        if not self.channel:
+            missing.append("KICK_CHANNEL")
+
+        if missing:
+            raise RuntimeError(
+                "Kick credentials missing required env vars: " + ", ".join(missing)
+            )
+
+
+def load_env_credentials(channel_override: Optional[str] = None) -> KickCredentials:
     """
+    Load Kick credentials from the runtime environment without logging secrets.
 
-    def __init__(self, *, client_id: str, client_secret: str, username: str):
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.username = username
-
-    def perform_handshake(self) -> Dict[str, str]:
-        if not all([self.client_id, self.client_secret, self.username]):
-            raise RuntimeError("Kick credentials are incomplete; cannot handshake")
-
-        # Placeholder token payload; no network calls are performed.
-        return {
-            "access_token": "stub-kick-token",
-            "token_type": "bearer",
-            "issued_at": datetime.now(timezone.utc).isoformat(),
-            "username": self.username,
-        }
-
-
-class KickChatClient:
-    """Simulated Kick chat client.
-
-    The implementation mirrors Twitch/YouTube interfaces while staying offline.
-    Callers can iterate over a deterministic, synthetic message stream to prove
-    trigger wiring end-to-end.
+    Channel falls back to the username so workers can deterministically emit
+    chat events in single-creator setups.
     """
-
-    def __init__(self, *, channel: str, auth: KickAuthSession):
-        self.channel = channel
-        self.auth = auth
-        self._connected = False
-        self._token: Optional[Dict[str, str]] = None
-
-    async def connect(self) -> None:
-        if self._connected:
-            log.debug("KickChatClient already connected")
-            return
-
-        self._token = self.auth.perform_handshake()
-        log.info(
-            f"Connecting to Kick chat (stub) as {self._token['username']} on channel={self.channel}"
-        )
-        self._connected = True
-
-    async def close(self) -> None:
-        self._connected = False
-        log.info("Kick chat stub connection closed")
-
-    async def iter_messages(self) -> AsyncGenerator[KickChatMessage, None]:
-        if not self._connected:
-            raise RuntimeError("KickChatClient.iter_messages called before connect()")
-
-        # Deterministic synthetic message set proves normalization + trigger wiring.
-        synthetic_messages = [
-            {"username": "StreamSuites", "text": "Kick stub online", "user_id": "kick-1"},
-            {"username": "Moderator", "text": "!validate", "user_id": "kick-2"},
-        ]
-
-        for raw in synthetic_messages:
-            yield self._normalize(raw)
-            await asyncio.sleep(0)
-
-    def _normalize(self, raw: Dict[str, Any]) -> KickChatMessage:
-        timestamp = datetime.now(timezone.utc)
-        message = KickChatMessage(
-            raw=raw,
-            username=raw.get("username") or "unknown",
-            channel=self.channel,
-            text=raw.get("text") or "",
-            user_id=raw.get("user_id"),
-            timestamp=timestamp,
-        )
-        log.debug(f"[kick:{self.channel}] normalized stub message: {message.text}")
-        return message
-
-
-def load_default_session() -> KickAuthSession:
-    """Factory that reads env vars without logging secrets."""
 
     client_id = os.getenv("KICK_CLIENT_ID_DANIEL", "")
     client_secret = os.getenv("KICK_CLIENT_SECRET", "")
     username = os.getenv("KICK_USERNAME_DANIEL", "") or os.getenv("KICK_BOT_NAME", "")
+    channel = channel_override or os.getenv("KICK_CHANNEL", "") or username
 
-    return KickAuthSession(client_id=client_id, client_secret=client_secret, username=username)
+    creds = KickCredentials(
+        client_id=client_id,
+        client_secret=client_secret,
+        username=username,
+        channel=channel,
+    )
+    creds.validate()
+    return creds
+
+
+class KickChatClient:
+    """
+    Minimal Kick chat scaffold exposing connect() and poll().
+
+    This client intentionally avoids network calls while still proving
+    credential handling and message normalization. Synthetic messages are
+    buffered at connect-time so trigger wiring can run end-to-end.
+    """
+
+    def __init__(self, *, credentials: KickCredentials) -> None:
+        self.credentials = credentials
+        self._connected = False
+        self._token: Optional[Dict[str, str]] = None
+        self._queue: asyncio.Queue[KickChatMessage] = asyncio.Queue()
+
+    async def connect(self) -> Dict[str, str]:
+        """Validate credentials and prepare a synthetic session token."""
+
+        self.credentials.validate()
+        if self._connected:
+            log.debug("KickChatClient already connected; reusing session")
+            return self._token or {}
+
+        issued_at = datetime.now(timezone.utc).isoformat()
+        self._token = {
+            "access_token": "kick-offline-session",
+            "token_type": "bearer",
+            "issued_at": issued_at,
+            "username": self.credentials.username,
+            "channel": self.credentials.channel,
+        }
+
+        await self._seed_messages()
+        self._connected = True
+        log.info(
+            "Kick chat session established for channel=%s (username=%s)",
+            self.credentials.channel,
+            self.credentials.username,
+        )
+        return self._token
+
+    async def close(self) -> None:
+        self._connected = False
+        while not self._queue.empty():
+            try:
+                self._queue.get_nowait()
+            except Exception:
+                break
+        log.info("Kick chat session closed for channel=%s", self.credentials.channel)
+
+    async def poll(self) -> Optional[KickChatMessage]:
+        """Return the next buffered message, or None if idle."""
+
+        if not self._connected:
+            raise RuntimeError("KickChatClient.poll called before connect()")
+
+        try:
+            return self._queue.get_nowait()
+        except asyncio.QueueEmpty:
+            return None
+
+    async def iter_messages(self) -> AsyncGenerator[KickChatMessage, None]:
+        """Async generator used by older worker contracts."""
+
+        while self._connected:
+            message = await self.poll()
+            if message:
+                yield message
+                continue
+            await asyncio.sleep(0.25)
+
+    async def _seed_messages(self) -> None:
+        """Populate the queue with deterministic, normalized messages."""
+
+        synthetic_messages = [
+            {
+                "username": self.credentials.username or "streamsuites",
+                "text": "Kick chat scaffold online",
+                "user_id": "kick-system",
+            },
+            {
+                "username": "moderator",
+                "text": "!validate",
+                "user_id": "kick-mod",
+            },
+        ]
+
+        now = datetime.now(timezone.utc)
+        for idx, raw in enumerate(synthetic_messages, start=1):
+            message = KickChatMessage(
+                raw=raw,
+                username=raw.get("username") or "unknown",
+                channel=self.credentials.channel,
+                text=raw.get("text") or "",
+                user_id=raw.get("user_id"),
+                message_id=f"kick-{idx}",
+                timestamp=now,
+            )
+            await self._queue.put(message)
+

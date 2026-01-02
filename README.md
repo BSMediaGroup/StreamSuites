@@ -94,7 +94,6 @@ StreamSuites/
 │   ├── context.py
 │   ├── discord_app.py
 │   ├── jobs.py
-│   ├── hot_reload_watcher.py
 │   ├── ratelimits.py
 │   ├── registry.py
 │   ├── scheduler.py
@@ -197,12 +196,16 @@ StreamSuites/
 │   │   ├── registry.py
 │   │   └── validation.py
 │   ├── kick/
+│   │   ├── __init__.py
 │   │   ├── README.md
 │   │   ├── api/
+│   │   │   ├── __init__.py
 │   │   │   └── chat.py
 │   │   ├── models/
+│   │   │   ├── __init__.py
 │   │   │   └── message.py
 │   │   └── workers/
+│   │       ├── __init__.py
 │   │       ├── chat_worker.py
 │   │       └── livestream_worker.py
 │   ├── pilled/
@@ -266,8 +269,10 @@ StreamSuites/
 │   │   └── governor.py
 │   ├── runtime/
 │   │   ├── __init__.py
+│   │   ├── admin_contract.py
 │   │   ├── quotas.py
 │   │   ├── quotas_snapshot.py
+│   │   ├── hot_reload.py
 │   │   └── scoreboards_snapshot.py
 │   ├── scoreboards/
 │   │   ├── README.md
@@ -351,6 +356,7 @@ StreamSuites/
 │   │   ├── platforms.json
 │   │   ├── polls.json
 │   │   ├── roadmap.json
+│   │   ├── runtime_snapshot.json
 │   │   ├── scoreboards.json
 │   │   ├── tallies.json
 │   │   └── telemetry/

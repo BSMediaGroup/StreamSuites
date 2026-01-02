@@ -17,10 +17,10 @@ from core.registry import CreatorRegistry
 from core.scheduler import Scheduler
 from core.jobs import JobRegistry
 from core.state_exporter import runtime_snapshot_exporter, runtime_state
-from shared.logging.logger import get_logger
 from media.jobs.clip_job import ClipJob
 from services.clips.manager import clip_manager
-from core.hot_reload_watcher import HotReloadWatcher
+from shared.logging.logger import get_logger
+from shared.runtime.hot_reload import HotReloadConfig, build_hot_reload_watcher
 
 # >>> ADDITIVE: quota snapshot aggregation
 from shared.runtime.quotas import quota_snapshot_aggregator
@@ -57,6 +57,12 @@ async def main(stop_event: asyncio.Event):
         config_loader.compute_restart_baseline_hashes(), restart_sources
     )
     system_config = config_loader.load_system_config()
+    hot_reload_cfg = HotReloadConfig(
+        enabled=system_config.system.hot_reload.enabled,
+        watch_path=system_config.system.hot_reload.watch_path,
+        interval_seconds=system_config.system.hot_reload.interval_seconds,
+    )
+    hot_reload_cfg = HotReloadConfig.from_env(base=hot_reload_cfg)
     platform_config = config_loader.load_platforms_config()
     creators_config = config_loader.load_creators_config()
     job_enable_flags = system_config.system.jobs
@@ -69,9 +75,9 @@ async def main(stop_event: asyncio.Event):
             "platform_polling_enabled": system_config.system.platform_polling_enabled,
             "platforms": dict(system_config.system.platforms),
             "hot_reload": {
-                "enabled": system_config.system.hot_reload.enabled,
-                "watch_path": system_config.system.hot_reload.watch_path,
-                "interval_seconds": system_config.system.hot_reload.interval_seconds,
+                "enabled": hot_reload_cfg.enabled,
+                "watch_path": hot_reload_cfg.watch_path,
+                "interval_seconds": hot_reload_cfg.interval_seconds,
             },
         }
     )
@@ -193,11 +199,8 @@ async def main(stop_event: asyncio.Event):
     # OPTIONAL HOT RELOAD WATCHER (FILE-BACKED)
     # ==================================================
     hot_reload_task = None
-    if system_config.system.hot_reload.enabled:
-        watcher = HotReloadWatcher(
-            watch_path=system_config.system.hot_reload.watch_path,
-            interval_seconds=system_config.system.hot_reload.interval_seconds,
-        )
+    watcher = build_hot_reload_watcher(hot_reload_cfg)
+    if watcher:
         log.info(
             "Hot reload watcher enabled — monitoring %s (interval=%ss)",
             watcher.watch_path,
