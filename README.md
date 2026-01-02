@@ -80,6 +80,7 @@ StreamSuites/
 ├── .gitignore
 ├── .github/
 │   └── workflows/
+│       └── publish-dashboard-state.yml
 ├── LICENSE
 ├── README.md
 ├── RUNTIME_AUDIT_REPORT.md
@@ -88,6 +89,7 @@ StreamSuites/
 │   └── changelog.runtime.json
 ├── clips/
 │   └── output/
+│       └── .gitkeep
 ├── core/
 │   ├── README.md
 │   ├── __init__.py
@@ -132,9 +134,16 @@ StreamSuites/
 │       ├── RuntimeConnector.cs
 │       └── StreamSuites.DesktopAdmin.RuntimeBridge.csproj
 ├── docs/
-│   └── POST_MORTEM.md
+│   ├── POST_MORTEM.md
+│   └── assets/
+│       └── placeholders/
+│           ├── daniel-badge.svg
+│           ├── daniel.svg
+│           ├── hotdog.svg
+│           └── streamsuites.svg
 ├── exports/
 │   └── public/
+│       └── .gitkeep
 ├── media/
 │   ├── capture/
 │   │   ├── rumble.py
