@@ -14,11 +14,10 @@ triggers fire through the scheduler without hitting Kick network endpoints.
   `runtime_state` heartbeats and counters.
 
 ## Environment (already present)
-- `KICK_CLIENT_ID_DANIEL`
-- `KICK_CLIENT_SECRET`
-- `KICK_USERNAME_DANIEL`
-- `KICK_BOT_NAME`
-- `KICK_STREAMKEY_DANIEL`
+- `KICK_CLIENT_ID_*` (e.g., `KICK_CLIENT_ID_DANIEL`)
+- `KICK_CLIENT_SECRET_*` (e.g., `KICK_CLIENT_SECRET_DANIEL`)
+- `KICK_USERNAME_*` (creator-specific handle) or `KICK_BOT_NAME`
+- `KICK_STREAMKEY_*` (reserved for livestream control)
 
 Secrets are **never** logged. The stub only checks presence to prove that
 credentials are plumbed into the runtime environment.
