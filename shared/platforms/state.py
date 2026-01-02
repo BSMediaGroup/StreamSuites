@@ -47,6 +47,17 @@ DEFAULT_PLATFORM_STATES: Dict[str, PlatformState] = {
     "youtube": PlatformState.ACTIVE,
     "twitch": PlatformState.ACTIVE,
     "kick": PlatformState.ACTIVE,
+    "pilled": PlatformState.DISABLED,
+}
+
+# Read-only capability flags describing replay support per platform.
+# These intentionally avoid any mutations so they can be reused in exports.
+PLATFORM_REPLAY_CAPABILITIES: Dict[str, Dict[str, bool]] = {
+    "youtube": {"replay_supported": True, "overlay_supported": True},
+    "twitch": {"replay_supported": True, "overlay_supported": True},
+    "kick": {"replay_supported": False, "overlay_supported": False},
+    "rumble": {"replay_supported": True, "overlay_supported": True},
+    "pilled": {"replay_supported": True, "overlay_supported": False},
 }
 
 
@@ -81,4 +92,35 @@ def apply_default_platform_states(cfg: Dict[str, Dict[str, Any]]) -> Dict[str, D
         if default_state == PlatformState.PAUSED and not entry.get("paused_reason"):
             entry["paused_reason"] = "Platform ingestion paused"
     return cfg
+
+
+def replay_capabilities(
+    platform: str, state: PlatformState | str | None = None
+) -> Dict[str, bool]:
+    """Return replay and overlay capabilities for the given platform.
+
+    Rumble (and any paused platform) is marked unsafe for replay while paused
+    so dashboards do not treat paused ingestion as overlay-ready.
+    """
+
+    base = PLATFORM_REPLAY_CAPABILITIES.get(
+        platform, {"replay_supported": False, "overlay_supported": False}
+    )
+
+    if state is not None:
+        normalized = PlatformState.from_value(state, default=None)
+        if normalized == PlatformState.PAUSED:
+            return {"replay_supported": False, "overlay_supported": False}
+
+    return dict(base)
+
+
+__all__ = [
+    "PlatformState",
+    "DEFAULT_PLATFORM_STATES",
+    "PLATFORM_REPLAY_CAPABILITIES",
+    "normalize_platform_state",
+    "apply_default_platform_states",
+    "replay_capabilities",
+]
 
