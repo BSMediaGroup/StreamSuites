@@ -92,6 +92,7 @@ def _load_events_from_file(path: Path) -> Tuple[List[_ReplayEvent], bool, int]:
     overlay_safe = True
     parsed_events: List[_ReplayEvent] = []
     total_seen = 0
+    last_seen_ts: Optional[datetime] = None
 
     try:
         text = path.read_text(encoding="utf-8")
@@ -132,6 +133,10 @@ def _load_events_from_file(path: Path) -> Tuple[List[_ReplayEvent], bool, int]:
         if not ts:
             overlay_safe = False
             continue
+
+        if last_seen_ts and ts < last_seen_ts:
+            overlay_safe = False
+        last_seen_ts = ts
 
         platform = candidate.get("platform") or platform_hint
         platform_normalized = platform.lower() if isinstance(platform, str) else None
