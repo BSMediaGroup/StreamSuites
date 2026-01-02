@@ -6,12 +6,34 @@ import asyncio
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import AsyncGenerator, Dict, Optional
+from typing import AsyncGenerator, Dict, Optional, Tuple
 
 from services.kick.models.message import KickChatMessage
 from shared.logging.logger import get_logger
 
 log = get_logger("kick.chat", runtime="streamsuites")
+
+
+def _normalize_suffix(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    sanitized = "".join(ch if ch.isalnum() else "_" for ch in value)
+    return sanitized.upper()
+
+
+def _resolve_env(prefix: str, channel_hint: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    candidates = {k: v for k, v in os.environ.items() if k.startswith(prefix)}
+    preferred_key = None
+    if channel_hint:
+        normalized = _normalize_suffix(channel_hint)
+        if normalized:
+            preferred_key = f"{prefix}{normalized}"
+    if preferred_key and preferred_key in candidates and candidates[preferred_key]:
+        return candidates[preferred_key], preferred_key
+    if len(candidates) == 1:
+        key = next(iter(candidates))
+        return candidates[key], key
+    return None, preferred_key
 
 
 @dataclass
@@ -22,17 +44,22 @@ class KickCredentials:
     client_secret: str
     username: str
     channel: str
+    resolved_keys: Dict[str, Optional[str]]
 
     def validate(self) -> None:
         missing = []
         if not self.client_id:
-            missing.append("KICK_CLIENT_ID_DANIEL")
+            missing.append(self.resolved_keys.get("client_id") or "KICK_CLIENT_ID_*")
         if not self.client_secret:
-            missing.append("KICK_CLIENT_SECRET")
+            missing.append(
+                self.resolved_keys.get("client_secret") or "KICK_CLIENT_SECRET_*"
+            )
         if not self.username:
-            missing.append("KICK_USERNAME_DANIEL/KICK_BOT_NAME")
+            missing.append(
+                self.resolved_keys.get("username") or "KICK_USERNAME_*/KICK_BOT_NAME"
+            )
         if not self.channel:
-            missing.append("KICK_CHANNEL")
+            missing.append("KICK_CHANNEL/KICK_USERNAME_*/KICK_BOT_NAME")
 
         if missing:
             raise RuntimeError(
@@ -44,20 +71,48 @@ def load_env_credentials(channel_override: Optional[str] = None) -> KickCredenti
     """
     Load Kick credentials from the runtime environment without logging secrets.
 
-    Channel falls back to the username so workers can deterministically emit
-    chat events in single-creator setups.
+    Env keys are matched using wildcard prefixes so multiple creators can be
+    provisioned concurrently (e.g., KICK_CLIENT_ID_DANIEL, KICK_CLIENT_ID_STAGING).
     """
 
-    client_id = os.getenv("KICK_CLIENT_ID_DANIEL", "")
-    client_secret = os.getenv("KICK_CLIENT_SECRET", "")
-    username = os.getenv("KICK_USERNAME_DANIEL", "") or os.getenv("KICK_BOT_NAME", "")
+    channel_hint = channel_override or os.getenv("KICK_CHANNEL")
+    client_id, client_id_key = _resolve_env("KICK_CLIENT_ID_", channel_hint)
+    if not client_id:
+        fallback_id = os.getenv("KICK_CLIENT_ID")
+        if fallback_id:
+            client_id = fallback_id
+            client_id_key = "KICK_CLIENT_ID"
+    client_secret, client_secret_key = _resolve_env(
+        "KICK_CLIENT_SECRET_", channel_hint
+    )
+    if not client_secret:
+        fallback_secret = os.getenv("KICK_CLIENT_SECRET")
+        if fallback_secret:
+            client_secret = fallback_secret
+            client_secret_key = "KICK_CLIENT_SECRET"
+    username, username_key = _resolve_env("KICK_USERNAME_", channel_hint)
+    if not username:
+        fallback_username = os.getenv("KICK_USERNAME")
+        if fallback_username:
+            username = fallback_username
+            username_key = "KICK_USERNAME"
+
+    if not username:
+        username = os.getenv("KICK_BOT_NAME", "")
+        username_key = username_key or "KICK_BOT_NAME"
+
     channel = channel_override or os.getenv("KICK_CHANNEL", "") or username
 
     creds = KickCredentials(
-        client_id=client_id,
-        client_secret=client_secret,
-        username=username,
-        channel=channel,
+        client_id=client_id or "",
+        client_secret=client_secret or "",
+        username=username or "",
+        channel=channel or "",
+        resolved_keys={
+            "client_id": client_id_key,
+            "client_secret": client_secret_key,
+            "username": username_key,
+        },
     )
     creds.validate()
     return creds
@@ -113,24 +168,26 @@ class KickChatClient:
                 break
         log.info("Kick chat session closed for channel=%s", self.credentials.channel)
 
-    async def poll(self) -> Optional[KickChatMessage]:
-        """Return the next buffered message, or None if idle."""
+    async def poll(self) -> Optional[Dict[str, object]]:
+        """Return the next normalized chat event, or None if idle."""
 
         if not self._connected:
             raise RuntimeError("KickChatClient.poll called before connect()")
 
         try:
-            return self._queue.get_nowait()
+            message = self._queue.get_nowait()
         except asyncio.QueueEmpty:
             return None
 
-    async def iter_messages(self) -> AsyncGenerator[KickChatMessage, None]:
-        """Async generator used by older worker contracts."""
+        return message.to_event()
+
+    async def iter_messages(self) -> AsyncGenerator[Dict[str, object], None]:
+        """Async generator returning normalized chat events."""
 
         while self._connected:
-            message = await self.poll()
-            if message:
-                yield message
+            event = await self.poll()
+            if event:
+                yield event
                 continue
             await asyncio.sleep(0.25)
 

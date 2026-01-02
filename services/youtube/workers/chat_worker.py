@@ -7,7 +7,7 @@ from services.triggers.registry import TriggerRegistry
 from services.triggers.validation import NonEmptyChatValidationTrigger
 from services.triggers.actions import ActionExecutor
 from shared.logging.logger import get_logger
-from core.state_exporter import runtime_state
+from core.state_exporter import runtime_state, runtime_snapshot_exporter
 
 from shared.runtime.quotas import (
     quota_registry,
@@ -190,3 +190,9 @@ class YouTubeChatWorker:
 
         if self._actions and actions:
             await self._actions.execute(actions, default_platform="youtube")
+
+        if actions:
+            try:
+                runtime_snapshot_exporter.publish()
+            except Exception:
+                log.debug("Runtime snapshot publish skipped for YouTube trigger")

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
+from typing import Dict, Optional
 
 from core.state_exporter import runtime_state
+from core.state_exporter import runtime_snapshot_exporter
 from services.kick.api.chat import KickChatClient, load_env_credentials
 from services.triggers.actions import ActionExecutor
 from services.triggers.registry import TriggerRegistry
@@ -68,16 +69,17 @@ class KickChatWorker:
         runtime_state.record_platform_status("kick", "inactive", creator_id=self.ctx.creator_id)
         log.info(f"[{self.ctx.creator_id}] Kick chat worker stopped")
 
-    async def _handle_message(self, message) -> None:
-        event = message.to_event()
+    async def _handle_message(self, message: Dict) -> None:
+        event = dict(message)
+        event.setdefault("platform", "kick")
         event["creator_id"] = self.ctx.creator_id
 
         runtime_state.record_platform_event("kick", creator_id=self.ctx.creator_id)
         runtime_state.record_platform_heartbeat("kick")
 
         log.info(
-            f"[{self.ctx.creator_id}] [kick:{message.channel}] "
-            f"{message.username}: {message.text}"
+            f"[{self.ctx.creator_id}] [kick:{event.get('channel')}] "
+            f"{event.get('user', {}).get('name')}: {event.get('text')}"
         )
 
         actions = self._triggers.process(event)
@@ -90,6 +92,12 @@ class KickChatWorker:
 
         if self._actions and actions:
             await self._actions.execute(actions, default_platform="kick")
+
+        # Publish updated counters so trigger activity is visible without logs
+        try:
+            runtime_snapshot_exporter.publish()
+        except Exception:
+            log.debug("Runtime snapshot publish skipped for kick message")
 
 
 __all__ = ["KickChatWorker"]

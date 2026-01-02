@@ -1,12 +1,10 @@
 import asyncio
 import os
 import time
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, TYPE_CHECKING
 
 from core.context import CreatorContext
 from core.state_exporter import runtime_state
-from services.rumble.workers.livestream_worker import RumbleLivestreamWorker
-from services.rumble.browser.browser_client import RumbleBrowserClient
 from services.twitch.workers.chat_worker import TwitchChatWorker
 from services.youtube.workers.chat_worker import YouTubeChatWorker
 from services.kick.workers.chat_worker import KickChatWorker
@@ -18,6 +16,10 @@ from shared.config.services import get_services_config
 from shared.platforms.state import PlatformState, normalize_platform_state
 
 from shared.runtime.quotas import quota_snapshot_aggregator
+
+if TYPE_CHECKING:  # pragma: no cover - import hints only
+    from services.rumble.browser.browser_client import RumbleBrowserClient
+    from services.rumble.workers.livestream_worker import RumbleLivestreamWorker
 
 log = get_logger("core.scheduler")
 
@@ -50,6 +52,8 @@ class Scheduler:
 
         # Track which platforms were started (global, not per-creator)
         self._platforms_started: Set[str] = set()
+        self._rumble_browser_cls: Optional["RumbleBrowserClient"] = None
+        self._rumble_import_error: Optional[str] = None
         self._platform_polling_enabled = bool(platform_polling_enabled)
         self._platform_enable_flags: Dict[str, bool] = {
             "youtube": True,
@@ -193,8 +197,44 @@ class Scheduler:
         )
         try:
             paused_reason = rumble_cfg.get("paused_reason") or "Rumble ingestion paused"
+            rumble_worker_cls = None
 
-            if rumble_state == PlatformState.DISABLED or not rumble_cfg.get("enabled", True):
+            if not self._rumble_import_error:
+                try:
+                    from services.rumble.workers.livestream_worker import (
+                        RumbleLivestreamWorker,
+                    )
+                    from services.rumble.browser.browser_client import (
+                        RumbleBrowserClient,
+                    )
+
+                    rumble_worker_cls = RumbleLivestreamWorker
+                    self._rumble_browser_cls = self._rumble_browser_cls or RumbleBrowserClient
+                except Exception as exc:  # pragma: no cover - defensive
+                    message = f"Rumble dependencies unavailable: {exc}"
+                    self._rumble_import_error = message
+                    runtime_state.record_platform_state(
+                        "rumble",
+                        PlatformState.PAUSED,
+                        paused_reason=message,
+                        creator_id=ctx.creator_id,
+                    )
+                    runtime_state.record_platform_status(
+                        "rumble", "paused", creator_id=ctx.creator_id
+                    )
+                    runtime_state.record_event(
+                        source="rumble",
+                        severity="warning",
+                        message=message,
+                    )
+                    self._creator_platforms_tracked[ctx.creator_id].add("rumble")
+                    log.warning(f"[{ctx.creator_id}] {message}")
+
+            if self._rumble_import_error:
+                log.info(
+                    f"[{ctx.creator_id}] Rumble skipped due to missing dependencies"
+                )
+            elif rumble_state == PlatformState.DISABLED or not rumble_cfg.get("enabled", True):
                 runtime_state.record_platform_state("rumble", PlatformState.DISABLED, creator_id=ctx.creator_id)
                 log.info(f"[{ctx.creator_id}] Rumble skipped (disabled by services.json)")
             elif rumble_state == PlatformState.PAUSED:
@@ -209,7 +249,7 @@ class Scheduler:
                 log.info(f"[{ctx.creator_id}] Rumble PAUSED — worker not started ({paused_reason})")
             elif not ctx.platform_enabled("rumble"):
                 log.info(f"[{ctx.creator_id}] Rumble skipped (disabled for creator)")
-            else:
+            elif rumble_worker_cls:
                 missing_config: List[str] = []
                 if not ctx.rumble_manual_watch_url:
                     missing_config.append("rumble_manual_watch_url")
@@ -246,12 +286,16 @@ class Scheduler:
                     self._creator_platforms_tracked[ctx.creator_id].add("rumble")
                     runtime_state.record_platform_started("rumble", ctx.creator_id)
 
-                    livestream_worker = RumbleLivestreamWorker(
+                    livestream_worker = rumble_worker_cls(
                         ctx=ctx,
                         jobs=self._get_job_registry()
                     )
                     task = asyncio.create_task(livestream_worker.run())
                     self._tasks[ctx.creator_id].append(task)
+            else:
+                log.info(
+                    f"[{ctx.creator_id}] Rumble enabled but worker unavailable — skipped"
+                )
         except Exception as e:
             runtime_state.record_platform_error("rumble", str(e), ctx.creator_id)
             log.error(f"[{ctx.creator_id}] Rumble failed to start: {e}")
@@ -590,10 +634,10 @@ class Scheduler:
                 pass
             self._discord_supervisor = None
 
-        if "rumble" in self._platforms_started:
+        if "rumble" in self._platforms_started and self._rumble_browser_cls:
             try:
                 log.info("Shutting down Rumble browser client")
-                browser = RumbleBrowserClient.instance()
+                browser = self._rumble_browser_cls.instance()
                 await browser.shutdown()
             except Exception:
                 pass
