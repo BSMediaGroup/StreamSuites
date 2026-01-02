@@ -83,6 +83,31 @@ StreamSuites/
 ├── LICENSE
 ├── README.md
 ├── RUNTIME_AUDIT_REPORT.md
+├── changelog/
+│   ├── README.md
+│   └── changelog.runtime.json
+├── clips/
+│   └── output/
+├── core/
+│   ├── README.md
+│   ├── __init__.py
+│   ├── app.py
+│   ├── config_loader.py
+│   ├── context.py
+│   ├── discord_app.py
+│   ├── jobs.py
+│   ├── ratelimits.py
+│   ├── registry.py
+│   ├── scheduler.py
+│   ├── state_exporter.py
+│   ├── shutdown.py
+│   ├── signals.py
+│   └── tallies/
+│       ├── README.md
+│       ├── __init__.py
+│       └── models.py
+├── data/
+│   └── streamsuites.db
 ├── desktop-admin/
 │   ├── StreamSuites.DesktopAdmin.sln
 │   ├── StreamSuites.DesktopAdmin/
@@ -106,33 +131,69 @@ StreamSuites/
 │       ├── FileSnapshotReader.cs
 │       ├── RuntimeConnector.cs
 │       └── StreamSuites.DesktopAdmin.RuntimeBridge.csproj
-├── changelog/
-│   ├── README.md
-│   └── changelog.runtime.json
-├── core/
-│   ├── README.md
-│   ├── __init__.py
-│   ├── app.py
-│   ├── config_loader.py
-│   ├── context.py
-│   ├── discord_app.py
-│   ├── jobs.py
-│   ├── ratelimits.py
-│   ├── registry.py
-│   ├── scheduler.py
-│   ├── state_exporter.py
-│   ├── shutdown.py
-│   ├── signals.py
-│   └── tallies/
-│       ├── README.md
-│       ├── __init__.py
-│       └── models.py
-├── data/
-│   └── streamsuites.db
 ├── docs/
 │   └── POST_MORTEM.md
 ├── exports/
 │   └── public/
+├── media/
+│   ├── capture/
+│   │   ├── rumble.py
+│   │   ├── twitch.py
+│   │   └── youtube.py
+│   ├── jobs/
+│   │   ├── base.py
+│   │   ├── clip_job.py
+│   │   └── upload_job.py
+│   ├── processing/
+│   │   ├── metadata.py
+│   │   ├── transcode.py
+│   │   └── trim.py
+│   └── storage/
+│       ├── buffer.py
+│       ├── cleanup.py
+│       └── clips.py
+├── runtime/
+│   ├── admin/
+│   │   ├── chat_triggers.json
+│   │   ├── creators.json
+│   │   ├── integrations.json
+│   │   ├── jobs.json
+│   │   ├── permissions.json
+│   │   └── rate_limits.json
+│   ├── exports/
+│   │   ├── README.md
+│   │   ├── about.admin.json
+│   │   ├── about.public.json
+│   │   ├── changelog.json
+│   │   ├── changelog.runtime.json
+│   │   ├── clips.json
+│   │   ├── meta.json
+│   │   ├── platforms.json
+│   │   ├── polls.json
+│   │   ├── roadmap.json
+│   │   ├── runtime_snapshot.json
+│   │   ├── scoreboards.json
+│   │   ├── tallies.json
+│   │   └── telemetry/
+│   │       ├── errors.json
+│   │       ├── events.json
+│   │       └── rates.json
+│   ├── signals/
+│   │   ├── chat_events.json
+│   │   ├── poll_votes.json
+│   │   ├── score_events.json
+│   │   └── tally_events.json
+│   └── version.py
+├── schemas/
+│   ├── creators.schema.json
+│   ├── platforms.schema.json
+│   ├── system.schema.json
+│   └── triggers.schema.json
+├── scripts/
+│   ├── bootstrap.py
+│   ├── publish_state.py
+│   ├── update_version.py
+│   └── validate_config.py
 ├── services/
 │   ├── chat_replay/
 │   │   ├── README.md
@@ -140,16 +201,21 @@ StreamSuites/
 │   │   │   └── chat_message.schema.json
 │   │   ├── static/
 │   │   │   ├── chat.css
-│   │   │   ├── themes/
-│   │   │   │   ├── theme-default.css
-│   │   │   │   ├── theme-midnight.css
-│   │   │   │   └── theme-slate.css
-│   │   │   └── chat_mock_data.js
+│   │   │   ├── chat_live_input.css
+│   │   │   ├── chat_mock_data.js
+│   │   │   └── themes/
+│   │   │       ├── theme-default.css
+│   │   │       ├── theme-midnight.css
+│   │   │       └── theme-slate.css
 │   │   └── templates/
-│   │       ├── partials/
-│   │       │   └── theme_selector.html
 │   │       ├── chat_overlay_obs.html
-│   │       └── chat_replay_window.html
+│   │       ├── chat_replay_window.html
+│   │       ├── chat_window.html
+│   │       └── partials/
+│   │           ├── footer_live.html
+│   │           ├── footer_replay.html
+│   │           ├── theme_menu.html
+│   │           └── theme_selector.html
 │   ├── clips/
 │   │   ├── __init__.py
 │   │   ├── encoder.py
@@ -187,7 +253,21 @@ StreamSuites/
 │   │       ├── twitch_live.py
 │   │       ├── twitter_posting.py
 │   │       └── youtube_live.py
+│   ├── kick/
+│   │   ├── __init__.py
+│   │   ├── README.md
+│   │   ├── api/
+│   │   │   ├── __init__.py
+│   │   │   └── chat.py
+│   │   ├── models/
+│   │   │   ├── __init__.py
+│   │   │   └── message.py
+│   │   └── workers/
+│   │       ├── __init__.py
+│   │       ├── chat_worker.py
+│   │       └── livestream_worker.py
 │   ├── pilled/
+│   │   ├── README.md
 │   │   └── api/
 │   │       ├── chat.py
 │   │       └── livestream.py
@@ -218,24 +298,6 @@ StreamSuites/
 │   │   ├── README.md
 │   │   ├── registry.py
 │   │   └── validation.py
-│   ├── kick/
-│   │   ├── __init__.py
-│   │   ├── README.md
-│   │   ├── api/
-│   │   │   ├── __init__.py
-│   │   │   └── chat.py
-│   │   ├── models/
-│   │   │   ├── __init__.py
-│   │   │   └── message.py
-│   │   └── workers/
-│   │       ├── __init__.py
-│   │       ├── chat_worker.py
-│   │       └── livestream_worker.py
-│   ├── pilled/
-│   │   ├── README.md
-│   │   └── api/
-│   │       ├── chat.py
-│   │       └── livestream.py
 │   ├── twitch/
 │   │   ├── README.md
 │   │   ├── api/
@@ -336,100 +398,13 @@ StreamSuites/
 │       ├── hashing.py
 │       ├── retry.py
 │       └── time.py
-├── schemas/
-│   ├── creators.schema.json
-│   ├── platforms.schema.json
-│   ├── system.schema.json
-│   └── triggers.schema.json
-├── clips/
-│   └── output/
-├── media/
-│   ├── capture/
-│   │   ├── rumble.py
-│   │   ├── twitch.py
-│   │   └── youtube.py
-│   ├── jobs/
-│   │   ├── base.py
-│   │   ├── clip_job.py
-│   │   └── upload_job.py
-│   ├── processing/
-│   │   ├── metadata.py
-│   │   ├── transcode.py
-│   │   └── trim.py
-│   └── storage/
-│       ├── buffer.py
-│       ├── cleanup.py
-│       └── clips.py
-├── runtime/
-│   ├── admin/
-│   │   ├── chat_triggers.json
-│   │   ├── creators.json
-│   │   ├── integrations.json
-│   │   ├── jobs.json
-│   │   ├── permissions.json
-│   │   └── rate_limits.json
-│   ├── exports/
-│   │   ├── README.md
-│   │   ├── about.admin.json
-│   │   ├── about.public.json
-│   │   ├── changelog.json
-│   │   ├── changelog.runtime.json
-│   │   ├── clips.json
-│   │   ├── meta.json
-│   │   ├── platforms.json
-│   │   ├── polls.json
-│   │   ├── roadmap.json
-│   │   ├── runtime_snapshot.json
-│   │   ├── scoreboards.json
-│   │   ├── tallies.json
-│   │   └── telemetry/
-│   │       ├── errors.json
-│   │       ├── events.json
-│   │       └── rates.json
-│   ├── signals/
-│   │   ├── chat_events.json
-│   │   ├── poll_votes.json
-│   │   ├── score_events.json
-│   │   └── tally_events.json
-│   └── version.py
-├── scripts/
-│   ├── bootstrap.py
-│   ├── publish_state.py
-│   ├── update_version.py
-│   └── validate_config.py
 ├── tests/
 │   └── __init__.py
+├── requirements.txt
 ├── rumble_chat_poc.py
 ├── rumble_poc/
 ├── twitch_chat_poc.py
-├── test_rumble_api.py
-└── requirements.txt
-```
-
-### Repository tree (additive update: unified chat window + exportable mock-data scaffolding)
-
-```
-StreamSuites/
-└── services/
-    └── chat_replay/
-        ├── README.md
-        ├── contracts/
-        │   └── chat_message.schema.json
-        ├── static/
-        │   ├── chat.css
-        │   ├── chat_live_input.css
-        │   ├── chat_mock_data.js
-        │   └── themes/
-        │       ├── theme-default.css
-        │       ├── theme-midnight.css
-        │       └── theme-slate.css
-        └── templates/
-            ├── chat_overlay_obs.html
-            ├── chat_window.html
-            └── partials/
-                ├── footer_live.html
-                ├── footer_replay.html
-                └── theme_menu.html
+└── test_rumble_api.py
 ```
 
 ### Rumble chat ingest modes
