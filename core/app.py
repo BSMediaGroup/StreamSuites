@@ -20,6 +20,7 @@ from core.state_exporter import runtime_snapshot_exporter, runtime_state
 from shared.logging.logger import get_logger
 from media.jobs.clip_job import ClipJob
 from services.clips.manager import clip_manager
+from core.hot_reload_watcher import HotReloadWatcher
 
 # >>> ADDITIVE: quota snapshot aggregation
 from shared.runtime.quotas import quota_snapshot_aggregator
@@ -67,6 +68,11 @@ async def main(stop_event: asyncio.Event):
         {
             "platform_polling_enabled": system_config.system.platform_polling_enabled,
             "platforms": dict(system_config.system.platforms),
+            "hot_reload": {
+                "enabled": system_config.system.hot_reload.enabled,
+                "watch_path": system_config.system.hot_reload.watch_path,
+                "interval_seconds": system_config.system.hot_reload.interval_seconds,
+            },
         }
     )
     runtime_state.apply_job_config(job_enable_flags)
@@ -183,6 +189,24 @@ async def main(stop_event: asyncio.Event):
 
     runtime_snapshot_task = asyncio.create_task(_runtime_snapshot_loop())
 
+    # ==================================================
+    # OPTIONAL HOT RELOAD WATCHER (FILE-BACKED)
+    # ==================================================
+    hot_reload_task = None
+    if system_config.system.hot_reload.enabled:
+        watcher = HotReloadWatcher(
+            watch_path=system_config.system.hot_reload.watch_path,
+            interval_seconds=system_config.system.hot_reload.interval_seconds,
+        )
+        log.info(
+            "Hot reload watcher enabled — monitoring %s (interval=%ss)",
+            watcher.watch_path,
+            watcher.interval_seconds,
+        )
+        hot_reload_task = asyncio.create_task(watcher.run(stop_event))
+    else:
+        log.info("Hot reload watcher disabled")
+
     # --------------------------------------------------
     # BLOCK UNTIL SHUTDOWN SIGNAL
     # --------------------------------------------------
@@ -203,6 +227,8 @@ async def main(stop_event: asyncio.Event):
     # --------------------------------------------------
     quota_task.cancel()
     runtime_snapshot_task.cancel()
+    if hot_reload_task:
+        hot_reload_task.cancel()
     try:
         await quota_task
     except asyncio.CancelledError:
@@ -211,6 +237,11 @@ async def main(stop_event: asyncio.Event):
         await runtime_snapshot_task
     except asyncio.CancelledError:
         pass
+    if hot_reload_task:
+        try:
+            await hot_reload_task
+        except asyncio.CancelledError:
+            pass
 
     # --------------------------------------------------
     # CLIP RUNTIME SHUTDOWN

@@ -4,12 +4,18 @@
     "platforms": {
       "youtube": { "enabled": true },
       "twitch": { "enabled": true },
-      "discord": { "enabled": true }
+      "discord": { "enabled": true },
+      "kick": { "enabled": false }
     },
     "jobs": {
       "clips": { "enabled": true },
       "polls": { "enabled": true },
       "tallies": { "enabled": true }
+    },
+    "hot_reload": {
+      "enabled": false,
+      "watch_path": "runtime/exports",
+      "interval_seconds": 5
     }
   },
   "clips": {

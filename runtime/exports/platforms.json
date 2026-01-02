@@ -8,7 +8,7 @@
     {"name": "youtube", "status": "active", "mode": "chat+ingest", "notes": "Polling chat, validation trigger emits actions"},
     {"name": "twitch", "status": "active", "mode": "chat+ingest", "notes": "IRC chat ingest with non-empty validation trigger"},
     {"name": "rumble", "status": "paused", "mode": "browser+sse", "notes": "Workers retained; platform intentionally disabled"},
-    {"name": "kick", "status": "scaffold", "mode": "chat-stub", "notes": "Auth + chat stub normalizes messages and triggers actions"},
+    {"name": "kick", "status": "scaffold", "mode": "chat-stub", "notes": "Feature-flagged scheduler wiring runs stub chat worker and trigger counters"},
     {"name": "pilled", "status": "planned", "mode": "ingest-only", "notes": "Architecture reserved for future ingest"}
   ]
 }

@@ -11,7 +11,14 @@
     {"platform": "youtube", "status": "active", "notes": "Polling chat ingestion with trigger evaluation"},
     {"platform": "twitch", "status": "active", "notes": "IRC ingestion with validation trigger"},
     {"platform": "rumble", "status": "paused", "notes": "Browser/SSE ingest retained but disabled"},
-    {"platform": "kick", "status": "scaffold", "notes": "Auth + chat stubs emit normalized chat events"},
+    {"platform": "kick", "status": "scaffold", "notes": "Scheduler-flagged stub chat worker emits normalized events"},
     {"platform": "pilled", "status": "planned", "notes": "Ingest-only placeholders reserved"}
+  ],
+  "control_planes": [
+    {
+      "name": "desktop_admin_exe",
+      "status": "planned",
+      "notes": "Local-only admin surface; runtime exports + restart boundaries prepared for parity with dashboard"
+    }
   ]
 }

@@ -187,6 +187,13 @@
       "status": "planned",
       "progress": 5,
       "description": "Architecture reserved for a future Pilled ingest-only client; placeholders exist but no runtime wiring is active."
+    },
+    {
+      "id": "desktop-admin-control-plane",
+      "title": "Desktop Admin control surface",
+      "status": "planned",
+      "progress": 20,
+      "description": "Local Desktop Admin EXE will read runtime exports/config with restart-safe write boundaries; IPC/HTTP parity planned after file-based validation."
     }
   ]
 }

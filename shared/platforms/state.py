@@ -46,6 +46,7 @@ DEFAULT_PLATFORM_STATES: Dict[str, PlatformState] = {
     "rumble": PlatformState.PAUSED,
     "youtube": PlatformState.ACTIVE,
     "twitch": PlatformState.ACTIVE,
+    "kick": PlatformState.ACTIVE,
 }
 
 

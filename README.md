@@ -94,6 +94,7 @@ StreamSuites/
 │   ├── context.py
 │   ├── discord_app.py
 │   ├── jobs.py
+│   ├── hot_reload_watcher.py
 │   ├── ratelimits.py
 │   ├── registry.py
 │   ├── scheduler.py

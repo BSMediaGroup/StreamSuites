@@ -7,10 +7,11 @@
 - **Twitch** — Active IRC chat worker; continues to reply to `!ping` and now
   registers the validation trigger to prove trigger → action → export flow. 【F:services/twitch/workers/chat_worker.py†L1-L86】【F:services/triggers/validation.py†L1-L26】
 - **Rumble** — Paused; Playwright/SSE workers retained but not orchestrated due
-  to unstable chat_id discovery. 【F:README.md†L28-L52】【F:services/rumble/workers/livestream_worker.py†L1-L35】
-- **Kick** — New scaffold mirrors other platforms: env-checked auth stub,
-  simulated chat client, normalized event shape, trigger wiring, and runtime
-  heartbeat/telemetry hooks. Not yet wired into scheduler. 【F:services/kick/api/chat.py†L1-L86】【F:services/kick/workers/chat_worker.py†L1-L79】
+  to unstable chat_id discovery. Missing credentials/config now surface
+  runtime_state errors without breaking startup. 【F:README.md†L28-L52】【F:core/scheduler.py†L186-L248】
+- **Kick** — Scheduler feature-flag now starts the stub chat worker (offline),
+  exercising NonEmptyChatValidationTrigger and action counters when env creds
+  are present; missing creds surface non-fatal errors. 【F:core/scheduler.py†L300-L360】【F:services/kick/workers/chat_worker.py†L1-L79】
 - **Pilled** — Planned ingest-only; placeholders kept to preserve interfaces for
   future lightweight client. 【F:services/pilled/README.md†L1-L15】【F:services/pilled/api/chat.py†L1-L9】
 
@@ -44,47 +45,44 @@ A minimally functional runtime for StreamSuites is achieved when:
   YouTube/Twitch ingress both pass through the registry, increment trigger
   counters, and optionally hand actions to the ActionExecutor hook.
 
-## 5) Runtime ↔ Dashboard gap (why static GitHub JSON blocks ops)
-- The dashboard reads static JSON from GitHub Pages; runtime changes are not
-  reflected until files are manually regenerated and published. No hot reload or
-  control-plane API exists, so dashboard controls cannot start/stop workers or
-  surface live telemetry.
-- **Minimal solution (file-backed hot reload watcher)**: Add a lightweight
-  runtime-side watcher that reloads config/exports from a local directory and
-  republishes `runtime/exports/*.json` when files change. Dashboard operators can
-  drop updated JSON locally without GitHub latency; runtime emits fresh exports
-  the watcher can also expose over localhost for future UI polling.
+## 5) Runtime ↔ Dashboard gap (file-backed hot reload now optional)
+- Dashboard still reads static JSON (e.g., `StreamSuites-Dashboard/data/runtime_snapshot.json`), but a new optional
+  `HotReloadWatcher` can re-publish runtime snapshots + telemetry whenever files under `runtime/exports/` change. It is disabled
+  by default, bounded by a configurable interval, and driven by `system.hot_reload` in `shared/config/system.json`. 【F:core/hot_reload_watcher.py†L1-L90】【F:runtime/exports/README.md†L9-L21】【F:shared/config/system.json†L2-L22】
 
 ## 6) Roadmap + documentation placements
-- About exports now list platform statuses including Kick scaffold and Pilled
-  planned ingest-only. 【F:runtime/exports/about.public.json†L1-L19】【F:runtime/exports/about.admin.json†L1-L19】
-- A new `platforms.json` state export captures active/paused/scaffold/planned
-  modes for YouTube, Twitch, Rumble, Kick, and Pilled. 【F:runtime/exports/platforms.json†L1-L16】
-- Roadmap retains existing items; Kick/Pilled planning is documented via the new
-  platform export and about manifests, keeping dashboard consumers aware of
-  future platforms.
+- About exports list platform statuses and now track the planned Desktop Admin EXE control plane for parity planning. 【F:runtime/exports/about.public.json†L1-L23】【F:runtime/exports/about.admin.json†L1-L23】
+- `platforms.json` notes Kick’s scheduler wiring under a feature flag and keeps Rumble paused. 【F:runtime/exports/platforms.json†L1-L13】
+- Roadmap adds a desktop-admin/local control surface entry alongside existing ingestion items. 【F:runtime/exports/roadmap.json†L1-L118】
 
-## 7) Implementation prompt (ready for next Codex session)
+## 7) Desktop Admin control plane readiness
+- System config now carries an explicit hot-reload toggle + watch path to bound file-based admin writes; runtime_state ingests it
+  alongside platform flags to preserve deterministic startup/shutdown. 【F:shared/config/system.py†L31-L86】【F:core/app.py†L22-L120】
+- Control-plane expectations are documented via about/roadmap exports so the Desktop Admin EXE can rely on file-based exports
+  first, with future IPC/HTTP hooks added later. 【F:runtime/exports/about.admin.json†L13-L23】【F:runtime/exports/roadmap.json†L1-L118】
+- Desktop Admin EXE is positioned as a local control surface: runtime remains authoritative, dashboard stays read-only, and any
+  future write paths must stay within the documented file-based boundaries until IPC/HTTP parity is validated. 【F:RUNTIME_AUDIT_REPORT.md†L1-L120】
+
+## 8) Implementation prompt (next Codex session — enriched)
 ```
-You are implementing StreamSuites Runtime (v0.2.2-alpha) based on the latest
-runtime audit.
+You are implementing StreamSuites Runtime (v0.2.2-alpha) based on this audit.
 
 Goals:
-1) Wire the new Kick scaffold into core/scheduler with a feature flag so it can
-   run the stub chat worker without impacting other platforms. Use the existing
-   env vars (client ID/secret, username, bot name) but never log secrets. Treat
-   the chat client as offline; just exercise trigger + runtime_state updates.
-2) Add a file-backed hot reload watcher that detects changes under a configurable
-   directory (default: runtime/exports/) and republishes exports/telemetry to the
-   dashboard-friendly JSON files. Keep it optional and disabled by default.
-3) Preserve Rumble as paused; do not enable its workers. Ensure scheduler
-   handles missing Rumble credentials without fatal errors.
-4) Keep the `NonEmptyChatValidationTrigger` registered for YouTube/Twitch/Kick
-   and surface emitted actions through runtime_state counters for visibility.
-5) Maintain deterministic shutdown and logging; avoid introducing side effects
-   or non-deterministic retries.
+1) Keep Kick chat scaffold feature-flagged in core scheduler: start the stub chat worker only when `system.platforms.kick`
+   is enabled, use env creds (client ID/secret/username/bot name) without logging secrets, and treat the client as offline
+   while still emitting normalized chat events + NonEmptyChatValidationTrigger actions into runtime_state.
+2) Maintain trigger visibility across YouTube/Twitch/Kick by keeping `NonEmptyChatValidationTrigger` registered and surfacing
+   runtime_state counters/telemetry in `runtime/exports/platforms.json` and dashboard consumers (e.g.,
+   StreamSuites-Dashboard/js/platforms/kick.js and twitch.js readers of export snapshots).
+3) Preserve Rumble paused: record paused status + paused_reason, guard against missing `rumble_manual_watch_url` or
+   `rumble_livestream_api_env_key` without fatal errors, and avoid starting workers.
+4) Keep the optional HotReloadWatcher disabled by default but available via `shared/config/system.json` (`system.hot_reload`):
+   monitor `runtime/exports/` (configurable), debounce via bounded intervals, and re-publish runtime_snapshot + telemetry that
+   downstream dashboards read from `runtime/exports/*.json` / StreamSuites-Dashboard/data/*.json. No secrets in logs; no
+   unbounded polling loops.
+5) Document/Desktop Admin EXE readiness: continue publishing about/roadmap control-plane notes, keep restart-applied config
+   hashes intact, and describe file-based + future local IPC/HTTP interaction so the Desktop Admin EXE can manage configs
+   without mutating dashboard-controlled data.
 
-Deliverables: scheduler flag + Kick worker wiring, hot reload watcher module with
-minimal tests or manual steps, and updated exports/README documenting how the
-watcher is toggled and where new platform status is surfaced.
+Guardrails: deterministic startup/shutdown, feature flags only, no breaking changes to existing bots, and no secret logging.
 ```
