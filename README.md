@@ -83,6 +83,29 @@ StreamSuites/
 ├── LICENSE
 ├── README.md
 ├── RUNTIME_AUDIT_REPORT.md
+├── desktop-admin/
+│   ├── StreamSuites.DesktopAdmin.sln
+│   ├── StreamSuites.DesktopAdmin/
+│   │   ├── App.config
+│   │   ├── MainForm.Designer.cs
+│   │   ├── MainForm.cs
+│   │   ├── Program.cs
+│   │   └── StreamSuites.DesktopAdmin.csproj
+│   ├── StreamSuites.DesktopAdmin.Core/
+│   │   ├── AppState.cs
+│   │   ├── ModeContext.cs
+│   │   └── StreamSuites.DesktopAdmin.Core.csproj
+│   ├── StreamSuites.DesktopAdmin.Models/
+│   │   ├── PlatformStatus.cs
+│   │   ├── RuntimeSnapshot.cs
+│   │   ├── TelemetrySnapshot.cs
+│   │   ├── TriggerCounter.cs
+│   │   └── StreamSuites.DesktopAdmin.Models.csproj
+│   └── StreamSuites.DesktopAdmin.RuntimeBridge/
+│       ├── AdminCommandDispatcher.cs
+│       ├── FileSnapshotReader.cs
+│       ├── RuntimeConnector.cs
+│       └── StreamSuites.DesktopAdmin.RuntimeBridge.csproj
 ├── changelog/
 │   ├── README.md
 │   └── changelog.runtime.json
