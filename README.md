@@ -54,6 +54,10 @@ re-enablement.
 - `changelog/` + `scripts/`: version stamping and release utilities.
 - `services/{twitch,youtube,discord}/`: other platform runtimes and control
   plane implementations.
+- `services/kick/`: Kick chat scaffold (auth + chat stubs, normalized events,
+  trigger wiring) ready for future scheduler wiring.
+- `services/pilled/`: Planned ingest-only placeholders for Pilled; no runtime
+  wiring or network calls yet.
 - `services/chat_replay/`: neutral chat replay scaffolding that ships static, exportable HTML surfaces (pop-out window and OBS
   overlay) plus a placeholder schema for future replay ingestion; all visuals are mock-data only and avoid live wiring.
   - `contracts/chat_message.schema.json`: placeholder unified chat replay contract for future ingestion and export validation.
@@ -189,7 +193,22 @@ StreamSuites/
 │   │   ├── actions.py
 │   │   ├── base.py
 │   │   ├── README.md
-│   │   └── registry.py
+│   │   ├── registry.py
+│   │   └── validation.py
+│   ├── kick/
+│   │   ├── README.md
+│   │   ├── api/
+│   │   │   └── chat.py
+│   │   ├── models/
+│   │   │   └── message.py
+│   │   └── workers/
+│   │       ├── chat_worker.py
+│   │       └── livestream_worker.py
+│   ├── pilled/
+│   │   ├── README.md
+│   │   └── api/
+│   │       ├── chat.py
+│   │       └── livestream.py
 │   ├── twitch/
 │   │   ├── README.md
 │   │   ├── api/
@@ -322,11 +341,15 @@ StreamSuites/
 │   │   └── rate_limits.json
 │   ├── exports/
 │   │   ├── README.md
+│   │   ├── about.admin.json
+│   │   ├── about.public.json
 │   │   ├── changelog.json
 │   │   ├── changelog.runtime.json
 │   │   ├── clips.json
 │   │   ├── meta.json
+│   │   ├── platforms.json
 │   │   ├── polls.json
+│   │   ├── roadmap.json
 │   │   ├── scoreboards.json
 │   │   ├── tallies.json
 │   │   └── telemetry/

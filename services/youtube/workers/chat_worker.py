@@ -4,6 +4,7 @@ from typing import Optional
 from services.youtube.api.chat import YouTubeChatClient
 from services.youtube.models.message import YouTubeChatMessage
 from services.triggers.registry import TriggerRegistry
+from services.triggers.validation import NonEmptyChatValidationTrigger
 from services.triggers.actions import ActionExecutor
 from shared.logging.logger import get_logger
 from core.state_exporter import runtime_state
@@ -92,6 +93,7 @@ class YouTubeChatWorker:
         # --------------------------------------------------
 
         self._triggers = TriggerRegistry(creator_id=ctx.creator_id)
+        self._triggers.register(NonEmptyChatValidationTrigger())
         self._actions = action_executor
 
         self._stop_event = asyncio.Event()

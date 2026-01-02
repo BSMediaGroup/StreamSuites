@@ -21,3 +21,8 @@ separate concerns.
 - Scoring (elsewhere): scoreboard registry + future math.
 - Storage: runtime/state publishers remain the source of truth; dashboards read
   published snapshots.
+
+## Validation trigger (smoke test)
+- `NonEmptyChatValidationTrigger` fires on any non-empty chat message and emits
+  a `validation_passed` action descriptor. This keeps trigger → action →
+  exporter wiring observable even while chat pipelines are stubbed.
