@@ -9,6 +9,7 @@
     {"file": "clips.json", "visibility": "public", "description": "Published clips with deterministic fields"},
     {"file": "polls.json", "visibility": "public", "description": "Closed polls and their aggregated votes"},
     {"file": "tallies.json", "visibility": "public", "description": "Running tally counters for streams"},
-    {"file": "scoreboards.json", "visibility": "public", "description": "Scoreboard positions and scores"}
+    {"file": "scoreboards.json", "visibility": "public", "description": "Scoreboard positions and scores"},
+    {"file": "platforms.json", "visibility": "public", "description": "Runtime platform statuses including Kick scaffold and Pilled plan"}
   ]
 }

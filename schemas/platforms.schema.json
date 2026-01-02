@@ -16,13 +16,32 @@
         "properties": {
           "name": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "enum": [
+              "youtube",
+              "twitch",
+              "rumble",
+              "kick",
+              "pilled"
+            ]
           },
           "enabled": {
             "type": "boolean"
           },
           "telemetry_enabled": {
             "type": "boolean"
+          },
+          "mode": {
+            "type": "string",
+            "description": "ingest-only, chat-stub, or chat+ingest",
+            "enum": ["ingest-only", "chat-stub", "chat+ingest", "browser+sse"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "paused", "scaffold", "planned"]
+          },
+          "notes": {
+            "type": "string"
           }
         }
       }

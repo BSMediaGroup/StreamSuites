@@ -14,6 +14,15 @@
       "username": "ExampleViewer",
       "message": "Great stream!",
       "message_at": "2024-01-01T00:00:00Z"
+    },
+    {
+      "event_id": "chat-evt-000002",
+      "creator": "example-creator",
+      "platform": "kick",
+      "user_id": "kick-2",
+      "username": "Moderator",
+      "message": "!validate",
+      "message_at": "2026-01-20T00:00:05Z"
     }
   ]
 }

@@ -173,6 +173,20 @@
       "status": "planned",
       "progress": 10,
       "description": "Deterministic replay ingestion is planned; chat replay overlays continue to use mock data until runtime export wiring is added."
+    },
+    {
+      "id": "kick-chatbot-scaffold",
+      "title": "Kick chatbot scaffold",
+      "status": "active",
+      "progress": 35,
+      "description": "Kick auth/chat stubs created to mirror Twitch/YouTube interfaces with validation trigger wiring; scheduler integration is next."
+    },
+    {
+      "id": "pilled-ingest-plan",
+      "title": "Pilled ingest-only planning",
+      "status": "planned",
+      "progress": 5,
+      "description": "Architecture reserved for a future Pilled ingest-only client; placeholders exist but no runtime wiring is active."
     }
   ]
 }

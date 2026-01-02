@@ -1,0 +1,14 @@
+{
+  "meta": {
+    "generated_at": "2026-01-20T00:00:00Z",
+    "source": "StreamSuites runtime",
+    "scope": "platform-status"
+  },
+  "platforms": [
+    {"name": "youtube", "status": "active", "mode": "chat+ingest", "notes": "Polling chat, validation trigger emits actions"},
+    {"name": "twitch", "status": "active", "mode": "chat+ingest", "notes": "IRC chat ingest with non-empty validation trigger"},
+    {"name": "rumble", "status": "paused", "mode": "browser+sse", "notes": "Workers retained; platform intentionally disabled"},
+    {"name": "kick", "status": "scaffold", "mode": "chat-stub", "notes": "Auth + chat stub normalizes messages and triggers actions"},
+    {"name": "pilled", "status": "planned", "mode": "ingest-only", "notes": "Architecture reserved for future ingest"}
+  ]
+}
