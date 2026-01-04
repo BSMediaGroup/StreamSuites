@@ -72,7 +72,7 @@ re-enablement.
   - Avatars: circular avatar column is reserved in markup and styles; missing or failed images automatically fall back to
     `docs/assets/icons/ui/profile.svg` so replay operators never ship a broken or empty avatar state.
 
-### Repository tree (updated with chat replay scaffolding)
+### Repository tree (updated with desktop admin scaffolding)
 
 ```
 StreamSuites/
@@ -116,8 +116,39 @@ StreamSuites/
 │   │   ├── App.config
 │   │   ├── MainForm.Designer.cs
 │   │   ├── MainForm.cs
+│   │   ├── MainForm.resx
 │   │   ├── Program.cs
-│   │   └── StreamSuites.DesktopAdmin.csproj
+│   │   ├── StreamSuites.DesktopAdmin.csproj
+│   │   ├── StreamSuites.DesktopAdmin.csproj.user
+│   │   └── assets/
+│   │       ├── discord-0.svg
+│   │       ├── discord-muted.svg
+│   │       ├── discord.png
+│   │       ├── discord.svg
+│   │       ├── kick-0.svg
+│   │       ├── kick-muted.svg
+│   │       ├── kick.png
+│   │       ├── kick.svg
+│   │       ├── pilled-0.svg
+│   │       ├── pilled-muted.svg
+│   │       ├── pilled.png
+│   │       ├── pilled.svg
+│   │       ├── rumble-0.svg
+│   │       ├── rumble-muted.svg
+│   │       ├── rumble.png
+│   │       ├── rumble.svg
+│   │       ├── streamsuites.ico
+│   │       ├── twitch-0.svg
+│   │       ├── twitch-muted.svg
+│   │       ├── twitch.png
+│   │       ├── twitch.svg
+│   │       ├── twitter-0.svg
+│   │       ├── twitter-muted.svg
+│   │       ├── twitter.svg
+│   │       ├── youtube-0.svg
+│   │       ├── youtube-muted.svg
+│   │       ├── youtube.png
+│   │       └── youtube.svg
 │   ├── StreamSuites.DesktopAdmin.Core/
 │   │   ├── AppState.cs
 │   │   ├── ModeContext.cs
@@ -133,6 +164,11 @@ StreamSuites/
 │       ├── FileSnapshotReader.cs
 │       ├── RuntimeConnector.cs
 │       └── StreamSuites.DesktopAdmin.RuntimeBridge.csproj
+├── desktop-admin/.vs/
+│   └── ProjectEvaluation/
+│       ├── streamsuites.desktopadmin.metadata.v10.bin
+│       ├── streamsuites.desktopadmin.projects.v10.bin
+│       └── streamsuites.desktopadmin.strings.v10.bin
 ├── docs/
 │   ├── POST_MORTEM.md
 │   └── assets/
@@ -415,6 +451,50 @@ StreamSuites/
 ├── twitch_chat_poc.py
 └── test_rumble_api.py
 ```
+
+## StreamSuites Desktop Admin (WinForms control plane)
+
+StreamSuites Desktop Admin is a WinForms-based administrator console that reads
+runtime-exported snapshots and surfaces platform health, platform enablement,
+and telemetry freshness in a native desktop experience. The admin app uses a
+Runtime Bridge layer (`StreamSuites.DesktopAdmin.RuntimeBridge`) to read
+`runtime_snapshot.json` from the runtime's export directory and projects the
+data into a grid with tray-aware health indicators, per-platform inspectors,
+and configurable refresh cadences.
+
+- **Purpose:** give operators a lightweight desktop UI that mirrors runtime
+  exports without adding new mutation paths. Snapshot reading is isolated in the
+  Runtime Bridge (`FileSnapshotReader` + `RuntimeConnector`), and all
+  computations are held in `StreamSuites.DesktopAdmin.Core` (`AppState`,
+  `ModeContext`).
+- **Runtime interaction:** reads snapshot files written by the Python runtime;
+  no direct sockets or API calls are required. Platform counts, staleness
+  thresholds, and snapshot metadata are displayed inline with color-coded health
+  badges and a tray icon.
+- **Progress:** `[██████░░░░]` Snapshot reading, grid rendering, and health/tray
+  surfacing are live. Runtime lifecycle controls (reserved in
+  `RuntimeExecutablePath`) are staged for a later milestone.
+
+### Running runtime + desktop admin together
+
+1. **Start the runtime exports loop:** launch the Python runtime so it keeps
+   writing `runtime/exports/runtime_snapshot.json` (for example `python -m
+   core.app` or the scheduler entrypoint used in your environment).
+2. **Point Desktop Admin at the snapshot directory:** update
+   `desktop-admin/StreamSuites.DesktopAdmin/App.config` `SnapshotDirectory`
+   to the absolute path of the runtime export root (e.g., the `runtime/exports`
+   directory in this repo or a published dashboard checkout such as
+   `../StreamSuites-Dashboard/docs/shared/state`). The default file name remains
+   `runtime_snapshot.json` but can be overridden via `SnapshotFileName`.
+3. **Build and run the WinForms app:** open
+   `desktop-admin/StreamSuites.DesktopAdmin.sln` in Visual Studio on Windows and
+   run the `StreamSuites.DesktopAdmin` project. The app will refresh snapshots
+   on the interval defined by `SnapshotRefreshIntervalMs` and mark stale states
+   using `SnapshotStaleAfterSeconds`.
+
+When both processes are active, the desktop admin presents live platform and
+telemetry status sourced from the runtime exports while keeping the runtime the
+sole authority for state changes.
 
 ### Rumble chat ingest modes
 
