@@ -1,15 +1,27 @@
 using StreamSuites.DesktopAdmin.Models;
 
-namespace StreamSuites.DesktopAdmin.Core;
-
-public class AppState
+namespace StreamSuites.DesktopAdmin.Core
 {
-    public AppState(ModeContext modeContext)
+    /// <summary>
+    /// Central application state container for the desktop admin UI.
+    /// Mirrors the role of the global app state in the web dashboard.
+    /// </summary>
+    public class AppState
     {
-        ModeContext = modeContext;
+        public AppState(ModeContext modeContext)
+        {
+            ModeContext = modeContext;
+        }
+
+        /// <summary>
+        /// Current UI mode / view context.
+        /// </summary>
+        public ModeContext ModeContext { get; }
+
+        /// <summary>
+        /// Most recently ingested runtime snapshot.
+        /// Null until the first successful load.
+        /// </summary>
+        public RuntimeSnapshot LastSnapshot { get; set; }
     }
-
-    public ModeContext ModeContext { get; }
-
-    public RuntimeSnapshot? LastSnapshot { get; set; }
 }

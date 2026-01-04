@@ -1,16 +1,32 @@
-namespace StreamSuites.DesktopAdmin.Core;
-
-public class ModeContext
+namespace StreamSuites.DesktopAdmin.Core
 {
-    public ModeContext(string currentMode)
+    /// <summary>
+    /// Represents the current operational mode of the admin UI.
+    /// This mirrors high-level routing / mode state in the web dashboard.
+    /// </summary>
+    public class ModeContext
     {
-        CurrentMode = string.IsNullOrWhiteSpace(currentMode) ? "Unknown" : currentMode;
-    }
+        public ModeContext(string currentMode)
+        {
+            CurrentMode = string.IsNullOrWhiteSpace(currentMode)
+                ? "Unknown"
+                : currentMode;
+        }
 
-    public string CurrentMode { get; private set; }
+        /// <summary>
+        /// The active mode identifier (e.g. Dashboard, Telemetry, Config).
+        /// </summary>
+        public string CurrentMode { get; private set; }
 
-    public void SetMode(string mode)
-    {
-        CurrentMode = string.IsNullOrWhiteSpace(mode) ? CurrentMode : mode;
+        /// <summary>
+        /// Switches the current mode if a valid value is provided.
+        /// </summary>
+        public void SetMode(string mode)
+        {
+            if (!string.IsNullOrWhiteSpace(mode))
+            {
+                CurrentMode = mode;
+            }
+        }
     }
 }

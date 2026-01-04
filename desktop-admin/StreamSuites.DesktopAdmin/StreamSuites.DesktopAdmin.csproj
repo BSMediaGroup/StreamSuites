@@ -1,14 +1,46 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-  </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\StreamSuites.DesktopAdmin.Core\StreamSuites.DesktopAdmin.Core.csproj" />
-    <ProjectReference Include="..\StreamSuites.DesktopAdmin.RuntimeBridge\StreamSuites.DesktopAdmin.RuntimeBridge.csproj" />
-    <ProjectReference Include="..\StreamSuites.DesktopAdmin.Models\StreamSuites.DesktopAdmin.Models.csproj" />
-  </ItemGroup>
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<!-- Application type -->
+		<OutputType>WinExe</OutputType>
+
+		<!-- Target runtime -->
+		<TargetFramework>net8.0-windows</TargetFramework>
+
+		<!-- WinForms -->
+		<UseWindowsForms>true</UseWindowsForms>
+
+		<!-- Explicit language behavior -->
+		<ImplicitUsings>false</ImplicitUsings>
+		<Nullable>disable</Nullable>
+
+		<!-- Assembly identity -->
+		<RootNamespace>StreamSuites.DesktopAdmin</RootNamespace>
+		<AssemblyName>StreamSuites.DesktopAdmin</AssemblyName>
+
+		<!-- Application identity -->
+		<AssemblyTitle>StreamSuites™ Administrator Dashboard</AssemblyTitle>
+		<AssemblyProduct>StreamSuites™</AssemblyProduct>
+		<AssemblyCompany>Brainstream Media Group</AssemblyCompany>
+		<AssemblyDescription>
+			Desktop administrative dashboard for StreamSuites™ runtime.
+		</AssemblyDescription>
+
+		<!-- App icon -->
+		<ApplicationIcon>assets\streamsuites.ico</ApplicationIcon>
+	</PropertyGroup>
+
+	<!-- Explicit asset inclusion -->
+	<ItemGroup>
+		<Content Include="assets\streamsuites.ico">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\StreamSuites.DesktopAdmin.Core\StreamSuites.DesktopAdmin.Core.csproj" />
+		<ProjectReference Include="..\StreamSuites.DesktopAdmin.Models\StreamSuites.DesktopAdmin.Models.csproj" />
+		<ProjectReference Include="..\StreamSuites.DesktopAdmin.RuntimeBridge\StreamSuites.DesktopAdmin.RuntimeBridge.csproj" />
+	</ItemGroup>
+
 </Project>

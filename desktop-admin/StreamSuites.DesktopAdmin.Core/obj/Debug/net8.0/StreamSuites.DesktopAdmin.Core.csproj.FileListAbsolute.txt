@@ -1,0 +1,16 @@
+X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\bin\Debug\net8.0\StreamSuites.DesktopAdmin.Core.deps.json
+X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\bin\Debug\net8.0\StreamSuites.DesktopAdmin.Core.dll
+X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\bin\Debug\net8.0\StreamSuites.DesktopAdmin.Core.pdb
+X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\bin\Debug\net8.0\StreamSuites.DesktopAdmin.Models.dll
+X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\bin\Debug\net8.0\StreamSuites.DesktopAdmin.Models.pdb
+X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Debug\net8.0\StreamSuites.DesktopAdmin.Core.csproj.AssemblyReference.cache
+X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Debug\net8.0\StreamSuites.DesktopAdmin.Core.GeneratedMSBuildEditorConfig.editorconfig
+X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Debug\net8.0\StreamSuites.DesktopAdmin.Core.AssemblyInfoInputs.cache
+X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Debug\net8.0\StreamSuites.DesktopAdmin.Core.AssemblyInfo.cs
+X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Debug\net8.0\StreamSuites.DesktopAdmin.Core.csproj.CoreCompileInputs.cache
+X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Debug\net8.0\StreamSuites.DesktopAdmin.Core.sourcelink.json
+X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Debug\net8.0\StreamSu.71EC374E.Up2Date
+X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Debug\net8.0\StreamSuites.DesktopAdmin.Core.dll
+X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Debug\net8.0\refint\StreamSuites.DesktopAdmin.Core.dll
+X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Debug\net8.0\StreamSuites.DesktopAdmin.Core.pdb
+X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Debug\net8.0\ref\StreamSuites.DesktopAdmin.Core.dll

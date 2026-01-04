@@ -1,16 +1,221 @@
 {
   "schema_version": "v1",
-  "generated_at": "2026-01-02T07:33:57.817890Z",
-  "heartbeat": "2026-01-02T07:33:57.817890Z",
+  "generated_at": "2026-01-04T06:46:00.392685Z",
+  "heartbeat": "2026-01-04T06:46:00.392685Z",
   "runtime": {
-    "project": "StreamSuites™ Runtime",
+    "project": "StreamSuites\u2122 Runtime",
     "version": "v0.2.2-alpha",
     "build": "2025.03"
   },
-  "system": {},
-  "jobs": [],
-  "platforms": [],
-  "creators": [],
+  "system": {
+    "platform_polling_enabled": {
+      "enabled": true
+    },
+    "platforms": {
+      "youtube": true,
+      "twitch": true,
+      "discord": true,
+      "kick": false
+    },
+    "hot_reload": {
+      "enabled": false,
+      "watch_path": "runtime/exports",
+      "interval_seconds": 5.0
+    }
+  },
+  "jobs": [
+    {
+      "name": "clips",
+      "enabled": true,
+      "applied": true,
+      "reason": null
+    },
+    {
+      "name": "polls",
+      "enabled": true,
+      "applied": true,
+      "reason": null
+    },
+    {
+      "name": "tallies",
+      "enabled": true,
+      "applied": true,
+      "reason": null
+    }
+  ],
+  "platforms": [
+    {
+      "name": "discord",
+      "platform": "discord",
+      "enabled": false,
+      "paused": false,
+      "telemetry_enabled": false,
+      "state": "disabled",
+      "status": "disabled",
+      "paused_reason": null,
+      "last_heartbeat": null,
+      "last_success_ts": null,
+      "last_event_ts": null,
+      "error": null,
+      "counters": {
+        "messages": 0,
+        "triggers": 0,
+        "actions": 0,
+        "actions_failed": 0
+      },
+      "replay_supported": false,
+      "overlay_supported": false
+    },
+    {
+      "name": "kick",
+      "platform": "kick",
+      "enabled": false,
+      "paused": false,
+      "telemetry_enabled": true,
+      "state": "disabled",
+      "status": "disabled",
+      "paused_reason": null,
+      "last_heartbeat": null,
+      "last_success_ts": null,
+      "last_event_ts": null,
+      "error": null,
+      "counters": {
+        "messages": 0,
+        "triggers": 0,
+        "actions": 0,
+        "actions_failed": 0
+      },
+      "replay_supported": false,
+      "overlay_supported": false
+    },
+    {
+      "name": "pilled",
+      "platform": "pilled",
+      "enabled": false,
+      "paused": false,
+      "telemetry_enabled": false,
+      "state": "disabled",
+      "status": "disabled",
+      "paused_reason": null,
+      "last_heartbeat": null,
+      "last_success_ts": null,
+      "last_event_ts": null,
+      "error": null,
+      "counters": {
+        "messages": 0,
+        "triggers": 0,
+        "actions": 0,
+        "actions_failed": 0
+      },
+      "replay_supported": true,
+      "overlay_supported": false
+    },
+    {
+      "name": "rumble",
+      "platform": "rumble",
+      "enabled": true,
+      "paused": true,
+      "telemetry_enabled": true,
+      "state": "paused",
+      "status": "paused",
+      "paused_reason": "Rumble dependencies unavailable: No module named 'playwright'",
+      "last_heartbeat": "2026-01-04T06:45:59.308999Z",
+      "last_success_ts": null,
+      "last_event_ts": null,
+      "error": null,
+      "counters": {
+        "messages": 0,
+        "triggers": 0,
+        "actions": 0,
+        "actions_failed": 0
+      },
+      "replay_supported": false,
+      "overlay_supported": false
+    },
+    {
+      "name": "twitch",
+      "platform": "twitch",
+      "enabled": false,
+      "paused": false,
+      "telemetry_enabled": false,
+      "state": "disabled",
+      "status": "disabled",
+      "paused_reason": null,
+      "last_heartbeat": null,
+      "last_success_ts": null,
+      "last_event_ts": null,
+      "error": null,
+      "counters": {
+        "messages": 0,
+        "triggers": 0,
+        "actions": 0,
+        "actions_failed": 0
+      },
+      "replay_supported": true,
+      "overlay_supported": true
+    },
+    {
+      "name": "twitter",
+      "platform": "twitter",
+      "enabled": true,
+      "paused": false,
+      "telemetry_enabled": true,
+      "state": "active",
+      "status": "inactive",
+      "paused_reason": null,
+      "last_heartbeat": null,
+      "last_success_ts": null,
+      "last_event_ts": null,
+      "error": null,
+      "counters": {
+        "messages": 0,
+        "triggers": 0,
+        "actions": 0,
+        "actions_failed": 0
+      },
+      "replay_supported": false,
+      "overlay_supported": false
+    },
+    {
+      "name": "youtube",
+      "platform": "youtube",
+      "enabled": true,
+      "paused": false,
+      "telemetry_enabled": true,
+      "state": "active",
+      "status": "inactive",
+      "paused_reason": null,
+      "last_heartbeat": null,
+      "last_success_ts": null,
+      "last_event_ts": null,
+      "error": null,
+      "counters": {
+        "messages": 0,
+        "triggers": 0,
+        "actions": 0,
+        "actions_failed": 0
+      },
+      "replay_supported": true,
+      "overlay_supported": true
+    }
+  ],
+  "creators": [
+    {
+      "creator_id": "As5TyU",
+      "display_name": "Daniel Clancy",
+      "enabled": true,
+      "platforms": {
+        "rumble": true,
+        "youtube": true,
+        "twitch": true,
+        "pilled": false,
+        "twitter": true,
+        "discord": true
+      },
+      "last_heartbeat": "2026-01-04T06:45:59.307992Z",
+      "error": null
+    }
+  ],
   "triggers": {
     "source": "shared"
   },

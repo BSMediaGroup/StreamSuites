@@ -1,73 +1,101 @@
+using System.IO;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using StreamSuites.DesktopAdmin.Models;
 
-namespace StreamSuites.DesktopAdmin.RuntimeBridge;
-
-public interface IFileAccessor
+namespace StreamSuites.DesktopAdmin.RuntimeBridge
 {
-    Task<bool> ExistsAsync(string path, CancellationToken cancellationToken = default);
-
-    Task<string?> ReadAllTextAsync(string path, CancellationToken cancellationToken = default);
-}
-
-public class DefaultFileAccessor : IFileAccessor
-{
-    public Task<bool> ExistsAsync(string path, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Abstraction for filesystem access to allow testing and isolation.
+    /// </summary>
+    public interface IFileAccessor
     {
-        return Task.FromResult(File.Exists(path));
+        Task<bool> ExistsAsync(string path, CancellationToken cancellationToken = default);
+        Task<string> ReadAllTextAsync(string path, CancellationToken cancellationToken = default);
     }
 
-    public async Task<string?> ReadAllTextAsync(string path, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Default filesystem-backed implementation of IFileAccessor.
+    /// </summary>
+    public class DefaultFileAccessor : IFileAccessor
     {
-        if (!File.Exists(path))
+        public Task<bool> ExistsAsync(string path, CancellationToken cancellationToken = default)
         {
-            return null;
+            return Task.FromResult(File.Exists(path));
         }
 
-        return await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
-    }
-}
-
-public class FileSnapshotReader
-{
-    private readonly IFileAccessor _fileAccessor;
-    private readonly JsonSerializerOptions _serializerOptions;
-
-    public FileSnapshotReader(IFileAccessor fileAccessor)
-    {
-        _fileAccessor = fileAccessor;
-        _serializerOptions = new JsonSerializerOptions
+        public async Task<string> ReadAllTextAsync(string path, CancellationToken cancellationToken = default)
         {
-            PropertyNameCaseInsensitive = true,
-            WriteIndented = false
-        };
+            if (!File.Exists(path))
+            {
+                return string.Empty;
+            }
+
+            return await File.ReadAllTextAsync(path, cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 
-    public async Task<RuntimeSnapshot?> TryReadSnapshotAsync(string path, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Reads and deserializes runtime snapshot files exported by the StreamSuites runtime.
+    /// </summary>
+    public class FileSnapshotReader
     {
-        if (string.IsNullOrWhiteSpace(path))
+        private readonly IFileAccessor _fileAccessor;
+        private readonly JsonSerializerOptions _serializerOptions;
+
+        public FileSnapshotReader(IFileAccessor fileAccessor)
         {
-            return null;
+            _fileAccessor = fileAccessor;
+
+            _serializerOptions = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                WriteIndented = false
+            };
         }
 
-        if (!await _fileAccessor.ExistsAsync(path, cancellationToken).ConfigureAwait(false))
+        /// <summary>
+        /// Attempts to read and deserialize a runtime snapshot from disk.
+        /// Returns an empty RuntimeSnapshot if the operation fails.
+        /// </summary>
+        public async Task<RuntimeSnapshot> TryReadSnapshotAsync(
+            string path,
+            CancellationToken cancellationToken = default)
         {
-            return null;
-        }
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return new RuntimeSnapshot();
+            }
 
-        var content = await _fileAccessor.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(content))
-        {
-            return null;
-        }
+            if (!await _fileAccessor.ExistsAsync(path, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return new RuntimeSnapshot();
+            }
 
-        try
-        {
-            return JsonSerializer.Deserialize<RuntimeSnapshot>(content, _serializerOptions);
-        }
-        catch (JsonException)
-        {
-            return null;
+            var content = await _fileAccessor
+                .ReadAllTextAsync(path, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                return new RuntimeSnapshot();
+            }
+
+            try
+            {
+                var snapshot = JsonSerializer.Deserialize<RuntimeSnapshot>(
+                    content,
+                    _serializerOptions);
+
+                return snapshot ?? new RuntimeSnapshot();
+            }
+            catch (JsonException)
+            {
+                return new RuntimeSnapshot();
+            }
         }
     }
 }

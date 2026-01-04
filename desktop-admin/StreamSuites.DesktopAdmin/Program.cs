@@ -1,20 +1,22 @@
 using System;
 using System.Windows.Forms;
-using StreamSuites.DesktopAdmin.Core;
 
-namespace StreamSuites.DesktopAdmin;
-
-internal static class Program
+namespace StreamSuites.DesktopAdmin
 {
-    [STAThread]
-    private static void Main()
+    internal static class Program
     {
-        Application.EnableVisualStyles();
-        Application.SetCompatibleTextRenderingDefault(false);
+        /// <summary>
+        /// The main entry point for the application.
+        /// </summary>
+        [STAThread]
+        static void Main()
+        {
+            // Explicit DPI + scaling control (required for admin dashboards)
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
 
-        var appState = new AppState(new ModeContext("Static"));
-        var mainForm = new MainForm(appState);
-
-        Application.Run(mainForm);
+            Application.Run(new MainForm());
+        }
     }
 }

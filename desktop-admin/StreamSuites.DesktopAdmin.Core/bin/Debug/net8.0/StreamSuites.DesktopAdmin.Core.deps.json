@@ -1,0 +1,39 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "StreamSuites.DesktopAdmin.Core/1.0.0": {
+        "dependencies": {
+          "StreamSuites.DesktopAdmin.Models": "1.0.0"
+        },
+        "runtime": {
+          "StreamSuites.DesktopAdmin.Core.dll": {}
+        }
+      },
+      "StreamSuites.DesktopAdmin.Models/1.0.0": {
+        "runtime": {
+          "StreamSuites.DesktopAdmin.Models.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "StreamSuites.DesktopAdmin.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "StreamSuites.DesktopAdmin.Models/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

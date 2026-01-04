@@ -1,23 +1,87 @@
 {
   "schema_version": "v1",
-  "generated_at": null,
+  "generated_at": "2026-01-04T06:46:00.456028Z",
   "windows": [
     {
       "window": "60s",
       "metrics": {
-        "messages": {},
-        "triggers": {},
-        "actions": {},
-        "actions_failed": {}
+        "messages": {
+          "discord": 0,
+          "kick": 0,
+          "pilled": 0,
+          "rumble": 0,
+          "twitch": 0,
+          "twitter": 0,
+          "youtube": 0
+        },
+        "triggers": {
+          "discord": 0,
+          "kick": 0,
+          "pilled": 0,
+          "rumble": 0,
+          "twitch": 0,
+          "twitter": 0,
+          "youtube": 0
+        },
+        "actions": {
+          "discord": 0,
+          "kick": 0,
+          "pilled": 0,
+          "rumble": 0,
+          "twitch": 0,
+          "twitter": 0,
+          "youtube": 0
+        },
+        "actions_failed": {
+          "discord": 0,
+          "kick": 0,
+          "pilled": 0,
+          "rumble": 0,
+          "twitch": 0,
+          "twitter": 0,
+          "youtube": 0
+        }
       }
     },
     {
       "window": "5m",
       "metrics": {
-        "messages": {},
-        "triggers": {},
-        "actions": {},
-        "actions_failed": {}
+        "messages": {
+          "discord": 0,
+          "kick": 0,
+          "pilled": 0,
+          "rumble": 0,
+          "twitch": 0,
+          "twitter": 0,
+          "youtube": 0
+        },
+        "triggers": {
+          "discord": 0,
+          "kick": 0,
+          "pilled": 0,
+          "rumble": 0,
+          "twitch": 0,
+          "twitter": 0,
+          "youtube": 0
+        },
+        "actions": {
+          "discord": 0,
+          "kick": 0,
+          "pilled": 0,
+          "rumble": 0,
+          "twitch": 0,
+          "twitter": 0,
+          "youtube": 0
+        },
+        "actions_failed": {
+          "discord": 0,
+          "kick": 0,
+          "pilled": 0,
+          "rumble": 0,
+          "twitch": 0,
+          "twitter": 0,
+          "youtube": 0
+        }
       }
     }
   ]
