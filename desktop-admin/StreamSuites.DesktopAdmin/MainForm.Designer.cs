@@ -141,7 +141,7 @@ namespace StreamSuites.DesktopAdmin
             // Split runtime
             splitRuntime.Dock = DockStyle.Fill;
             splitRuntime.Orientation = Orientation.Vertical;
-            splitRuntime.FixedPanel = FixedPanel.Panel2;
+            splitRuntime.FixedPanel = FixedPanel.None;
 
             splitRuntime.Panel1.Controls.Add(panelRuntimeTable);
             splitRuntime.Panel2.Controls.Add(panelRuntimeRight);
