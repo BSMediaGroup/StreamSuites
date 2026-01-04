@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -51,8 +51,21 @@ namespace StreamSuites.DesktopAdmin
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing && components != null)
-                components.Dispose();
+            if (disposing)
+            {
+                if (components != null)
+                    components.Dispose();
+
+                if (_inspectorIconCache != null)
+                {
+                    foreach (var kvp in _inspectorIconCache)
+                    {
+                        try { kvp.Value.Dispose(); } catch { }
+                    }
+
+                    _inspectorIconCache.Clear();
+                }
+            }
 
             base.Dispose(disposing);
         }

@@ -1,11 +1,14 @@
 using StreamSuites.DesktopAdmin.Core;
 using StreamSuites.DesktopAdmin.RuntimeBridge;
 using StreamSuites.DesktopAdmin.Models;
+using System.Collections.Generic;
 using System;
+using System.ComponentModel;
 using System.Configuration;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -174,6 +177,9 @@ namespace StreamSuites.DesktopAdmin
                 );
                 _platformBindingSource.DataSource =
                     snapshot.Platforms;
+
+                if (!string.IsNullOrWhiteSpace(_currentSortProperty))
+                    ApplyGridSort(_currentSortProperty, _currentSortDirection);
 
                 _lastSuccessfulRefreshUtc = DateTime.UtcNow;
                 UpdateLastRefreshCounter();
@@ -374,6 +380,8 @@ namespace StreamSuites.DesktopAdmin
 
             gridPlatforms.AutoSizeColumnsMode =
                 DataGridViewAutoSizeColumnsMode.None;
+            gridPlatforms.AllowUserToOrderColumns = true;
+            gridPlatforms.AllowUserToResizeColumns = true;
 
             gridPlatforms.Columns.Add(
                 new DataGridViewTextBoxColumn
@@ -382,7 +390,8 @@ namespace StreamSuites.DesktopAdmin
                         nameof(PlatformStatus.Platform),
                     HeaderText = "Platform",
                     AutoSizeMode =
-                        DataGridViewAutoSizeColumnMode.AllCells
+                        DataGridViewAutoSizeColumnMode.AllCells,
+                    SortMode = DataGridViewColumnSortMode.Automatic
                 });
 
             gridPlatforms.Columns.Add(
@@ -392,7 +401,8 @@ namespace StreamSuites.DesktopAdmin
                         nameof(PlatformStatus.Display_State),
                     HeaderText = "State",
                     AutoSizeMode =
-                        DataGridViewAutoSizeColumnMode.AllCells
+                        DataGridViewAutoSizeColumnMode.AllCells,
+                    SortMode = DataGridViewColumnSortMode.Automatic
                 });
 
             gridPlatforms.Columns.Add(
@@ -402,7 +412,8 @@ namespace StreamSuites.DesktopAdmin
                         nameof(PlatformStatus.Telemetry_Display),
                     HeaderText = "Telemetry",
                     AutoSizeMode =
-                        DataGridViewAutoSizeColumnMode.AllCells
+                        DataGridViewAutoSizeColumnMode.AllCells,
+                    SortMode = DataGridViewColumnSortMode.Automatic
                 });
 
             gridPlatforms.Columns.Add(
@@ -413,11 +424,18 @@ namespace StreamSuites.DesktopAdmin
                     HeaderText = "Capabilities",
                     AutoSizeMode =
                         DataGridViewAutoSizeColumnMode.Fill,
-                    MinimumWidth = 120
+                    MinimumWidth = 120,
+                    SortMode = DataGridViewColumnSortMode.Automatic
                 });
 
             EnableDoubleBuffering(gridPlatforms);
+            EnableDoubleBuffering(splitRuntime);
+            EnableDoubleBuffering(panelRuntimeTable);
+            EnableDoubleBuffering(panelRuntimeRight);
             gridPlatforms.ScrollBars = ScrollBars.Both;
+
+            gridPlatforms.ColumnHeaderMouseClick -= GridPlatforms_ColumnHeaderMouseClick;
+            gridPlatforms.ColumnHeaderMouseClick += GridPlatforms_ColumnHeaderMouseClick;
 
             // REQUIRED: cell-level formatting (bold Platform column only)
             gridPlatforms.CellFormatting -= GridPlatforms_CellFormatting;
@@ -438,7 +456,7 @@ namespace StreamSuites.DesktopAdmin
         }
 
         // -----------------------------------------------------------------
-        // Inspector (STEP G — FIXED PANEL, NON-COLLAPSIBLE)
+        // Inspector (STEP G â€” FIXED PANEL, NON-COLLAPSIBLE)
         // -----------------------------------------------------------------
 
         private Button _btnToggleClient;
@@ -446,6 +464,11 @@ namespace StreamSuites.DesktopAdmin
         private PictureBox _inspectorIcon;
 
         private Image? _inspectorIconOwned; // we own/dispose this
+        private readonly Dictionary<string, Image> _inspectorIconCache = new(StringComparer.OrdinalIgnoreCase);
+        private Panel? _inspectorHeaderPanel;
+
+        private string? _currentSortProperty;
+        private ListSortDirection _currentSortDirection = ListSortDirection.Ascending;
 
         private void InitializeInspectorPanel()
         {
@@ -471,6 +494,8 @@ namespace StreamSuites.DesktopAdmin
                 Dock = DockStyle.Top,
                 Height = 36
             };
+
+            _inspectorHeaderPanel = headerPanel;
 
             _inspectorIcon = new PictureBox
             {
@@ -541,7 +566,7 @@ namespace StreamSuites.DesktopAdmin
             panelRuntimeRight.Controls.Add(headerPanel);
 
             panelRuntimeRight.ResumeLayout(true);
-            panelRuntimeRight.Invalidate();
+            panelRuntimeRight.Invalidate(true);
 
             // -------------------------------------------------------------
             // SAFE splitter setup AFTER layout is real
@@ -608,19 +633,12 @@ namespace StreamSuites.DesktopAdmin
                 $"Enabled: {p.Enabled}\n" +
                 $"Paused: {p.Paused}\n" +
                 $"Capabilities: {p.Capabilities}\n\n" +
-                $"Last Heartbeat:\n{p.Last_Heartbeat ?? "—"}\n\n" +
+                $"Last Heartbeat:\n{p.Last_Heartbeat ?? "â€”"}\n\n" +
                 $"Error:\n{p.Error ?? "None"}";
         }
 
         private void SetInspectorIconForPlatform(string platform)
         {
-            // Dispose previous image we owned
-            if (_inspectorIconOwned != null)
-            {
-                try { _inspectorIconOwned.Dispose(); } catch { }
-                _inspectorIconOwned = null;
-            }
-
             _inspectorIcon.Image = null;
 
             // Try multiple common locations/names
@@ -629,6 +647,21 @@ namespace StreamSuites.DesktopAdmin
 
             var key = (platform ?? string.Empty).Trim();
             var lower = key.ToLowerInvariant();
+
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                _inspectorIconOwned = null;
+                InvalidateInspectorHeader();
+                return;
+            }
+
+            if (_inspectorIconCache.TryGetValue(key, out var cached))
+            {
+                _inspectorIconOwned = cached;
+                _inspectorIcon.Image = _inspectorIconOwned;
+                InvalidateInspectorHeader();
+                return;
+            }
 
             var candidates = new[]
             {
@@ -650,7 +683,9 @@ namespace StreamSuites.DesktopAdmin
                     using var raw = Image.FromStream(fs);
 
                     _inspectorIconOwned = new Bitmap(raw, new Size(24, 24));
+                    _inspectorIconCache[key] = _inspectorIconOwned;
                     _inspectorIcon.Image = _inspectorIconOwned;
+                    InvalidateInspectorHeader();
                     return;
                 }
                 catch
@@ -658,20 +693,26 @@ namespace StreamSuites.DesktopAdmin
                     // try next candidate
                 }
             }
+
+            InvalidateInspectorHeader();
         }
 
         private void ClearInspector()
         {
             _inspectorTitle.Text = "Platform Inspector";
 
-            if (_inspectorIconOwned != null)
-            {
-                try { _inspectorIconOwned.Dispose(); } catch { }
-                _inspectorIconOwned = null;
-            }
-
+            _inspectorIconOwned = null;
             _inspectorIcon.Image = null;
             _inspectorBody.Text = "No platform selected.";
+
+            InvalidateInspectorHeader();
+        }
+
+        private void InvalidateInspectorHeader()
+        {
+            _inspectorIcon?.Invalidate();
+            _inspectorHeaderPanel?.Invalidate(true);
+            _inspectorHeaderPanel?.Update();
         }
 
         // -----------------------------------------------------------------
@@ -693,7 +734,7 @@ namespace StreamSuites.DesktopAdmin
             row.DefaultCellStyle.BackColor = SystemColors.Window;
             row.DefaultCellStyle.ForeColor = SystemColors.ControlText;
 
-            // PLATFORM COLUMN — bold + proper noun (CELL-LEVEL ONLY)
+            // PLATFORM COLUMN â€” bold + proper noun (CELL-LEVEL ONLY)
             if (gridPlatforms.Columns[e.ColumnIndex].DataPropertyName ==
                 nameof(PlatformStatus.Platform))
             {
@@ -840,6 +881,83 @@ namespace StreamSuites.DesktopAdmin
                 prop?.SetValue(control, true, null);
             }
             catch { }
+        }
+
+        private void GridPlatforms_ColumnHeaderMouseClick(object? sender, DataGridViewCellMouseEventArgs e)
+        {
+            var column = gridPlatforms.Columns[e.ColumnIndex];
+
+            if (string.IsNullOrWhiteSpace(column.DataPropertyName))
+                return;
+
+            var desiredDirection =
+                _currentSortProperty == column.DataPropertyName &&
+                _currentSortDirection == ListSortDirection.Ascending
+                ? ListSortDirection.Descending
+                : ListSortDirection.Ascending;
+
+            ApplyGridSort(column.DataPropertyName, desiredDirection);
+
+            column.HeaderCell.SortGlyphDirection =
+                desiredDirection == ListSortDirection.Ascending
+                    ? SortOrder.Ascending
+                    : SortOrder.Descending;
+        }
+
+        private void ApplyGridSort(string propertyName, ListSortDirection direction)
+        {
+            _currentSortProperty = propertyName;
+            _currentSortDirection = direction;
+
+            if (_platformBindingSource.DataSource is not IEnumerable<PlatformStatus> data)
+                return;
+
+            var ordered = (direction == ListSortDirection.Ascending
+                ? data.OrderBy(p => GetSortValue(p, propertyName))
+                : data.OrderByDescending(p => GetSortValue(p, propertyName)))
+                .ToList();
+
+            var current = gridPlatforms.CurrentRow?.DataBoundItem as PlatformStatus;
+
+            _platformBindingSource.DataSource = ordered;
+
+            if (current == null)
+                return;
+
+            for (var i = 0; i < ordered.Count; i++)
+            {
+                if (!ReferenceEquals(ordered[i], current))
+                    continue;
+
+                gridPlatforms.ClearSelection();
+                gridPlatforms.CurrentCell = gridPlatforms.Rows[i].Cells[0];
+                gridPlatforms.Rows[i].Selected = true;
+                break;
+            }
+
+            var sortedColumn = gridPlatforms.Columns
+                .Cast<DataGridViewColumn>()
+                .FirstOrDefault(c => c.DataPropertyName == propertyName);
+
+            if (sortedColumn != null)
+            {
+                sortedColumn.HeaderCell.SortGlyphDirection =
+                    direction == ListSortDirection.Ascending
+                        ? SortOrder.Ascending
+                        : SortOrder.Descending;
+            }
+        }
+
+        private static object? GetSortValue(PlatformStatus platform, string propertyName)
+        {
+            return propertyName switch
+            {
+                nameof(PlatformStatus.Platform) => platform.Platform,
+                nameof(PlatformStatus.Display_State) => platform.Display_State,
+                nameof(PlatformStatus.Telemetry_Display) => platform.Telemetry_Display,
+                nameof(PlatformStatus.Capabilities) => platform.Capabilities,
+                _ => null
+            };
         }
     }
 }
