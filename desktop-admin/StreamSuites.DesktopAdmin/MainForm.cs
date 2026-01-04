@@ -382,6 +382,8 @@ namespace StreamSuites.DesktopAdmin
                 DataGridViewAutoSizeColumnsMode.None;
             gridPlatforms.AllowUserToOrderColumns = true;
             gridPlatforms.AllowUserToResizeColumns = true;
+            gridPlatforms.ColumnHeadersHeightSizeMode =
+                DataGridViewColumnHeadersHeightSizeMode.EnableResizing;
 
             gridPlatforms.Columns.Add(
                 new DataGridViewTextBoxColumn
@@ -390,8 +392,11 @@ namespace StreamSuites.DesktopAdmin
                         nameof(PlatformStatus.Platform),
                     HeaderText = "Platform",
                     AutoSizeMode =
-                        DataGridViewAutoSizeColumnMode.AllCells,
-                    SortMode = DataGridViewColumnSortMode.Automatic
+                        DataGridViewAutoSizeColumnMode.None,
+                    SortMode = DataGridViewColumnSortMode.Programmatic,
+                    Resizable = DataGridViewTriState.True,
+                    Width = 140,
+                    MinimumWidth = 100
                 });
 
             gridPlatforms.Columns.Add(
@@ -401,8 +406,11 @@ namespace StreamSuites.DesktopAdmin
                         nameof(PlatformStatus.Display_State),
                     HeaderText = "State",
                     AutoSizeMode =
-                        DataGridViewAutoSizeColumnMode.AllCells,
-                    SortMode = DataGridViewColumnSortMode.Automatic
+                        DataGridViewAutoSizeColumnMode.None,
+                    SortMode = DataGridViewColumnSortMode.Programmatic,
+                    Resizable = DataGridViewTriState.True,
+                    Width = 140,
+                    MinimumWidth = 100
                 });
 
             gridPlatforms.Columns.Add(
@@ -412,8 +420,11 @@ namespace StreamSuites.DesktopAdmin
                         nameof(PlatformStatus.Telemetry_Display),
                     HeaderText = "Telemetry",
                     AutoSizeMode =
-                        DataGridViewAutoSizeColumnMode.AllCells,
-                    SortMode = DataGridViewColumnSortMode.Automatic
+                        DataGridViewAutoSizeColumnMode.None,
+                    SortMode = DataGridViewColumnSortMode.Programmatic,
+                    Resizable = DataGridViewTriState.True,
+                    Width = 120,
+                    MinimumWidth = 100
                 });
 
             gridPlatforms.Columns.Add(
@@ -423,9 +434,11 @@ namespace StreamSuites.DesktopAdmin
                         nameof(PlatformStatus.Capabilities),
                     HeaderText = "Capabilities",
                     AutoSizeMode =
-                        DataGridViewAutoSizeColumnMode.Fill,
-                    MinimumWidth = 120,
-                    SortMode = DataGridViewColumnSortMode.Automatic
+                        DataGridViewAutoSizeColumnMode.None,
+                    MinimumWidth = 140,
+                    SortMode = DataGridViewColumnSortMode.Programmatic,
+                    Resizable = DataGridViewTriState.True,
+                    Width = 220
                 });
 
             EnableDoubleBuffering(gridPlatforms);
@@ -461,6 +474,9 @@ namespace StreamSuites.DesktopAdmin
 
         private Button _btnToggleClient;
         private Button _btnConfigureClient;
+        private Button _btnLaunchMain;
+        private Button _btnLaunchClient;
+        private Label _lblClientToggleNote;
         private PictureBox _inspectorIcon;
 
         private Image? _inspectorIconOwned; // we own/dispose this
@@ -521,30 +537,79 @@ namespace StreamSuites.DesktopAdmin
             // Action buttons (bottom)
             // -------------------------------------------------------------
 
-            var actionsPanel = new FlowLayoutPanel
+            var actionsPanel = new TableLayoutPanel
             {
                 Dock = DockStyle.Bottom,
-                Height = 56,
                 Padding = new Padding(8),
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                AutoSize = false
+                ColumnCount = 1,
+                RowCount = 5,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink
             };
+
+            actionsPanel.ColumnStyles.Add(
+                new ColumnStyle(SizeType.Percent, 100f));
 
             _btnToggleClient = new Button
             {
                 Text = "Enable / Disable Client",
-                Width = 170
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0, 0, 0, 8)
             };
 
             _btnConfigureClient = new Button
             {
                 Text = "Configure Client",
-                Width = 150
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0, 0, 0, 8)
             };
 
-            actionsPanel.Controls.Add(_btnToggleClient);
-            actionsPanel.Controls.Add(_btnConfigureClient);
+            _btnLaunchMain = new Button
+            {
+                Text = "Launch / Terminate Main",
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0, 0, 0, 8)
+            };
+
+            _btnLaunchClient = new Button
+            {
+                Text = "Launch / Terminate Client",
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0, 0, 0, 8)
+            };
+
+            _lblClientToggleNote = new Label
+            {
+                Text = "Service toggles require a runtime restart to take effect.",
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                Font = new Font(Font.FontFamily, 8f, FontStyle.Regular),
+                ForeColor = SystemColors.GrayText,
+                Margin = new Padding(0, 0, 0, 8)
+            };
+
+            actionsPanel.RowStyles.Add(new RowStyle());
+            actionsPanel.Controls.Add(_lblClientToggleNote, 0, actionsPanel.RowStyles.Count - 1);
+
+            actionsPanel.RowStyles.Add(new RowStyle());
+            actionsPanel.Controls.Add(_btnToggleClient, 0, actionsPanel.RowStyles.Count - 1);
+
+            actionsPanel.RowStyles.Add(new RowStyle());
+            actionsPanel.Controls.Add(_btnConfigureClient, 0, actionsPanel.RowStyles.Count - 1);
+
+            actionsPanel.RowStyles.Add(new RowStyle());
+            actionsPanel.Controls.Add(_btnLaunchMain, 0, actionsPanel.RowStyles.Count - 1);
+
+            actionsPanel.RowStyles.Add(new RowStyle());
+            actionsPanel.Controls.Add(_btnLaunchClient, 0, actionsPanel.RowStyles.Count - 1);
 
             // -------------------------------------------------------------
             // Inspector body (fills between header + buttons)
@@ -577,6 +642,8 @@ namespace StreamSuites.DesktopAdmin
 
             splitRuntime.SizeChanged -= ClampInspectorSplitter;
             splitRuntime.SizeChanged += ClampInspectorSplitter;
+            splitRuntime.SplitterMoved -= ClampInspectorSplitter;
+            splitRuntime.SplitterMoved += ClampInspectorSplitter;
         }
 
         private void ApplyInspectorSplitterAfterShown(object? sender, EventArgs e)
@@ -587,16 +654,22 @@ namespace StreamSuites.DesktopAdmin
             splitRuntime.Panel2MinSize = 260;
             splitRuntime.Panel1MinSize = 420;
 
-            ClampInspectorSplitter(null, EventArgs.Empty);
+            ClampInspectorSplitter(null, EventArgs.Empty, true);
         }
 
         private void ClampInspectorSplitter(object? sender, EventArgs e)
+        {
+            ClampInspectorSplitter(sender, e, false);
+        }
+
+        private void ClampInspectorSplitter(object? sender, EventArgs e, bool applyDefault)
         {
             var total = splitRuntime.ClientSize.Width;
             if (total <= 0)
                 return;
 
             const int desiredInspectorWidth = 320;
+            const int maxInspectorWidth = 520;
 
             var min1 = splitRuntime.Panel1MinSize;
             var min2 = splitRuntime.Panel2MinSize;
@@ -608,14 +681,33 @@ namespace StreamSuites.DesktopAdmin
                 return;
             }
 
-            var desired = total - desiredInspectorWidth;
+            var inspectorWidth = total - splitRuntime.SplitterDistance;
 
-            if (desired < min1)
-                desired = min1;
-            if (desired > max)
-                desired = max;
+            if (applyDefault)
+            {
+                var desired = total - desiredInspectorWidth;
 
-            splitRuntime.SplitterDistance = desired;
+                if (desired < min1)
+                    desired = min1;
+                if (desired > max)
+                    desired = max;
+
+                splitRuntime.SplitterDistance = desired;
+                return;
+            }
+
+            if (inspectorWidth < min2)
+            {
+                splitRuntime.SplitterDistance = total - min2;
+                return;
+            }
+
+            var maxAllowedInspector = Math.Min(maxInspectorWidth, total - min1);
+
+            if (inspectorWidth > maxAllowedInspector)
+            {
+                splitRuntime.SplitterDistance = total - maxAllowedInspector;
+            }
         }
 
         private void PopulateInspector(PlatformStatus p)
@@ -626,6 +718,12 @@ namespace StreamSuites.DesktopAdmin
 
             _btnToggleClient.Text =
                 p.Enabled ? "Disable Client" : "Enable Client";
+
+            _lblClientToggleNote.Visible = true;
+            _btnLaunchMain.Visible = true;
+            _btnLaunchClient.Visible =
+                string.Equals(p.Platform, "Discord", StringComparison.OrdinalIgnoreCase);
+            _btnLaunchClient.Enabled = _btnLaunchClient.Visible;
 
             _inspectorBody.Text =
                 $"State: {p.Display_State}\n" +
@@ -669,6 +767,8 @@ namespace StreamSuites.DesktopAdmin
                 Path.Combine(assetsDir, $"{lower}.ico"),
                 Path.Combine(baseDir, $"{lower}.png"),
                 Path.Combine(baseDir, $"{lower}.ico"),
+                Path.Combine(baseDir, "..", "..", "..", "assets", $"{lower}.png"),
+                Path.Combine(baseDir, "..", "..", "..", "assets", $"{lower}.ico"),
             };
 
             foreach (var path in candidates)
@@ -694,6 +794,11 @@ namespace StreamSuites.DesktopAdmin
                 }
             }
 
+            if (_inspectorIcon.Image == null)
+            {
+                _inspectorIcon.Image = SystemIcons.Application.ToBitmap();
+            }
+
             InvalidateInspectorHeader();
         }
 
@@ -704,6 +809,10 @@ namespace StreamSuites.DesktopAdmin
             _inspectorIconOwned = null;
             _inspectorIcon.Image = null;
             _inspectorBody.Text = "No platform selected.";
+
+            _lblClientToggleNote.Visible = false;
+            _btnLaunchMain.Visible = false;
+            _btnLaunchClient.Visible = false;
 
             InvalidateInspectorHeader();
         }
@@ -939,12 +1048,19 @@ namespace StreamSuites.DesktopAdmin
                 .Cast<DataGridViewColumn>()
                 .FirstOrDefault(c => c.DataPropertyName == propertyName);
 
-            if (sortedColumn != null)
+            foreach (DataGridViewColumn col in gridPlatforms.Columns)
             {
-                sortedColumn.HeaderCell.SortGlyphDirection =
-                    direction == ListSortDirection.Ascending
-                        ? SortOrder.Ascending
-                        : SortOrder.Descending;
+                if (col == sortedColumn)
+                {
+                    col.HeaderCell.SortGlyphDirection =
+                        direction == ListSortDirection.Ascending
+                            ? SortOrder.Ascending
+                            : SortOrder.Descending;
+                }
+                else
+                {
+                    col.HeaderCell.SortGlyphDirection = SortOrder.None;
+                }
             }
         }
 
