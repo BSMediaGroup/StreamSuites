@@ -42,7 +42,7 @@ jobs:
       - name: Calculate next build number
         id: build
         run: |
-          python << 'EOF'
+          python - << 'EOF'
           from datetime import datetime
           import re
           from pathlib import Path
@@ -68,23 +68,7 @@ jobs:
 
           next_build = f"{today}+{next_counter:03d}"
           print(f"next_build={next_build}")
-          EOF
-          echo "next_build=$(python - << 'EOF'
-          from datetime import datetime
-          import re
-          from pathlib import Path
-          text = Path("runtime/version.py").read_text(encoding="utf-8")
-          m = re.search(r'BUILD = \"([^\"]+)\"', text)
-          current = m.group(1)
-          today = datetime.utcnow().strftime("%Y.%m.%d")
-          if "+" in current:
-              d, c = current.split("+", 1)
-              c = int(c) + 1 if d == today else 1
-          else:
-              c = 1
-          print(f"{today}+{c:03d}")
-          EOF
-          )" >> $GITHUB_OUTPUT
+          EOF >> "$GITHUB_OUTPUT"
 
       # -----------------------------
       # Update runtime + dashboard versions
@@ -97,16 +81,23 @@ jobs:
             --dashboard-root StreamSuites-Dashboard/docs
 
       # -----------------------------
+      # Configure git identity
+      # -----------------------------
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # -----------------------------
       # Commit changes (both repos)
       # -----------------------------
       - name: Commit version updates
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-
+          # Runtime repo
           git add runtime/version.py changelog runtime/exports || true
           git diff --cached --quiet || git commit -m "chore(runtime): bump build to ${{ steps.build.outputs.next_build }}"
 
+          # Dashboard repo
           cd StreamSuites-Dashboard
           git add docs/version.json docs/about docs/data || true
           git diff --cached --quiet || git commit -m "chore(dashboard): sync version ${{ steps.build.outputs.next_build }}"
@@ -115,9 +106,14 @@ jobs:
       # Push changes
       # -----------------------------
       - name: Push runtime changes
-        run: git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git push https://x-access-token:${GITHUB_TOKEN}@github.com/BSMediaGroup/StreamSuites.git
 
       - name: Push dashboard changes
+        env:
+          DASHBOARD_PUSH_TOKEN: ${{ secrets.DASHBOARD_PUSH_TOKEN }}
         run: |
           cd StreamSuites-Dashboard
-          git push
+          git push https://x-access-token:${DASHBOARD_PUSH_TOKEN}@github.com/BSMediaGroup/StreamSuites-Dashboard.git
