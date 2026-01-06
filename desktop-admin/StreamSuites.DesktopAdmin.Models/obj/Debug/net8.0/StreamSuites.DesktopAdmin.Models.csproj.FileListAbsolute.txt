@@ -10,3 +10,15 @@ X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Debug
 X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Debug\net8.0\refint\StreamSuites.DesktopAdmin.Models.dll
 X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Debug\net8.0\StreamSuites.DesktopAdmin.Models.pdb
 X:\DCX\GIT\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Debug\net8.0\ref\StreamSuites.DesktopAdmin.Models.dll
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\bin\Debug\net8.0\StreamSuites.DesktopAdmin.Models.deps.json
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\bin\Debug\net8.0\StreamSuites.DesktopAdmin.Models.dll
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\bin\Debug\net8.0\StreamSuites.DesktopAdmin.Models.pdb
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Debug\net8.0\StreamSuites.DesktopAdmin.Models.GeneratedMSBuildEditorConfig.editorconfig
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Debug\net8.0\StreamSuites.DesktopAdmin.Models.AssemblyInfoInputs.cache
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Debug\net8.0\StreamSuites.DesktopAdmin.Models.AssemblyInfo.cs
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Debug\net8.0\StreamSuites.DesktopAdmin.Models.csproj.CoreCompileInputs.cache
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Debug\net8.0\StreamSuites.DesktopAdmin.Models.sourcelink.json
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Debug\net8.0\StreamSuites.DesktopAdmin.Models.dll
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Debug\net8.0\refint\StreamSuites.DesktopAdmin.Models.dll
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Debug\net8.0\StreamSuites.DesktopAdmin.Models.pdb
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Debug\net8.0\ref\StreamSuites.DesktopAdmin.Models.dll

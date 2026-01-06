@@ -1,33 +1,33 @@
 {
   "Version": 1,
-  "WorkspaceRootPath": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\",
+  "WorkspaceRootPath": "G:\\StreamSuites\\desktop-admin\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{1C67E50C-DCAB-4AF3-B9B1-9D8BFA0D5C2A}|StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj|x:\\dcx\\git\\streamsuites\\desktop-admin\\streamsuites.desktopadmin\\mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{1C67E50C-DCAB-4AF3-B9B1-9D8BFA0D5C2A}|StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj|g:\\streamsuites\\desktop-admin\\streamsuites.desktopadmin\\mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{1C67E50C-DCAB-4AF3-B9B1-9D8BFA0D5C2A}|StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj|solutionrelative:streamsuites.desktopadmin\\mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{1C67E50C-DCAB-4AF3-B9B1-9D8BFA0D5C2A}|StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj|x:\\dcx\\git\\streamsuites\\desktop-admin\\streamsuites.desktopadmin\\mainform.designer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{1C67E50C-DCAB-4AF3-B9B1-9D8BFA0D5C2A}|StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj|g:\\streamsuites\\desktop-admin\\streamsuites.desktopadmin\\mainform.designer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{1C67E50C-DCAB-4AF3-B9B1-9D8BFA0D5C2A}|StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj|solutionrelative:streamsuites.desktopadmin\\mainform.designer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{1C67E50C-DCAB-4AF3-B9B1-9D8BFA0D5C2A}|StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj|X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\streamsuites.desktopadmin\\mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form",
+      "AbsoluteMoniker": "D:0:0:{1C67E50C-DCAB-4AF3-B9B1-9D8BFA0D5C2A}|StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj|G:\\StreamSuites\\desktop-admin\\streamsuites.desktopadmin\\mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form",
       "RelativeMoniker": "D:0:0:{1C67E50C-DCAB-4AF3-B9B1-9D8BFA0D5C2A}|StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj|solutionrelative:streamsuites.desktopadmin\\mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{96D282F5-2C8F-4E51-A1B0-98E54B7FA9A4}|StreamSuites.DesktopAdmin.Models\\StreamSuites.DesktopAdmin.Models.csproj|x:\\dcx\\git\\streamsuites\\desktop-admin\\streamsuites.desktopadmin.models\\platformstatus.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{96D282F5-2C8F-4E51-A1B0-98E54B7FA9A4}|StreamSuites.DesktopAdmin.Models\\StreamSuites.DesktopAdmin.Models.csproj|g:\\streamsuites\\desktop-admin\\streamsuites.desktopadmin.models\\platformstatus.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{96D282F5-2C8F-4E51-A1B0-98E54B7FA9A4}|StreamSuites.DesktopAdmin.Models\\StreamSuites.DesktopAdmin.Models.csproj|solutionrelative:streamsuites.desktopadmin.models\\platformstatus.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{96D282F5-2C8F-4E51-A1B0-98E54B7FA9A4}|StreamSuites.DesktopAdmin.Models\\StreamSuites.DesktopAdmin.Models.csproj|x:\\dcx\\git\\streamsuites\\desktop-admin\\streamsuites.desktopadmin.models\\runtimesnapshot.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{96D282F5-2C8F-4E51-A1B0-98E54B7FA9A4}|StreamSuites.DesktopAdmin.Models\\StreamSuites.DesktopAdmin.Models.csproj|g:\\streamsuites\\desktop-admin\\streamsuites.desktopadmin.models\\runtimesnapshot.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{96D282F5-2C8F-4E51-A1B0-98E54B7FA9A4}|StreamSuites.DesktopAdmin.Models\\StreamSuites.DesktopAdmin.Models.csproj|solutionrelative:streamsuites.desktopadmin.models\\runtimesnapshot.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{1C67E50C-DCAB-4AF3-B9B1-9D8BFA0D5C2A}|StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj|x:\\dcx\\git\\streamsuites\\desktop-admin\\streamsuites.desktopadmin\\app.config||{FA3CD31E-987B-443A-9B81-186104E8DAC1}",
+      "AbsoluteMoniker": "D:0:0:{1C67E50C-DCAB-4AF3-B9B1-9D8BFA0D5C2A}|StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj|g:\\streamsuites\\desktop-admin\\streamsuites.desktopadmin\\app.config||{FA3CD31E-987B-443A-9B81-186104E8DAC1}",
       "RelativeMoniker": "D:0:0:{1C67E50C-DCAB-4AF3-B9B1-9D8BFA0D5C2A}|StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj|solutionrelative:streamsuites.desktopadmin\\app.config||{FA3CD31E-987B-443A-9B81-186104E8DAC1}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{1C67E50C-DCAB-4AF3-B9B1-9D8BFA0D5C2A}|StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj|x:\\dcx\\git\\streamsuites\\desktop-admin\\streamsuites.desktopadmin\\streamsuites.desktopadmin.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "AbsoluteMoniker": "D:0:0:{1C67E50C-DCAB-4AF3-B9B1-9D8BFA0D5C2A}|StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj|g:\\streamsuites\\desktop-admin\\streamsuites.desktopadmin\\streamsuites.desktopadmin.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
       "RelativeMoniker": "D:0:0:{1C67E50C-DCAB-4AF3-B9B1-9D8BFA0D5C2A}|StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj|solutionrelative:streamsuites.desktopadmin\\streamsuites.desktopadmin.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
     }
   ],
@@ -44,9 +44,9 @@
               "$type": "Document",
               "DocumentIndex": 2,
               "Title": "MainForm.cs [Design]",
-              "DocumentMoniker": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\MainForm.cs",
+              "DocumentMoniker": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\MainForm.cs",
               "RelativeDocumentMoniker": "StreamSuites.DesktopAdmin\\MainForm.cs",
-              "ToolTip": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\MainForm.cs [Design]",
+              "ToolTip": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\MainForm.cs [Design]",
               "RelativeToolTip": "StreamSuites.DesktopAdmin\\MainForm.cs [Design]",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-01-04T08:42:53.199Z",
@@ -56,9 +56,9 @@
               "$type": "Document",
               "DocumentIndex": 6,
               "Title": "StreamSuites.DesktopAdmin.csproj",
-              "DocumentMoniker": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj",
+              "DocumentMoniker": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj",
               "RelativeDocumentMoniker": "StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj",
-              "ToolTip": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj",
+              "ToolTip": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj",
               "RelativeToolTip": "StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAC4AAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
@@ -68,9 +68,9 @@
               "$type": "Document",
               "DocumentIndex": 3,
               "Title": "PlatformStatus.cs",
-              "DocumentMoniker": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Models\\PlatformStatus.cs",
+              "DocumentMoniker": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Models\\PlatformStatus.cs",
               "RelativeDocumentMoniker": "StreamSuites.DesktopAdmin.Models\\PlatformStatus.cs",
-              "ToolTip": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Models\\PlatformStatus.cs",
+              "ToolTip": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Models\\PlatformStatus.cs",
               "RelativeToolTip": "StreamSuites.DesktopAdmin.Models\\PlatformStatus.cs",
               "ViewState": "AgIAAGgAAAAAAAAAAAAIwHIAAAAWAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
@@ -80,9 +80,9 @@
               "$type": "Document",
               "DocumentIndex": 4,
               "Title": "RuntimeSnapshot.cs",
-              "DocumentMoniker": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Models\\RuntimeSnapshot.cs",
+              "DocumentMoniker": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Models\\RuntimeSnapshot.cs",
               "RelativeDocumentMoniker": "StreamSuites.DesktopAdmin.Models\\RuntimeSnapshot.cs",
-              "ToolTip": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Models\\RuntimeSnapshot.cs",
+              "ToolTip": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Models\\RuntimeSnapshot.cs",
               "RelativeToolTip": "StreamSuites.DesktopAdmin.Models\\RuntimeSnapshot.cs",
               "ViewState": "AgIAAMUAAAAAAAAAAAAmwNwAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
@@ -92,9 +92,9 @@
               "$type": "Document",
               "DocumentIndex": 5,
               "Title": "App.config",
-              "DocumentMoniker": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\App.config",
+              "DocumentMoniker": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\App.config",
               "RelativeDocumentMoniker": "StreamSuites.DesktopAdmin\\App.config",
-              "ToolTip": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\App.config",
+              "ToolTip": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\App.config",
               "RelativeToolTip": "StreamSuites.DesktopAdmin\\App.config",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAACEAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000601|",
@@ -104,11 +104,11 @@
               "$type": "Document",
               "DocumentIndex": 0,
               "Title": "MainForm.cs",
-              "DocumentMoniker": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\MainForm.cs",
+              "DocumentMoniker": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\MainForm.cs",
               "RelativeDocumentMoniker": "StreamSuites.DesktopAdmin\\MainForm.cs",
-              "ToolTip": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\MainForm.cs",
+              "ToolTip": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\MainForm.cs",
               "RelativeToolTip": "StreamSuites.DesktopAdmin\\MainForm.cs",
-              "ViewState": "AgIAABYDAAAAAAAAAAAIwE0DAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAABYDAAAAAAAAAAAIwDwDAABMAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-01-04T06:17:55.378Z",
               "EditorCaption": ""
@@ -117,9 +117,9 @@
               "$type": "Document",
               "DocumentIndex": 1,
               "Title": "MainForm.Designer.cs",
-              "DocumentMoniker": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\MainForm.Designer.cs",
+              "DocumentMoniker": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\MainForm.Designer.cs",
               "RelativeDocumentMoniker": "StreamSuites.DesktopAdmin\\MainForm.Designer.cs",
-              "ToolTip": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\MainForm.Designer.cs",
+              "ToolTip": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\MainForm.Designer.cs",
               "RelativeToolTip": "StreamSuites.DesktopAdmin\\MainForm.Designer.cs",
               "ViewState": "AgIAAK4AAAAAAAAAAAAAwOgAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",

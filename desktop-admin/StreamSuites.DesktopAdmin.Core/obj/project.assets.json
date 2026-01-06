@@ -33,11 +33,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Core\\StreamSuites.DesktopAdmin.Core.csproj",
+      "projectUniqueName": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Core\\StreamSuites.DesktopAdmin.Core.csproj",
       "projectName": "StreamSuites.DesktopAdmin.Core",
-      "projectPath": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Core\\StreamSuites.DesktopAdmin.Core.csproj",
+      "projectPath": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Core\\StreamSuites.DesktopAdmin.Core.csproj",
       "packagesPath": "C:\\Users\\TempAdmin\\.nuget\\packages\\",
-      "outputPath": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Core\\obj\\",
+      "outputPath": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Core\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -59,8 +59,8 @@
         "net8.0": {
           "targetAlias": "net8.0",
           "projectReferences": {
-            "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Models\\StreamSuites.DesktopAdmin.Models.csproj": {
-              "projectPath": "X:\\DCX\\GIT\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Models\\StreamSuites.DesktopAdmin.Models.csproj"
+            "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Models\\StreamSuites.DesktopAdmin.Models.csproj": {
+              "projectPath": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin.Models\\StreamSuites.DesktopAdmin.Models.csproj"
             }
           }
         }

@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("StreamSuites.DesktopAdmin.RuntimeBridge")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c0a8ef20853826e6c67651ed7d5d636b77ba8373")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+87cc8bbd57aa6d6755c4123f05b5a466ddb46782")]
 [assembly: System.Reflection.AssemblyProductAttribute("StreamSuites.DesktopAdmin.RuntimeBridge")]
 [assembly: System.Reflection.AssemblyTitleAttribute("StreamSuites.DesktopAdmin.RuntimeBridge")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
