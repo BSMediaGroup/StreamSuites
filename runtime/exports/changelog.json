@@ -2,14 +2,29 @@
   "meta": {
     "source": "runtime",
     "project": "StreamSuites™",
-    "version": "v0.2.2-alpha",
-    "generated_at": "2026-01-15"
+    "version": "v0.2.3-alpha",
+    "generated_at": "2026-02-01"
   },
   "entries": [
     {
+      "id": "2026-02-architecture-clarity",
+      "date": "2026-02-01",
+      "version": "v0.2.3-alpha",
+      "scope": "runtime",
+      "title": "Architecture and authority clarified",
+      "summary": "Documented the authoritative runtime, Desktop Admin control plane, and downstream read-only web dashboard while laying path configuration groundwork.",
+      "details": [
+        "Runtime repository is affirmed as the sole authority for state, telemetry, and exports across the two-repo architecture.",
+        "WinForms Desktop Admin runs locally with filesystem access, process control, and path management responsibilities.",
+        "Web dashboard remains a read-only consumer of exported JSON and carries no process or filesystem authority.",
+        "Path configuration groundwork continues without changing runtime execution behaviors."
+      ],
+      "tags": ["architecture", "admin", "read-only"]
+    },
+    {
       "id": "2026-01-alpha-version-refresh",
       "date": "2026-01-01",
-      "version": "v0.2.2-alpha",
+      "version": "v0.2.3-alpha",
       "scope": "runtime",
       "title": "Alpha metadata refresh",
       "summary": "Version metadata promoted to v0.2.2-alpha with build 2025.03 while preserving prior release history.",
@@ -23,7 +38,7 @@
     {
       "id": "2026-01-runtime-resumed",
       "date": "2026-01-15",
-      "version": "v0.2.2-alpha",
+      "version": "v0.2.3-alpha",
       "scope": "runtime",
       "title": "Runtime development resumed",
       "summary": "Runtime execution resumed with Rumble paused and YouTube/Twitch prioritized for ingestion.",
@@ -37,7 +52,7 @@
     {
       "id": "2025-12-project-suspended",
       "date": "2025-12-28",
-      "version": "v0.2.2-alpha",
+      "version": "v0.2.3-alpha",
       "scope": "runtime",
       "title": "Runtime development suspended",
       "summary": "Runtime execution and ingestion development has been suspended.",
@@ -51,7 +66,7 @@
     {
       "id": "2025-02-runtime-quotas",
       "date": "2025-12-20",
-      "version": "v0.2.2-alpha",
+      "version": "v0.2.3-alpha",
       "scope": "runtime",
       "title": "Quota enforcement hardened",
       "summary": "Daily quota enforcement stabilized across platforms.",

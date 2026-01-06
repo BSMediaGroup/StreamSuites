@@ -7,7 +7,7 @@ Runtime exports remain the single source of truth but are not yet wired to the d
 
 ## Runtime Positioning
 
-- **Project Status:** Late alpha (v0.2.2-alpha, Build 2025.03). Runtime execution is preserved for export generation; dashboard UI remains a separate repository and is not coupled at runtime.
+- **Project Status:** Late alpha (v0.2.3-alpha, Build 2025.04). Runtime execution is preserved for export generation; dashboard UI remains a separate repository and is not coupled at runtime.
 - **Runtime ↔ Dashboard separation:** This repo owns the Runtime Engine. Dashboard UI lives in a different repo and only consumes exported artifacts; no UI elements initiate runtime execution.
 - **What is live:** Export generation, schemas, and historical scaffolding. Existing exports stay authoritative for read-only inspection.
 - **Not live yet:** Chat runtime plumbing, live chat socket ingestion, OBS overlay feeds, and browser extension hydration remain preview-only and have no active runtime wiring.
@@ -22,7 +22,7 @@ scaffolding in place for future dashboard/public visibility.
 
 ## Version & Release Authority
 
-- **Current version**: v0.2.2-alpha (Build 2025.03)
+- **Current version**: v0.2.3-alpha (Build 2025.04)
 - **Development stage**: Late Alpha — features are present but still undergoing hardening, observability work, and lifecycle tightening before beta stabilization.
 - **Versioning policy**: Semantic Versioning with pre-release tags (e.g., `-alpha`, `-beta`) to signal stability and readiness. Pre-release identifiers reflect runtime maturity and do not guarantee API permanence.
 - **Authoritative runtime**: This repository is the authoritative runtime source of truth for StreamSuites. Dashboard and external consumers are strictly read-only and must not mutate runtime-managed state.
@@ -30,6 +30,49 @@ scaffolding in place for future dashboard/public visibility.
 - **Export-driven UI surfaces**: Runtime publishes state via file-based exports (JSON snapshots and HTML replay templates). Dashboards/overlays are expected to read these artifacts without introducing their own write paths.
 - **Licensing notice**: Proprietary. Redistribution or reuse outside authorized channels is not permitted.
 - **Production readiness**: Not production ready. Expect breaking changes, schema adjustments, and operational refinements during the late alpha cycle.
+
+## Architecture Overview
+
+- The StreamSuites Runtime repository is the authoritative home for runtime code, state, telemetry, exports, and changelogs.
+- All control-plane and data-plane sources originate here; downstream surfaces must consume artifacts exported from this repo.
+- Dashboards and other visualization surfaces are downstream consumers that read runtime-owned exports.
+
+## WinForms Desktop Admin Dashboard
+
+- Location: `desktop-admin/`
+- Runs locally on the same machine as the runtime and retains direct filesystem access.
+- Reads runtime snapshots directly from disk without requiring additional services.
+- Can launch and terminate runtime processes from the local control plane.
+- Manages local paths and configuration to align runtime exports with operator expectations.
+- Intended to become the primary administrative interface over time, ahead of any web dashboard controls.
+
+## Relationship to Web Dashboard
+
+- The web dashboard lives in a separate repository.
+- It consumes runtime-exported JSON artifacts only.
+- It has no process control and no filesystem authority.
+- It never depends on the WinForms Desktop Admin application.
+- It is intentionally less capable by design to preserve runtime integrity.
+
+## Versioning Policy
+
+- **VERSION** (e.g., `v0.2.3-alpha`): Describes semantic capability level and encapsulates feature, behavior, or contract changes.
+- **BUILD** (e.g., `2025.04`): Stamps regenerated artifacts, exports, documentation, and binaries for diagnostics and reproducibility.
+- Version changes imply meaningful project evolution and should accompany capability or contract adjustments.
+- Build changes indicate new artifacts or refreshed exports even when features remain unchanged.
+
+## Version Consumption Matrix
+
+- **Runtime**: Source of truth for version and build values.
+- **WinForms Desktop Admin**: Reads runtime version/build directly and displays authoritative metadata.
+- **Web Dashboard**: Reads version/build from exported JSON and never defines its own values.
+
+## Path & State Flow
+
+- `runtime/exports/runtime_snapshot.json` is the authoritative snapshot export produced by the runtime.
+- Local Desktop Admin reads snapshot files directly from disk for privileged operations.
+- The web dashboard reads published/exported JSON artifacts exclusively and remains read-only.
+- Paths may be configured locally via admin tooling to align snapshot locations with operator needs.
 
 The project is built with a strong emphasis on:
 - deterministic behavior
@@ -582,7 +625,7 @@ send reliability is preserved even when ingest requirements change:
 ## Project Status
 
 - **Status:** Alpha preview, export-driven. Runtime stays authoritative for data snapshots but is not yet connected to the dashboard UI or any live chat socket feeds.
-- **Current snapshot:** v0.2.2-alpha (Build 2025.03) remains the active late-alpha reference state.
+- **Current snapshot:** v0.2.3-alpha (Build 2025.04) remains the active late-alpha reference state.
 - **Operational impact:** chat runtime plumbing, live socket ingestion, and overlay feeds are not live; dashboard and overlay views are preview-only and rely on exported/mock data.
 - **Dashboard and exports:** schemas and exports continue to be maintained for read-only consumption; UI consumers must not assume live connectivity until runtime wiring is delivered.
 
@@ -619,7 +662,7 @@ mutates runtime state; it only reads the published snapshots.
   `scripts/update_version.py` updates the `version` field for every About JSON
   document it can find under `<dashboard-root>/about/` while keeping runtime
   execution paths free of About dependencies.
-  - **Usage**: `python scripts/update_version.py v0.2.2-alpha --build 2025.03 --dashboard-root ../StreamSuites-Dashboard/docs`
+  - **Usage**: `python scripts/update_version.py v0.2.3-alpha --build 2025.04 --dashboard-root ../StreamSuites-Dashboard/docs`
   - If the dashboard checkout is absent, the script safely skips dashboard
     updates while keeping runtime metadata in sync.
 
