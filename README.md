@@ -1,122 +1,121 @@
 <div style="background-color:#fffae6; border:1px solid #e0a800; padding:12px;">
 <strong>STATUS: ALPHA PREVIEW — StreamSuites Runtime Engine</strong><br/>
-Runtime exports remain the single source of truth but are not yet wired to the dashboard UI or any live chat socket feeds. Chat and overlay surfaces render preview/mock data until runtime plumbing is connected.
+The StreamSuites Runtime is the authoritative execution layer. Runtime exports are the single source of truth. 
+Dashboards and overlays consume exported artifacts only and remain read-only until live runtime plumbing is explicitly enabled.
 </div>
 
 # StreamSuites™
 
 ## Runtime Positioning
 
-- **Project Status:** Late alpha (v0.2.3-alpha, Build 2025.04). Runtime execution is preserved for export generation; dashboard UI remains a separate repository and is not coupled at runtime.
-- **Runtime ↔ Dashboard separation:** This repo owns the Runtime Engine. Dashboard UI lives in a different repo and only consumes exported artifacts; no UI elements initiate runtime execution.
-- **What is live:** Export generation, schemas, and historical scaffolding. Existing exports stay authoritative for read-only inspection.
-- **Not live yet:** Chat runtime plumbing, live chat socket ingestion, OBS overlay feeds, and browser extension hydration remain preview-only and have no active runtime wiring.
-- **Ownership boundary:** The runtime continues to guard data-plane correctness; dashboards, overlays, and extensions must remain read-only and avoid mutation paths.
+- **Project status:** Late Alpha (`v0.2.3-alpha`). The runtime is stable enough for export generation and local inspection, but active runtime ↔ UI coupling is still under construction.
+- **Runtime authority:** This repository is the authoritative home of the StreamSuites Runtime Engine. All execution, state, telemetry, exports, and lifecycle control originate here.
+- **Dashboard separation:** All dashboard UIs live in separate repositories and consume runtime-exported artifacts only. No dashboard initiates runtime execution or mutates runtime state.
+- **What is live:** Export generation, schemas, runtime metadata, versioning, and historical scaffolding. Existing exports remain authoritative for inspection.
+- **What is not live yet:** Live chat ingestion, socket wiring, OBS overlay feeds, browser extension hydration, and real-time UI synchronization remain preview-only and are not wired to the runtime.
+- **Ownership boundary:** The runtime guards data-plane correctness and lifecycle control. Dashboards, overlays, and extensions must remain read-only and avoid mutation paths.
 
-StreamSuites is a modular, multi-platform livestream automation system. It is
-the single canonical runtime source for orchestrating streaming data-plane
-workers and control-plane automation across platforms such as Discord,
-YouTube, Twitch, Twitter/X, and Rumble. Tallies are now tracked as a
-first-class runtime concept alongside polls and clips, with schema-only
-scaffolding in place for future dashboard/public visibility.
+StreamSuites is a modular, multi-platform livestream automation system.  
+It is the **single canonical runtime source** for orchestrating streaming data-plane workers and control-plane automation across platforms such as Discord, YouTube, Twitch, Twitter/X, and Rumble.
+
+Tallies are tracked as a **first-class runtime concept** alongside polls and clips. Schema-level scaffolding is in place for future dashboard and public visibility, but no live mutation paths are exposed.
 
 ## Version & Release Authority
 
-- **Current version**: v0.2.3-alpha (Build 2025.04)
-- **Development stage**: Late Alpha — features are present but still undergoing hardening, observability work, and lifecycle tightening before beta stabilization.
-- **Versioning policy**: Semantic Versioning with pre-release tags (e.g., `-alpha`, `-beta`) to signal stability and readiness. Pre-release identifiers reflect runtime maturity and do not guarantee API permanence.
-- **Authoritative runtime**: This repository is the authoritative runtime source of truth for StreamSuites. Dashboard and external consumers are strictly read-only and must not mutate runtime-managed state.
-- **Runtime/UI separation**: The dashboard UI (separate repo) is not yet connected to runtime execution paths; it consumes published exports only.
-- **Export-driven UI surfaces**: Runtime publishes state via file-based exports (JSON snapshots and HTML replay templates). Dashboards/overlays are expected to read these artifacts without introducing their own write paths.
-- **Licensing notice**: Proprietary. Redistribution or reuse outside authorized channels is not permitted.
-- **Production readiness**: Not production ready. Expect breaking changes, schema adjustments, and operational refinements during the late alpha cycle.
+- **Current version:** `v0.2.3-alpha`
+- **Development stage:** Late Alpha — features are present but still undergoing hardening, observability improvements, and lifecycle tightening prior to beta stabilization.
+- **Versioning model:** Semantic Versioning with pre-release identifiers (`-alpha`, `-beta`) to signal maturity. Pre-release versions do not guarantee API or schema stability.
+- **Build identifiers:** Build values stamp regenerated artifacts, exports, documentation, and binaries for traceability. Build changes may occur without feature changes.
+- **Authoritative source:** This repository defines the authoritative version and build metadata for StreamSuites.
+- **Runtime/UI separation:** Dashboards (including the web dashboard) do not execute runtime logic and are not coupled to runtime lifecycles.
+- **Export-driven surfaces:** Runtime publishes state exclusively via file-based exports (JSON snapshots, manifests, and static HTML replay templates).
+- **Licensing:** Proprietary. Redistribution or reuse outside authorized channels is not permitted.
+- **Production readiness:** Not production-ready. Expect breaking changes, schema refinements, and operational adjustments throughout the late-alpha phase.
 
 ## Architecture Overview
 
-- The StreamSuites Runtime repository is the authoritative home for runtime code, state, telemetry, exports, and changelogs.
-- All control-plane and data-plane sources originate here; downstream surfaces must consume artifacts exported from this repo.
-- Dashboards and other visualization surfaces are downstream consumers that read runtime-owned exports.
+- The StreamSuites Runtime repository is the authoritative source for:
+  - runtime execution
+  - platform workers
+  - state and telemetry
+  - export generation
+  - changelogs and version metadata
+- All control-plane and data-plane sources originate here.
+- Dashboards, overlays, and extensions are **downstream consumers only**.
 
 ## WinForms Desktop Admin Dashboard
 
-- Location: `desktop-admin/`
-- Runs locally on the same machine as the runtime and retains direct filesystem access.
-- Reads runtime snapshots directly from disk without requiring additional services.
-- Can launch and terminate runtime processes from the local control plane.
-- Manages local paths and configuration to align runtime exports with operator expectations.
-- Intended to become the primary administrative interface over time, ahead of any web dashboard controls.
+- **Location:** `desktop-admin/`
+- Runs locally on the same machine as the runtime.
+- Retains **direct filesystem access** to runtime exports and snapshots.
+- Reads runtime state directly from disk without additional services.
+- Can launch and terminate runtime processes as part of a privileged local control plane.
+- Manages local paths and configuration to align exports with operator expectations.
+- Intended to become the **primary administrative interface**, ahead of any web-based controls.
 
 ## Relationship to Web Dashboard
 
-- The web dashboard lives in a separate repository.
+- The web dashboard exists in a **separate repository**.
 - It consumes runtime-exported JSON artifacts only.
-- It has no process control and no filesystem authority.
-- It never depends on the WinForms Desktop Admin application.
-- It is intentionally less capable by design to preserve runtime integrity.
+- It has **no process control**, **no filesystem authority**, and **no write paths**.
+- It never depends on the WinForms Desktop Admin.
+- Reduced capability is **intentional** to preserve runtime integrity.
 
 ## Versioning Policy
 
-- **VERSION** (e.g., `v0.2.3-alpha`): Describes semantic capability level and encapsulates feature, behavior, or contract changes.
-- **BUILD** (e.g., `2025.04`): Stamps regenerated artifacts, exports, documentation, and binaries for diagnostics and reproducibility.
-- Version changes imply meaningful project evolution and should accompany capability or contract adjustments.
-- Build changes indicate new artifacts or refreshed exports even when features remain unchanged.
+- **VERSION** (e.g. `v0.2.3-alpha`)
+  - Represents semantic capability level.
+  - Changes indicate meaningful feature, behavior, or contract evolution.
+- **BUILD** (e.g. `YYYY.MM.DD+NNN`)
+  - Represents generated artifacts and CI traceability.
+  - May change without functional differences.
+
+Version changes imply project evolution.  
+Build changes imply refreshed artifacts.
 
 ## Version Consumption Matrix
 
-- **Runtime**: Source of truth for version and build values.
-- **WinForms Desktop Admin**: Reads runtime version/build directly and displays authoritative metadata.
-- **Web Dashboard**: Reads version/build from exported JSON and never defines its own values.
+- **Runtime:** Source of truth for version and build metadata.
+- **WinForms Desktop Admin:** Reads and displays runtime version/build directly.
+- **Web Dashboard:** Reads version/build from exported JSON and never defines its own values.
 
 ## Path & State Flow
 
-- `runtime/exports/runtime_snapshot.json` is the authoritative snapshot export produced by the runtime.
-- Local Desktop Admin reads snapshot files directly from disk for privileged operations.
-- The web dashboard reads published/exported JSON artifacts exclusively and remains read-only.
+- `runtime/exports/runtime_snapshot.json` is the authoritative runtime snapshot.
+- The WinForms Desktop Admin reads snapshots directly from disk.
+- The web dashboard reads published/exported JSON artifacts only.
 - Paths may be configured locally via admin tooling to align snapshot locations with operator needs.
 
-The project is built with a strong emphasis on:
+The project emphasizes:
 - deterministic behavior
-- clean lifecycle management
+- explicit lifecycle control
 - platform-specific correctness
-- future extensibility without architectural rewrites
+- forward extensibility without architectural rewrites
 
-The first implemented and validated platform was **Rumble**; Rumble support is
-currently paused (see status below) but all code remains intact for
-re-enablement.
+The first implemented and validated platform was **Rumble**.  
+Rumble support is currently paused, but all code remains intact and ready for re-enablement.
 
-## Repository layout
+## Repository Layout
 
-- `core/`: streaming runtime entrypoint (`app.py`), scheduler, job registry,
-  and shared snapshot export loops.
-- `services/rumble/`: Rumble-specific workers, browser client, SSE client, and
-  chat helpers.
-- `shared/`: platform-neutral configuration, state publishers, storage helpers,
-  and logging.
-- `runtime/`: exported snapshots owned by the runtime (state, signals,
-  admin/export manifests).
-- `changelog/` + `scripts/`: version stamping and release utilities.
-- `services/{twitch,youtube,discord}/`: other platform runtimes and control
-  plane implementations.
-- `services/kick/`: Kick chat scaffold (auth + chat stubs, normalized events,
-  trigger wiring) ready for future scheduler wiring.
-- `services/pilled/`: Planned ingest-only placeholders for Pilled; no runtime
-  wiring or network calls yet.
-- `services/chat_replay/`: neutral chat replay scaffolding that ships static, exportable HTML surfaces (pop-out window and OBS
-  overlay) plus a placeholder schema for future replay ingestion; all visuals are mock-data only and avoid live wiring.
-  - `contracts/chat_message.schema.json`: placeholder unified chat replay contract for future ingestion and export validation.
-  - `templates/chat_replay_window.html`: standalone pop-out style chat replay window that renders static mock messages.
-  - `templates/chat_overlay_obs.html`: transparent browser-source overlay for OBS/Meld/Streamlabs with fade-in entries.
-  - `templates/partials/theme_selector.html`: UI stub for swapping bundled chat replay themes without runtime wiring yet.
-  - `static/chat.css`: scoped styling shared by the pop-out and overlay templates.
-  - `static/themes/`: additive theme overrides (`theme-default.css`, `theme-slate.css`, `theme-midnight.css`) that keep avatar
-    sizing consistent across surfaces.
-  - `static/chat_mock_data.js`: labeled placeholder message set used by both templates (no live data yet).
-  - `README.md`: documentation describing the scaffolding purpose and future integration path.
-  - Avatars: circular avatar column is reserved in markup and styles; missing or failed images automatically fall back to
-    `docs/assets/icons/ui/profile.svg` so replay operators never ship a broken or empty avatar state.
+- `core/`: runtime entrypoint (`app.py`), scheduler, job registry, snapshot export loops
+- `services/rumble/`: Rumble workers, browser client, SSE client, chat helpers
+- `shared/`: platform-neutral configuration, state publishers, storage, logging
+- `runtime/`: exported snapshots, manifests, telemetry, and runtime metadata
+- `changelog/` + `scripts/`: version stamping and release utilities
+- `services/{twitch,youtube,discord}/`: additional platform runtimes and control-plane implementations
+- `services/kick/`: Kick chat scaffolding (auth + chat stubs, normalized events) pending scheduler wiring
+- `services/pilled/`: ingest-only placeholders; no runtime wiring yet
+- `services/chat_replay/`: static chat replay scaffolding shipping exportable HTML surfaces (pop-out window and OBS overlay) with mock data only
+  - `contracts/chat_message.schema.json`: placeholder unified chat replay contract
+  - `templates/chat_replay_window.html`: standalone replay window (mock data)
+  - `templates/chat_overlay_obs.html`: transparent OBS browser-source overlay
+  - `templates/partials/theme_selector.html`: theme selection UI stub
+  - `static/chat.css`: shared replay styling
+  - `static/themes/`: additive theme overrides
+  - `static/chat_mock_data.js`: labeled placeholder messages
+  - `README.md`: scaffolding documentation and future integration path
 
-### Repository tree (updated with desktop admin scaffolding)
-
+### Repository Tree (includes desktop admin scaffolding)
 ```
 StreamSuites/
 ├── .env.example
