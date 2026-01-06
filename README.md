@@ -152,6 +152,7 @@ StreamSuites/
 │   ├── StreamSuites.DesktopAdmin.Core/
 │   │   ├── AppState.cs
 │   │   ├── ModeContext.cs
+│   │   ├── PathConfigService.cs
 │   │   └── StreamSuites.DesktopAdmin.Core.csproj
 │   ├── StreamSuites.DesktopAdmin.Models/
 │   │   ├── PlatformStatus.cs
