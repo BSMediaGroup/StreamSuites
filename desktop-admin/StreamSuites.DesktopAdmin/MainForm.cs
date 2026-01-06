@@ -19,6 +19,10 @@ namespace StreamSuites.DesktopAdmin
         private readonly AppState _appState;
         private readonly RuntimeConnector _runtimeConnector;
 
+        private readonly PathConfigService _pathConfigService;
+        private PathConfiguration _pathConfiguration;
+        private SnapshotPathStatus _currentPathStatus;
+
         private readonly Timer _refreshTimer;
         private bool _refreshInProgress;
 
