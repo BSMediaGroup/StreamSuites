@@ -5,28 +5,44 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
-
 jobs:
   bump-build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      # -----------------------------
+      # Checkout runtime repo
+      # -----------------------------
+      - name: Checkout StreamSuites runtime
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # -----------------------------
+      # Checkout dashboard repo
+      # -----------------------------
+      - name: Checkout StreamSuites-Dashboard
+        uses: actions/checkout@v4
+        with:
+          repository: BSMediaGroup/StreamSuites-Dashboard
+          token: ${{ secrets.DASHBOARD_PUSH_TOKEN }}
+          path: StreamSuites-Dashboard
+
+      # -----------------------------
+      # Set up Python
+      # -----------------------------
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      # -----------------------------
+      # Calculate next build number
+      # -----------------------------
       - name: Calculate next build number
         id: build
         run: |
-          NEXT_BUILD=$(python - << 'EOF'
+          python << 'EOF'
           from datetime import datetime
           import re
           from pathlib import Path
@@ -36,7 +52,7 @@ jobs:
 
           match = re.search(r'BUILD = "([^"]+)"', text)
           if not match:
-              raise RuntimeError("BUILD not found in version.py")
+              raise RuntimeError("BUILD not found in runtime/version.py")
 
           current = match.group(1)
           today = datetime.utcnow().strftime("%Y.%m.%d")
@@ -50,25 +66,58 @@ jobs:
           else:
               next_counter = 1
 
-          print(f"{today}+{next_counter:03d}")
+          next_build = f"{today}+{next_counter:03d}"
+          print(f"next_build={next_build}")
           EOF
-          )
+          echo "next_build=$(python - << 'EOF'
+          from datetime import datetime
+          import re
+          from pathlib import Path
+          text = Path("runtime/version.py").read_text(encoding="utf-8")
+          m = re.search(r'BUILD = \"([^\"]+)\"', text)
+          current = m.group(1)
+          today = datetime.utcnow().strftime("%Y.%m.%d")
+          if "+" in current:
+              d, c = current.split("+", 1)
+              c = int(c) + 1 if d == today else 1
+          else:
+              c = 1
+          print(f"{today}+{c:03d}")
+          EOF
+          )" >> $GITHUB_OUTPUT
 
-          echo "next_build=$NEXT_BUILD" >> "$GITHUB_OUTPUT"
-
-      - name: Update runtime version metadata
+      # -----------------------------
+      # Update runtime + dashboard versions
+      # -----------------------------
+      - name: Update version metadata (runtime authoritative)
         run: |
           python scripts/update_version.py \
             v0.2.3-alpha \
-            --build "${{ steps.build.outputs.next_build }}"
+            --build "${{ steps.build.outputs.next_build }}" \
+            --dashboard-root StreamSuites-Dashboard/docs
 
-      - name: Commit build update
+      # -----------------------------
+      # Commit changes (both repos)
+      # -----------------------------
+      - name: Commit version updates
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-          git add runtime/version.py
+          git add runtime/version.py changelog runtime/exports || true
           git diff --cached --quiet || git commit -m "chore(runtime): bump build to ${{ steps.build.outputs.next_build }}"
 
-      - name: Push changes
+          cd StreamSuites-Dashboard
+          git add docs/version.json docs/about docs/data || true
+          git diff --cached --quiet || git commit -m "chore(dashboard): sync version ${{ steps.build.outputs.next_build }}"
+
+      # -----------------------------
+      # Push changes
+      # -----------------------------
+      - name: Push runtime changes
         run: git push
+
+      - name: Push dashboard changes
+        run: |
+          cd StreamSuites-Dashboard
+          git push
