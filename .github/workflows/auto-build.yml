@@ -42,23 +42,23 @@ jobs:
       - name: Calculate next build number
         id: build
         run: |
-          python - << 'EOF'
+          python -c "
           from datetime import datetime
           import re
           from pathlib import Path
 
-          version_file = Path("runtime/version.py")
-          text = version_file.read_text(encoding="utf-8")
+          version_file = Path('runtime/version.py')
+          text = version_file.read_text(encoding='utf-8')
 
-          match = re.search(r'BUILD = "([^"]+)"', text)
+          match = re.search(r'BUILD = \"([^\"]+)\"', text)
           if not match:
-              raise RuntimeError("BUILD not found in runtime/version.py")
+              raise RuntimeError('BUILD not found in runtime/version.py')
 
           current = match.group(1)
-          today = datetime.utcnow().strftime("%Y.%m.%d")
+          today = datetime.utcnow().strftime('%Y.%m.%d')
 
-          if "+" in current:
-              date_part, counter = current.split("+", 1)
+          if '+' in current:
+              date_part, counter = current.split('+', 1)
               if date_part == today and counter.isdigit():
                   next_counter = int(counter) + 1
               else:
@@ -66,9 +66,9 @@ jobs:
           else:
               next_counter = 1
 
-          next_build = f"{today}+{next_counter:03d}"
-          print(f"next_build={next_build}")
-          EOF >> "$GITHUB_OUTPUT"
+          next_build = f'{today}+{next_counter:03d}'
+          print(f'next_build={next_build}')
+          " >> "$GITHUB_OUTPUT"
 
       # -----------------------------
       # Update runtime + dashboard versions
@@ -103,7 +103,7 @@ jobs:
           git diff --cached --quiet || git commit -m "chore(dashboard): sync version ${{ steps.build.outputs.next_build }}"
 
       # -----------------------------
-      # Push changes
+      # Push runtime changes
       # -----------------------------
       - name: Push runtime changes
         env:
@@ -111,6 +111,9 @@ jobs:
         run: |
           git push https://x-access-token:${GITHUB_TOKEN}@github.com/BSMediaGroup/StreamSuites.git
 
+      # -----------------------------
+      # Push dashboard changes
+      # -----------------------------
       - name: Push dashboard changes
         env:
           DASHBOARD_PUSH_TOKEN: ${{ secrets.DASHBOARD_PUSH_TOKEN }}
