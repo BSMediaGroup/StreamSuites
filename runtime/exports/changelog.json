@@ -19,7 +19,11 @@
         "Web dashboard remains a read-only consumer of exported JSON and carries no process or filesystem authority.",
         "Path configuration groundwork continues without changing runtime execution behaviors."
       ],
-      "tags": ["architecture", "admin", "read-only"]
+      "tags": [
+        "architecture",
+        "admin",
+        "read-only"
+      ]
     },
     {
       "id": "2026-01-alpha-version-refresh",
@@ -33,7 +37,11 @@
         "Changelog history remains intact with prior entries pinned to v0.2.1-alpha.",
         "Dashboard about views should surface the refreshed version string."
       ],
-      "tags": ["alpha", "metadata", "version"]
+      "tags": [
+        "alpha",
+        "metadata",
+        "version"
+      ]
     },
     {
       "id": "2026-01-runtime-resumed",
@@ -47,7 +55,11 @@
         "Rumble marked as PAUSED with telemetry preserved and scheduler skip logic.",
         "YouTube and Twitch stabilized for continued chat ingestion development."
       ],
-      "tags": ["resumed", "runtime", "status"]
+      "tags": [
+        "resumed",
+        "runtime",
+        "status"
+      ]
     },
     {
       "id": "2025-12-project-suspended",
@@ -61,7 +73,11 @@
         "Runtime behavior could not be made deterministic enough for safe automation.",
         "No further runtime changes are planned until external conditions materially change."
       ],
-      "tags": ["suspended", "runtime", "status"]
+      "tags": [
+        "suspended",
+        "runtime",
+        "status"
+      ]
     },
     {
       "id": "2025-02-runtime-quotas",
@@ -75,7 +91,11 @@
         "Snapshot export cadence stabilized",
         "Dashboard visibility confirmed read-only"
       ],
-      "tags": ["quotas", "stability", "exports"]
+      "tags": [
+        "quotas",
+        "stability",
+        "exports"
+      ]
     }
   ]
 }
