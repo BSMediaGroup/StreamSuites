@@ -7,4 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="..\StreamSuites.DesktopAdmin.Models\StreamSuites.DesktopAdmin.Models.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Configuration.ConfigurationManager" Version="8.0.0" />
+  </ItemGroup>
 </Project>
