@@ -45,6 +45,7 @@ namespace StreamSuites.DesktopAdmin
         private Button btnBrowseSnapshotPath;
         private Button btnSaveSnapshotPath;
         private Label lblSnapshotPathStatus;
+        private Label lblSnapshotDetected;
 
         // Tray icon
         private NotifyIcon trayIcon;
@@ -196,7 +197,7 @@ namespace StreamSuites.DesktopAdmin
             {
                 Location = new Point(16, 44),
                 Width = 700,
-                ReadOnly = true
+                ReadOnly = false
             };
 
             btnBrowseSnapshotPath = new Button
@@ -220,11 +221,19 @@ namespace StreamSuites.DesktopAdmin
                 ForeColor = SystemColors.GrayText
             };
 
+            lblSnapshotDetected = new Label
+            {
+                Location = new Point(16, 104),
+                AutoSize = true,
+                MaximumSize = new Size(900, 0)
+            };
+
             tabPaths.Controls.Add(lblSnapshotPathTitle);
             tabPaths.Controls.Add(txtSnapshotPath);
             tabPaths.Controls.Add(btnBrowseSnapshotPath);
             tabPaths.Controls.Add(btnSaveSnapshotPath);
             tabPaths.Controls.Add(lblSnapshotPathStatus);
+            tabPaths.Controls.Add(lblSnapshotDetected);
 
             // Tray icon
             trayIcon.Text = "StreamSuites™ Administrator";
