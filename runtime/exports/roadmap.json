@@ -2,8 +2,8 @@
   "meta": {
     "project": "StreamSuites™",
     "scope": "runtime-roadmap",
-    "version": "v0.2.2-alpha",
-    "generated_at": "2026-01-15"
+    "version": "v0.2.3-alpha",
+    "generated_at": "2026-02-01"
   },
   "entries": [
     {
@@ -114,9 +114,16 @@
     {
       "id": "operator-tooling",
       "title": "Operator tooling",
-      "status": "planned",
-      "progress": 5,
-      "description": "Operator controls for runtime start/stop and desktop tools are planned but not started; current operations are manual."
+      "status": "active",
+      "progress": 30,
+      "description": "WinForms Desktop Admin now ships locally with filesystem access and runtime start/stop controls; operator tooling is moving toward becoming the primary admin surface with continued hardening in progress."
+    },
+    {
+      "id": "path-configuration-groundwork",
+      "title": "Path configuration groundwork",
+      "status": "active",
+      "progress": 35,
+      "description": "Local path management is being wired through Desktop Admin to keep runtime snapshots and exports configurable on-disk while preserving read-only downstream consumption."
     },
     {
       "id": "chat-logging-replay",
