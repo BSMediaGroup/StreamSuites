@@ -23,7 +23,7 @@ jobs:
       - name: Calculate next build number
         id: build
         run: |
-          python - << 'EOF'
+          NEXT_BUILD=$(python - << 'EOF'
           from datetime import datetime
           import re
           from pathlib import Path
@@ -47,9 +47,11 @@ jobs:
           else:
               next_counter = 1
 
-          next_build = f"{today}+{next_counter:03d}"
-          print(f"next_build={next_build}")
-          EOF >> "$GITHUB_OUTPUT"
+          print(f"{today}+{next_counter:03d}")
+          EOF
+          )
+
+          echo "next_build=$NEXT_BUILD" >> "$GITHUB_OUTPUT"
 
       - name: Update runtime version metadata
         run: |
