@@ -20,23 +20,30 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Update StreamSuites runtime version metadata")
-    parser.add_argument("version", help="Version string to stamp (e.g., v0.2.2-alpha)")
+    parser = argparse.ArgumentParser(
+        description="Update StreamSuites runtime version metadata"
+    )
+    parser.add_argument(
+        "version",
+        help="Version string to stamp (e.g., v0.2.3-alpha)",
+    )
     parser.add_argument(
         "--build",
-        help="Optional build identifier to stamp in runtime/version.py",
+        help="Optional build identifier to stamp (e.g., 2026.01.06+004)",
     )
     parser.add_argument(
         "--dashboard-root",
         type=Path,
         default=ROOT.parent / "StreamSuites-Dashboard" / "docs",
-        help="Dashboard docs root for optional version/About updates (default: ../StreamSuites-Dashboard/docs)",
+        help="Dashboard docs root for optional version/About updates "
+             "(default: ../StreamSuites-Dashboard/docs)",
     )
     parser.add_argument(
         "--about-dir",
         type=Path,
         default=None,
-        help="Override About JSON directory (defaults to <dashboard-root>/about)",
+        help="Override About JSON directory "
+             "(defaults to <dashboard-root>/about)",
     )
     return parser.parse_args()
 
@@ -51,14 +58,26 @@ def _write_json(path: Path, data) -> None:
 def update_runtime_version_py(version: str, build: str | None) -> bool:
     target = ROOT / "runtime" / "version.py"
     original = target.read_text(encoding="utf-8")
-    updated = re.sub(r'^VERSION = ".*"', f'VERSION = "{version}"', original, flags=re.MULTILINE)
+
+    updated = re.sub(
+        r'^VERSION = ".*"$',
+        f'VERSION = "{version}"',
+        original,
+        flags=re.MULTILINE,
+    )
 
     if build:
-        updated = re.sub(r'^BUILD = ".*"', f'BUILD = "{build}"', updated, flags=re.MULTILINE)
+        updated = re.sub(
+            r'^BUILD = ".*"$',
+            f'BUILD = "{build}"',
+            updated,
+            flags=re.MULTILINE,
+        )
 
     if updated != original:
         target.write_text(updated, encoding="utf-8")
         return True
+
     return False
 
 
@@ -67,33 +86,40 @@ def update_changelog_sources(version: str) -> bool:
         ROOT / "changelog" / "changelog.runtime.json",
         ROOT / "runtime" / "exports" / "changelog.runtime.json",
     ]
+
     changed = False
 
     for path in paths:
         if not path.exists():
             continue
+
         entries = json.loads(path.read_text(encoding="utf-8"))
+
         if isinstance(entries, list):
             for entry in entries:
                 if isinstance(entry, dict):
                     entry["version"] = version
-        _write_json(path, entries)
-        changed = True
+
+            _write_json(path, entries)
+            changed = True
 
     export_path = ROOT / "runtime" / "exports" / "changelog.json"
     if export_path.exists():
         payload = json.loads(export_path.read_text(encoding="utf-8"))
+
         if isinstance(payload, dict):
             meta = payload.get("meta")
             if isinstance(meta, dict):
                 meta["version"] = version
+
             entries = payload.get("entries")
             if isinstance(entries, list):
                 for entry in entries:
                     if isinstance(entry, dict):
                         entry["version"] = version
-        _write_json(export_path, payload)
-        changed = True
+
+            _write_json(export_path, payload)
+            changed = True
 
     return changed
 
@@ -101,31 +127,46 @@ def update_changelog_sources(version: str) -> bool:
 def _iter_about_files(about_dir: Path) -> Iterable[Path]:
     if not about_dir.exists():
         return []
-    return sorted(p for p in about_dir.rglob("about*.json") if p.is_file())
+
+    return sorted(
+        p for p in about_dir.rglob("about*.json") if p.is_file()
+    )
 
 
 def update_about_json(version: str, about_dir: Path) -> bool:
     changed = False
+
     for path in _iter_about_files(about_dir):
         data = json.loads(path.read_text(encoding="utf-8"))
+
         if isinstance(data, dict):
             data["version"] = version
             _write_json(path, data)
             changed = True
+
     return changed
 
 
-def update_dashboard_version_manifest(version: str, dashboard_root: Path) -> bool:
+def update_dashboard_version_manifest(
+    version: str,
+    build: str | None,
+    dashboard_root: Path,
+) -> bool:
     manifest = dashboard_root / "version.json"
     if not manifest.exists():
         return False
 
     data = json.loads(manifest.read_text(encoding="utf-8"))
-    if isinstance(data, dict):
-        data["version"] = version
-        _write_json(manifest, data)
-        return True
-    return False
+    if not isinstance(data, dict):
+        return False
+
+    data["version"] = version
+
+    if build:
+        data["build"] = build
+
+    _write_json(manifest, data)
+    return True
 
 
 def main() -> int:
@@ -133,9 +174,14 @@ def main() -> int:
     about_dir = args.about_dir or (args.dashboard_root / "about")
 
     changed = False
+
     changed |= update_runtime_version_py(args.version, args.build)
     changed |= update_changelog_sources(args.version)
-    changed |= update_dashboard_version_manifest(args.version, args.dashboard_root)
+    changed |= update_dashboard_version_manifest(
+        args.version,
+        args.build,
+        args.dashboard_root,
+    )
     changed |= update_about_json(args.version, about_dir)
 
     if not changed:
