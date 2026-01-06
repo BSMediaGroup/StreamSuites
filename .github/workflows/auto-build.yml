@@ -1,0 +1,69 @@
+name: Auto Increment Runtime Build
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  bump-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Calculate next build number
+        id: build
+        run: |
+          python - << 'EOF'
+          from datetime import datetime
+          import re
+          from pathlib import Path
+
+          version_file = Path("runtime/version.py")
+          text = version_file.read_text(encoding="utf-8")
+
+          match = re.search(r'BUILD = "([^"]+)"', text)
+          if not match:
+              raise RuntimeError("BUILD not found in version.py")
+
+          current = match.group(1)
+          today = datetime.utcnow().strftime("%Y.%m.%d")
+
+          if "+" in current:
+              date_part, counter = current.split("+", 1)
+              if date_part == today and counter.isdigit():
+                  next_counter = int(counter) + 1
+              else:
+                  next_counter = 1
+          else:
+              next_counter = 1
+
+          next_build = f"{today}+{next_counter:03d}"
+          print(f"next_build={next_build}")
+          EOF >> "$GITHUB_OUTPUT"
+
+      - name: Update runtime version metadata
+        run: |
+          python scripts/update_version.py \
+            v0.2.3-alpha \
+            --build "${{ steps.build.outputs.next_build }}"
+
+      - name: Commit build update
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add runtime/version.py
+          git diff --cached --quiet || git commit -m "chore(runtime): bump build to ${{ steps.build.outputs.next_build }}"
+
+      - name: Push changes
+        run: git push
