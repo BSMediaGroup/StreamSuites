@@ -1,8 +1,12 @@
 {
   "version": 2,
-  "dgSpecHash": "UHdjzMXCQrw=",
+  "dgSpecHash": "CMFd7gBQXjA=",
   "success": true,
   "projectFilePath": "G:\\StreamSuites\\desktop-admin\\StreamSuites.DesktopAdmin\\StreamSuites.DesktopAdmin.csproj",
-  "expectedPackageFiles": [],
+  "expectedPackageFiles": [
+    "C:\\Users\\TempAdmin\\.nuget\\packages\\system.configuration.configurationmanager\\8.0.0\\system.configuration.configurationmanager.8.0.0.nupkg.sha512",
+    "C:\\Users\\TempAdmin\\.nuget\\packages\\system.diagnostics.eventlog\\8.0.0\\system.diagnostics.eventlog.8.0.0.nupkg.sha512",
+    "C:\\Users\\TempAdmin\\.nuget\\packages\\system.security.cryptography.protecteddata\\8.0.0\\system.security.cryptography.protecteddata.8.0.0.nupkg.sha512"
+  ],
   "logs": []
 }
