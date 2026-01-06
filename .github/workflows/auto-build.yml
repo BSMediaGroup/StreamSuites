@@ -42,23 +42,23 @@ jobs:
       - name: Calculate next build number
         id: build
         run: |
-          python -c "
+          python - <<'PYCODE'
           from datetime import datetime
           import re
           from pathlib import Path
 
-          version_file = Path('runtime/version.py')
-          text = version_file.read_text(encoding='utf-8')
+          version_file = Path("runtime/version.py")
+          text = version_file.read_text(encoding="utf-8")
 
-          match = re.search(r'BUILD = \"([^\"]+)\"', text)
+          match = re.search(r'BUILD = "([^"]+)"', text)
           if not match:
-              raise RuntimeError('BUILD not found in runtime/version.py')
+              raise RuntimeError("BUILD not found in runtime/version.py")
 
           current = match.group(1)
-          today = datetime.utcnow().strftime('%Y.%m.%d')
+          today = datetime.utcnow().strftime("%Y.%m.%d")
 
-          if '+' in current:
-              date_part, counter = current.split('+', 1)
+          if "+" in current:
+              date_part, counter = current.split("+", 1)
               if date_part == today and counter.isdigit():
                   next_counter = int(counter) + 1
               else:
@@ -66,9 +66,28 @@ jobs:
           else:
               next_counter = 1
 
-          next_build = f'{today}+{next_counter:03d}'
-          print(f'next_build={next_build}')
-          " >> "$GITHUB_OUTPUT"
+          next_build = f"{today}+{next_counter:03d}"
+          print(f"next_build={next_build}")
+          PYCODE
+          echo "next_build=$(python - <<'PYCODE'
+          from datetime import datetime
+          import re
+          from pathlib import Path
+
+          text = Path("runtime/version.py").read_text(encoding="utf-8")
+          m = re.search(r'BUILD = \"([^\"]+)\"', text)
+          current = m.group(1)
+          today = datetime.utcnow().strftime("%Y.%m.%d")
+
+          if "+" in current:
+              d, c = current.split("+", 1)
+              c = int(c) + 1 if d == today else 1
+          else:
+              c = 1
+
+          print(f"{today}+{c:03d}")
+          PYCODE
+          )" >> "$GITHUB_OUTPUT"
 
       # -----------------------------
       # Update runtime + dashboard versions
@@ -81,24 +100,27 @@ jobs:
             --dashboard-root StreamSuites-Dashboard/docs
 
       # -----------------------------
-      # Configure git identity
-      # -----------------------------
-      - name: Configure git identity
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      # -----------------------------
       # Commit changes (both repos)
       # -----------------------------
       - name: Commit version updates
         run: |
-          # Runtime repo
+          # -----------------------------
+          # Runtime repo commit
+          # -----------------------------
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
           git add runtime/version.py changelog runtime/exports || true
           git diff --cached --quiet || git commit -m "chore(runtime): bump build to ${{ steps.build.outputs.next_build }}"
 
-          # Dashboard repo
+          # -----------------------------
+          # Dashboard repo commit
+          # -----------------------------
           cd StreamSuites-Dashboard
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
           git add docs/version.json docs/about docs/data || true
           git diff --cached --quiet || git commit -m "chore(dashboard): sync version ${{ steps.build.outputs.next_build }}"
 
