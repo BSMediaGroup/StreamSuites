@@ -19,6 +19,10 @@ namespace StreamSuites.DesktopAdmin
         private readonly AppState _appState;
         private readonly RuntimeConnector _runtimeConnector;
 
+        private readonly PathConfigService _pathConfigService;
+        private PathConfiguration _pathConfiguration;
+        private SnapshotPathStatus _currentPathStatus;
+
         private readonly Timer _refreshTimer;
         private bool _refreshInProgress;
 
@@ -89,11 +93,22 @@ namespace StreamSuites.DesktopAdmin
             var snapshotReader = new FileSnapshotReader(fileAccessor);
             _runtimeConnector = new RuntimeConnector(snapshotReader, _appState);
 
+            _pathConfigService = new PathConfigService();
+            _pathConfiguration = _pathConfigService.Load();
+            _currentPathStatus = new SnapshotPathStatus();
+
             _platformBindingSource = new BindingSource();
             gridPlatforms.DataSource = _platformBindingSource;
 
             InitializePlatformGrid();
             InitializeInspectorPanel();
+
+            txtSnapshotPath.Text = _pathConfiguration.RuntimeSnapshotRoot;
+            txtSnapshotPath.ReadOnly = false;
+
+            btnBrowseSnapshotPath.Click += BtnBrowseSnapshotPath_Click;
+            btnSaveSnapshotPath.Click += BtnSaveSnapshotPath_Click;
+            txtSnapshotPath.TextChanged += (_, __) => RefreshSnapshotPathStatus();
 
             gridPlatforms.SelectionChanged += GridPlatforms_SelectionChanged;
 
@@ -110,6 +125,8 @@ namespace StreamSuites.DesktopAdmin
             };
             _sinceRefreshTimer.Tick += (_, __) =>
                 UpdateLastRefreshCounter();
+
+            RefreshSnapshotPathStatus();
 
             Shown += async (_, __) =>
             {
@@ -128,15 +145,17 @@ namespace StreamSuites.DesktopAdmin
             if (_refreshInProgress)
                 return;
 
-            var snapshotPath = GetSnapshotPath();
+            var pathStatus = RefreshSnapshotPathStatus();
+            if (!pathStatus.IsValid)
+            {
+                HandleInvalidSnapshotPath(pathStatus);
+                return;
+            }
+
+            var snapshotPath = pathStatus.SnapshotFilePath;
             if (string.IsNullOrWhiteSpace(snapshotPath))
             {
-                UpdateSnapshotStatus("Snapshot: path not configured");
-                ApplySnapshotHealthStyle(SnapshotHealthState.Invalid);
-                UpdateTrayIconHealth(SnapshotHealthState.Invalid);
-                SetSnapshotTooltip(null, "Snapshot path not configured.");
-                UpdatePlatformCount("Platforms: unknown");
-                _platformBindingSource.DataSource = null;
+                HandleInvalidSnapshotPath(pathStatus);
                 return;
             }
 
@@ -155,6 +174,7 @@ namespace StreamSuites.DesktopAdmin
                     UpdateTrayIconHealth(SnapshotHealthState.Invalid);
                     SetSnapshotTooltip(null, "Snapshot missing runtime block.");
                     UpdatePlatformCount("Platforms: invalid");
+                    UpdateStatusRuntime("Runtime: invalid snapshot");
                     _platformBindingSource.DataSource = null;
                     return;
                 }
@@ -171,6 +191,7 @@ namespace StreamSuites.DesktopAdmin
                 ApplySnapshotHealthStyle(health);
                 UpdateTrayIconHealth(health);
                 SetSnapshotTooltip(snapshot, null);
+                UpdateStatusRuntime("Runtime: snapshot bound");
 
                 UpdatePlatformCount(
                     $"Platforms: {snapshot.Platforms?.Count ?? 0}"
@@ -191,11 +212,142 @@ namespace StreamSuites.DesktopAdmin
                 UpdateTrayIconHealth(SnapshotHealthState.Invalid);
                 SetSnapshotTooltip(null, "Exception reading snapshot.");
                 UpdatePlatformCount("Platforms: error");
+                UpdateStatusRuntime("Runtime: disconnected");
             }
             finally
             {
                 _refreshInProgress = false;
             }
+        }
+
+        private void HandleInvalidSnapshotPath(SnapshotPathStatus pathStatus)
+        {
+            var label = string.IsNullOrWhiteSpace(pathStatus?.Message)
+                ? "Snapshot: path not configured"
+                : $"Snapshot: {pathStatus.Message}";
+
+            UpdateSnapshotStatus(label);
+            ApplySnapshotHealthStyle(SnapshotHealthState.Invalid);
+            UpdateTrayIconHealth(SnapshotHealthState.Invalid);
+            SetSnapshotTooltip(null, pathStatus?.Message);
+            UpdatePlatformCount("Platforms: unknown");
+            _platformBindingSource.DataSource = null;
+            UpdateStatusRuntime("Runtime: disconnected");
+            _lastSuccessfulRefreshUtc = null;
+            lblLastRefresh.Text = "Last refresh: —";
+        }
+
+        private SnapshotPathStatus RefreshSnapshotPathStatus()
+        {
+            _currentPathStatus = _pathConfigService
+                .ValidateSnapshotRoot(txtSnapshotPath.Text);
+
+            UpdatePathTabStatus(_currentPathStatus);
+            return _currentPathStatus;
+        }
+
+        private void BtnBrowseSnapshotPath_Click(object? sender, EventArgs e)
+        {
+            using var dialog = new FolderBrowserDialog
+            {
+                Description = "Select the runtime snapshot export directory",
+                ShowNewFolderButton = false
+            };
+
+            if (!string.IsNullOrWhiteSpace(txtSnapshotPath.Text) &&
+                Directory.Exists(txtSnapshotPath.Text))
+            {
+                dialog.SelectedPath = txtSnapshotPath.Text;
+            }
+
+            if (dialog.ShowDialog() == DialogResult.OK)
+            {
+                txtSnapshotPath.Text = dialog.SelectedPath;
+            }
+        }
+
+        private async void BtnSaveSnapshotPath_Click(object? sender, EventArgs e)
+        {
+            _pathConfigService.SaveSnapshotRoot(txtSnapshotPath.Text);
+            _pathConfiguration = _pathConfigService.Load();
+            txtSnapshotPath.Text = _pathConfiguration.RuntimeSnapshotRoot;
+
+            var status = RefreshSnapshotPathStatus();
+
+            if (status.IsValid)
+            {
+                await RefreshSnapshotAsync();
+            }
+            else
+            {
+                HandleInvalidSnapshotPath(status);
+            }
+        }
+
+        private void UpdatePathTabStatus(SnapshotPathStatus status)
+        {
+            if (status == null)
+                return;
+
+            var color = status.State switch
+            {
+                SnapshotPathState.Valid => Color.DarkGreen,
+                SnapshotPathState.NotConfigured => Color.Gray,
+                _ => Color.DarkRed
+            };
+
+            var prefix = status.State == SnapshotPathState.Valid ? "✔" : "✖";
+            lblSnapshotPathStatus.ForeColor = color;
+            lblSnapshotPathStatus.Text =
+                $"Status: {prefix} {status.Message}";
+
+            lblSnapshotDetected.Text = BuildSnapshotDetectionText(status);
+        }
+
+        private string BuildSnapshotDetectionText(SnapshotPathStatus status)
+        {
+            var details = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(status.SnapshotRoot))
+            {
+                details.Add($"Root: {status.SnapshotRoot}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(status.SnapshotFilePath))
+            {
+                var suffix = status.State switch
+                {
+                    SnapshotPathState.FileMissing => "missing",
+                    SnapshotPathState.DirectoryMissing => "directory missing",
+                    SnapshotPathState.InvalidPath => "invalid path",
+                    _ when status.LastModifiedUtc != null =>
+                        $"updated {FormatSnapshotAge(status.Age)}",
+                    _ => "unreadable"
+                };
+
+                details.Add(
+                    $"{status.SnapshotFileName}: {suffix}");
+            }
+
+            if (status.LastModifiedUtc != null)
+            {
+                details.Add(
+                    $"Last modified (UTC): {status.LastModifiedUtc:yyyy-MM-dd HH:mm:ss}");
+            }
+
+            if (details.Count == 0)
+                return string.Empty;
+
+            return "Detected:\n- " + string.Join("\n- ", details);
+        }
+
+        private static string FormatSnapshotAge(TimeSpan? age)
+        {
+            if (age == null)
+                return "unknown";
+
+            var seconds = Math.Max(0, (int)Math.Round(age.Value.TotalSeconds));
+            return seconds == 1 ? "1s ago" : $"{seconds}s ago";
         }
 
         // -----------------------------------------------------------------
@@ -927,10 +1079,16 @@ namespace StreamSuites.DesktopAdmin
 
         private void UpdateSnapshotStatus(string text)
         {
-            if (InvokeRequired)
-                Invoke(new Action(() => lblSnapshotStatus.Text = text));
-            else
+            void ApplyText()
+            {
                 lblSnapshotStatus.Text = text;
+                statusSnapshot.Text = text;
+            }
+
+            if (InvokeRequired)
+                Invoke(new Action(ApplyText));
+            else
+                ApplyText();
         }
 
         private void UpdatePlatformCount(string text)
@@ -941,15 +1099,12 @@ namespace StreamSuites.DesktopAdmin
                 lblPlatformCount.Text = text;
         }
 
-        private static string GetSnapshotPath()
+        private void UpdateStatusRuntime(string text)
         {
-            var configuredPath =
-                ConfigurationManager.AppSettings["SnapshotDirectory"];
-
-            if (string.IsNullOrWhiteSpace(configuredPath))
-                return string.Empty;
-
-            return Path.Combine(configuredPath, "runtime_snapshot.json");
+            if (InvokeRequired)
+                Invoke(new Action(() => statusRuntime.Text = text));
+            else
+                statusRuntime.Text = text;
         }
 
         private static int GetRefreshIntervalMs()
