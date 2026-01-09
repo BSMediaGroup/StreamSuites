@@ -1,0 +1,12 @@
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\bin\Release\net8.0\StreamSuites.DesktopAdmin.Models.deps.json
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\bin\Release\net8.0\StreamSuites.DesktopAdmin.Models.dll
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\bin\Release\net8.0\StreamSuites.DesktopAdmin.Models.pdb
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Release\net8.0\StreamSuites.DesktopAdmin.Models.GeneratedMSBuildEditorConfig.editorconfig
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Release\net8.0\StreamSuites.DesktopAdmin.Models.AssemblyInfoInputs.cache
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Release\net8.0\StreamSuites.DesktopAdmin.Models.AssemblyInfo.cs
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Release\net8.0\StreamSuites.DesktopAdmin.Models.csproj.CoreCompileInputs.cache
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Release\net8.0\StreamSuites.DesktopAdmin.Models.sourcelink.json
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Release\net8.0\StreamSuites.DesktopAdmin.Models.dll
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Release\net8.0\refint\StreamSuites.DesktopAdmin.Models.dll
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Release\net8.0\StreamSuites.DesktopAdmin.Models.pdb
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Models\obj\Release\net8.0\ref\StreamSuites.DesktopAdmin.Models.dll

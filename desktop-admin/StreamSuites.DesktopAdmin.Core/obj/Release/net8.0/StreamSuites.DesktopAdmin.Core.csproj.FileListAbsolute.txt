@@ -1,0 +1,16 @@
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\bin\Release\net8.0\StreamSuites.DesktopAdmin.Core.deps.json
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\bin\Release\net8.0\StreamSuites.DesktopAdmin.Core.dll
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\bin\Release\net8.0\StreamSuites.DesktopAdmin.Core.pdb
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\bin\Release\net8.0\StreamSuites.DesktopAdmin.Models.dll
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\bin\Release\net8.0\StreamSuites.DesktopAdmin.Models.pdb
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Release\net8.0\StreamSuites.DesktopAdmin.Core.csproj.AssemblyReference.cache
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Release\net8.0\StreamSuites.DesktopAdmin.Core.GeneratedMSBuildEditorConfig.editorconfig
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Release\net8.0\StreamSuites.DesktopAdmin.Core.AssemblyInfoInputs.cache
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Release\net8.0\StreamSuites.DesktopAdmin.Core.AssemblyInfo.cs
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Release\net8.0\StreamSuites.DesktopAdmin.Core.csproj.CoreCompileInputs.cache
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Release\net8.0\StreamSuites.DesktopAdmin.Core.sourcelink.json
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Release\net8.0\StreamSu.71EC374E.Up2Date
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Release\net8.0\StreamSuites.DesktopAdmin.Core.dll
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Release\net8.0\refint\StreamSuites.DesktopAdmin.Core.dll
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Release\net8.0\StreamSuites.DesktopAdmin.Core.pdb
+G:\StreamSuites\desktop-admin\StreamSuites.DesktopAdmin.Core\obj\Release\net8.0\ref\StreamSuites.DesktopAdmin.Core.dll
