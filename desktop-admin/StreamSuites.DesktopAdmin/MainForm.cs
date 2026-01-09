@@ -9,6 +9,7 @@ using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -18,19 +19,25 @@ namespace StreamSuites.DesktopAdmin
     {
         private readonly AppState _appState;
         private readonly RuntimeConnector _runtimeConnector;
+        private readonly AdminCommandDispatcher _commandDispatcher;
+        private readonly JsonExportReader _exportReader;
 
         private readonly PathConfigService _pathConfigService;
         private PathConfiguration _pathConfiguration;
         private SnapshotPathStatus _currentPathStatus;
 
-        private readonly Timer _refreshTimer;
+        private readonly System.Windows.Forms.Timer _refreshTimer;
         private bool _refreshInProgress;
 
         private readonly BindingSource _platformBindingSource;
+        private readonly BindingSource _jobsBindingSource;
+        private readonly BindingSource _telemetryEventsBindingSource;
+        private readonly BindingSource _telemetryErrorsBindingSource;
+        private readonly BindingSource _telemetryRatesBindingSource;
         private readonly ToolTip _snapshotToolTip;
 
         // STEP K - last refresh live counter
-        private readonly Timer _sinceRefreshTimer;
+        private readonly System.Windows.Forms.Timer _sinceRefreshTimer;
         private DateTime? _lastSuccessfulRefreshUtc;
 
         // Inspector UI (STEP G)
@@ -42,6 +49,19 @@ namespace StreamSuites.DesktopAdmin
 
         // Tray menu (STEP L)
         private ContextMenuStrip _trayMenu;
+        private ToolStripMenuItem _trayStatusItem;
+
+        private ToolStripStatusLabel _statusHealthDot;
+
+        private MenuStrip _menuMain;
+
+        private DataGridView _jobsGrid;
+        private Label _jobsSummary;
+
+        private DataGridView _telemetryEventsGrid;
+        private DataGridView _telemetryErrorsGrid;
+        private DataGridView _telemetryRatesGrid;
+        private Label _telemetrySummary;
 
         public MainForm()
         {
@@ -86,22 +106,40 @@ namespace StreamSuites.DesktopAdmin
                 ShowAlways = true
             };
 
+            _statusHealthDot = new ToolStripStatusLabel
+            {
+                Text = "●",
+                ForeColor = Color.Gray
+            };
+            statusBar.Items.Insert(0, _statusHealthDot);
+
             var modeContext = new ModeContext("Dashboard");
             _appState = new AppState(modeContext);
 
             var fileAccessor = new DefaultFileAccessor();
             var snapshotReader = new FileSnapshotReader(fileAccessor);
             _runtimeConnector = new RuntimeConnector(snapshotReader, _appState);
+            _commandDispatcher = new AdminCommandDispatcher(_appState);
+            _exportReader = new JsonExportReader(fileAccessor);
 
             _pathConfigService = new PathConfigService();
             _pathConfiguration = _pathConfigService.Load();
             _currentPathStatus = new SnapshotPathStatus();
 
             _platformBindingSource = new BindingSource();
+            _jobsBindingSource = new BindingSource();
+            _telemetryEventsBindingSource = new BindingSource();
+            _telemetryErrorsBindingSource = new BindingSource();
+            _telemetryRatesBindingSource = new BindingSource();
             gridPlatforms.DataSource = _platformBindingSource;
 
             InitializePlatformGrid();
             InitializeInspectorPanel();
+            InitializeMenu();
+            InitializeJobsTab();
+            InitializeTelemetryTab();
+            InitializePlatformTabs();
+            UpdatePlatformActionButtons(null);
 
             txtSnapshotPath.Text = _pathConfiguration.RuntimeSnapshotRoot;
             txtSnapshotPath.ReadOnly = false;
@@ -111,15 +149,17 @@ namespace StreamSuites.DesktopAdmin
             txtSnapshotPath.TextChanged += (_, __) => RefreshSnapshotPathStatus();
 
             gridPlatforms.SelectionChanged += GridPlatforms_SelectionChanged;
+            tabMain.SelectedIndexChanged += TabMain_SelectedIndexChanged;
+            btnRefresh.Click += async (_, __) => await RefreshSnapshotAsync();
 
-            _refreshTimer = new Timer
+            _refreshTimer = new System.Windows.Forms.Timer
             {
                 Interval = GetRefreshIntervalMs()
             };
             _refreshTimer.Tick += async (_, __) =>
                 await RefreshSnapshotAsync();
 
-            _sinceRefreshTimer = new Timer
+            _sinceRefreshTimer = new System.Windows.Forms.Timer
             {
                 Interval = 1000
             };
@@ -134,6 +174,403 @@ namespace StreamSuites.DesktopAdmin
                 _refreshTimer.Start();
                 _sinceRefreshTimer.Start();
             };
+        }
+
+        private void InitializeMenu()
+        {
+            _menuMain = new MenuStrip
+            {
+                Dock = DockStyle.Top
+            };
+
+            var menuFile = new ToolStripMenuItem("File");
+            var itemOpenDashboard = new ToolStripMenuItem("Open Dashboard");
+            itemOpenDashboard.Click += (_, __) => ShowDashboard();
+            var itemExit = new ToolStripMenuItem("Exit");
+            itemExit.Click += (_, __) => Close();
+            menuFile.DropDownItems.Add(itemOpenDashboard);
+            menuFile.DropDownItems.Add(new ToolStripSeparator());
+            menuFile.DropDownItems.Add(itemExit);
+
+            var menuOptions = new ToolStripMenuItem("Options");
+            var itemStatus = new ToolStripMenuItem("Status (placeholder)")
+            {
+                Enabled = false
+            };
+            var itemPlatforms = new ToolStripMenuItem("Platforms");
+            foreach (var platform in GetPlatformNames())
+            {
+                itemPlatforms.DropDownItems.Add(
+                    new ToolStripMenuItem(platform) { Enabled = false });
+            }
+
+            var itemSettings = new ToolStripMenuItem("Settings (placeholder)");
+            itemSettings.DropDownItems.Add(
+                new ToolStripMenuItem("General (placeholder)") { Enabled = false });
+
+            menuOptions.DropDownItems.Add(itemStatus);
+            menuOptions.DropDownItems.Add(itemPlatforms);
+            menuOptions.DropDownItems.Add(itemSettings);
+
+            var menuHelp = new ToolStripMenuItem("Help");
+            var itemAbout = new ToolStripMenuItem("About");
+            itemAbout.Click += async (_, __) => await ShowAboutDialogAsync();
+            menuHelp.DropDownItems.Add(itemAbout);
+
+            _menuMain.Items.Add(menuFile);
+            _menuMain.Items.Add(menuOptions);
+            _menuMain.Items.Add(menuHelp);
+
+            Controls.Add(_menuMain);
+            MainMenuStrip = _menuMain;
+            Controls.SetChildIndex(_menuMain, 0);
+        }
+
+        private void InitializeJobsTab()
+        {
+            tabJobs.Padding = new Padding(8);
+
+            _jobsGrid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AllowUserToResizeRows = false,
+                AllowUserToResizeColumns = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                RowHeadersVisible = false,
+                AutoGenerateColumns = false,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
+            };
+
+            _jobsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(JobStatus.Name),
+                HeaderText = "Job",
+                MinimumWidth = 160
+            });
+
+            _jobsGrid.Columns.Add(new DataGridViewCheckBoxColumn
+            {
+                DataPropertyName = nameof(JobStatus.Enabled),
+                HeaderText = "Enabled",
+                Width = 80
+            });
+
+            _jobsGrid.Columns.Add(new DataGridViewCheckBoxColumn
+            {
+                DataPropertyName = nameof(JobStatus.Applied),
+                HeaderText = "Applied",
+                Width = 80
+            });
+
+            _jobsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(JobStatus.Reason),
+                HeaderText = "Reason",
+                MinimumWidth = 220
+            });
+
+            _jobsGrid.DataSource = _jobsBindingSource;
+            EnableDoubleBuffering(_jobsGrid);
+
+            _jobsSummary = new Label
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                Text = "Jobs: —"
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                Padding = new Padding(8)
+            };
+
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            layout.Controls.Add(_jobsSummary, 0, 0);
+            layout.Controls.Add(_jobsGrid, 0, 1);
+
+            tabJobs.Controls.Clear();
+            tabJobs.Controls.Add(layout);
+        }
+
+        private void InitializeTelemetryTab()
+        {
+            tabTelemetry.Padding = new Padding(8);
+
+            _telemetryEventsGrid = BuildTelemetryGrid();
+            _telemetryEventsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryEventItem.Timestamp),
+                HeaderText = "Timestamp",
+                MinimumWidth = 150
+            });
+            _telemetryEventsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryEventItem.Source),
+                HeaderText = "Source",
+                MinimumWidth = 120
+            });
+            _telemetryEventsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryEventItem.Severity),
+                HeaderText = "Severity",
+                MinimumWidth = 80
+            });
+            _telemetryEventsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryEventItem.Message),
+                HeaderText = "Message",
+                MinimumWidth = 240
+            });
+            _telemetryEventsGrid.DataSource = _telemetryEventsBindingSource;
+
+            _telemetryErrorsGrid = BuildTelemetryGrid();
+            _telemetryErrorsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryErrorItem.Timestamp),
+                HeaderText = "Timestamp",
+                MinimumWidth = 150
+            });
+            _telemetryErrorsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryErrorItem.Subsystem),
+                HeaderText = "Subsystem",
+                MinimumWidth = 120
+            });
+            _telemetryErrorsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryErrorItem.Error_Type),
+                HeaderText = "Type",
+                MinimumWidth = 100
+            });
+            _telemetryErrorsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryErrorItem.Source),
+                HeaderText = "Source",
+                MinimumWidth = 120
+            });
+            _telemetryErrorsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryErrorItem.Message),
+                HeaderText = "Message",
+                MinimumWidth = 240
+            });
+            _telemetryErrorsGrid.DataSource = _telemetryErrorsBindingSource;
+
+            _telemetryRatesGrid = BuildTelemetryGrid();
+            _telemetryRatesGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryRateRow.Window),
+                HeaderText = "Window",
+                MinimumWidth = 80
+            });
+            _telemetryRatesGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryRateRow.Metric),
+                HeaderText = "Metric",
+                MinimumWidth = 100
+            });
+            _telemetryRatesGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryRateRow.Platform),
+                HeaderText = "Platform",
+                MinimumWidth = 120
+            });
+            _telemetryRatesGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryRateRow.Value),
+                HeaderText = "Value",
+                MinimumWidth = 80
+            });
+            _telemetryRatesGrid.DataSource = _telemetryRatesBindingSource;
+
+            _telemetrySummary = new Label
+            {
+                AutoSize = true,
+                Dock = DockStyle.Fill,
+                Text = "Telemetry: —"
+            };
+
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                ColumnCount = 1,
+                RowCount = 4,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            layout.Controls.Add(_telemetrySummary, 0, 0);
+            layout.Controls.Add(BuildTelemetryGroup("Events", _telemetryEventsGrid), 0, 1);
+            layout.Controls.Add(BuildTelemetryGroup("Errors", _telemetryErrorsGrid), 0, 2);
+            layout.Controls.Add(BuildTelemetryGroup("Rates", _telemetryRatesGrid), 0, 3);
+
+            panel.Controls.Add(layout);
+
+            tabTelemetry.Controls.Clear();
+            tabTelemetry.Controls.Add(panel);
+        }
+
+        private DataGridView BuildTelemetryGrid()
+        {
+            var grid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AllowUserToResizeRows = false,
+                AllowUserToResizeColumns = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                RowHeadersVisible = false,
+                AutoGenerateColumns = false,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                Height = 180
+            };
+
+            EnableDoubleBuffering(grid);
+            return grid;
+        }
+
+        private static GroupBox BuildTelemetryGroup(string title, Control content)
+        {
+            var group = new GroupBox
+            {
+                Text = title,
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            content.Dock = DockStyle.Fill;
+            group.Controls.Add(content);
+            return group;
+        }
+
+        private void InitializePlatformTabs()
+        {
+            foreach (var platform in GetPlatformNames())
+            {
+                if (tabMain.TabPages.Cast<TabPage>()
+                    .Any(tab => string.Equals(tab.Text, platform, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                var tab = new TabPage
+                {
+                    Text = platform,
+                    Padding = new Padding(12)
+                };
+
+                var label = new Label
+                {
+                    AutoSize = true,
+                    Text = $"{platform} configuration will appear here."
+                };
+
+                tab.Controls.Add(label);
+                tabMain.TabPages.Add(tab);
+            }
+        }
+
+        private static string[] GetPlatformNames()
+        {
+            return new[]
+            {
+                "Discord",
+                "Kick",
+                "Pilled",
+                "Rumble",
+                "Twitch",
+                "Twitter",
+                "YouTube"
+            };
+        }
+
+        private void ShowDashboard()
+        {
+            Show();
+            WindowState = FormWindowState.Normal;
+            Activate();
+            ForceControlRefresh(tabMain);
+        }
+
+        private async Task ShowAboutDialogAsync()
+        {
+            var aboutPath = ResolveExportPath("about.admin.json");
+            if (string.IsNullOrWhiteSpace(aboutPath))
+            {
+                MessageBox.Show(
+                    this,
+                    "Unable to resolve about metadata. Check snapshot path configuration.",
+                    "About",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            var about = await _exportReader
+                .TryReadAsync<AboutExport>(aboutPath);
+
+            if (about == null)
+            {
+                MessageBox.Show(
+                    this,
+                    "About metadata could not be loaded from exports.",
+                    "About",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            var appName = BuildAboutApplicationName(about);
+            using var dialog = new AboutDialog(appName, about);
+            dialog.ShowDialog(this);
+        }
+
+        private static string BuildAboutApplicationName(AboutExport about)
+        {
+            if (string.Equals(about.Scope, "admin", StringComparison.OrdinalIgnoreCase))
+            {
+                return "StreamSuites Administrator Dashboard";
+            }
+
+            return "StreamSuites";
+        }
+
+        private void TabMain_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            ForceControlRefresh(tabMain.SelectedTab);
+        }
+
+        private void ForceControlRefresh(Control? control)
+        {
+            if (control == null)
+                return;
+
+            control.SuspendLayout();
+            control.ResumeLayout(true);
+            control.Invalidate(true);
+            control.Update();
         }
 
         // -----------------------------------------------------------------
@@ -172,10 +609,14 @@ namespace StreamSuites.DesktopAdmin
                     UpdateSnapshotStatus("Snapshot: invalid");
                     ApplySnapshotHealthStyle(SnapshotHealthState.Invalid);
                     UpdateTrayIconHealth(SnapshotHealthState.Invalid);
+                    UpdateSnapshotHealthIndicators(SnapshotHealthState.Invalid);
                     SetSnapshotTooltip(null, "Snapshot missing runtime block.");
                     UpdatePlatformCount("Platforms: invalid");
                     UpdateStatusRuntime("Runtime: invalid snapshot");
                     _platformBindingSource.DataSource = null;
+                    ClearJobData();
+                    ClearTelemetryData();
+                    UpdatePlatformActionButtons(null);
                     return;
                 }
 
@@ -190,6 +631,7 @@ namespace StreamSuites.DesktopAdmin
 
                 ApplySnapshotHealthStyle(health);
                 UpdateTrayIconHealth(health);
+                UpdateSnapshotHealthIndicators(health);
                 SetSnapshotTooltip(snapshot, null);
                 UpdateStatusRuntime("Runtime: snapshot bound");
 
@@ -198,21 +640,30 @@ namespace StreamSuites.DesktopAdmin
                 );
                 _platformBindingSource.DataSource =
                     snapshot.Platforms;
+                SelectFirstPlatformRow();
+                UpdateJobData(snapshot);
+                await RefreshTelemetryAsync(_currentPathStatus.SnapshotRoot)
+                    .ConfigureAwait(true);
 
                 if (!string.IsNullOrWhiteSpace(_currentSortProperty))
                     ApplyGridSort(_currentSortProperty, _currentSortDirection);
 
                 _lastSuccessfulRefreshUtc = DateTime.UtcNow;
                 UpdateLastRefreshCounter();
+                RefreshRuntimePanels();
             }
             catch
             {
                 UpdateSnapshotStatus("Snapshot: error reading");
                 ApplySnapshotHealthStyle(SnapshotHealthState.Invalid);
                 UpdateTrayIconHealth(SnapshotHealthState.Invalid);
+                UpdateSnapshotHealthIndicators(SnapshotHealthState.Invalid);
                 SetSnapshotTooltip(null, "Exception reading snapshot.");
                 UpdatePlatformCount("Platforms: error");
                 UpdateStatusRuntime("Runtime: disconnected");
+                ClearJobData();
+                ClearTelemetryData();
+                UpdatePlatformActionButtons(null);
             }
             finally
             {
@@ -229,12 +680,16 @@ namespace StreamSuites.DesktopAdmin
             UpdateSnapshotStatus(label);
             ApplySnapshotHealthStyle(SnapshotHealthState.Invalid);
             UpdateTrayIconHealth(SnapshotHealthState.Invalid);
+            UpdateSnapshotHealthIndicators(SnapshotHealthState.Invalid);
             SetSnapshotTooltip(null, pathStatus?.Message);
             UpdatePlatformCount("Platforms: unknown");
             _platformBindingSource.DataSource = null;
             UpdateStatusRuntime("Runtime: disconnected");
             _lastSuccessfulRefreshUtc = null;
             lblLastRefresh.Text = "Last refresh: —";
+            ClearJobData();
+            ClearTelemetryData();
+            UpdatePlatformActionButtons(null);
         }
 
         private SnapshotPathStatus RefreshSnapshotPathStatus()
@@ -373,6 +828,174 @@ namespace StreamSuites.DesktopAdmin
         }
 
         // -----------------------------------------------------------------
+        // Jobs + telemetry
+        // -----------------------------------------------------------------
+
+        private void UpdateJobData(RuntimeSnapshot snapshot)
+        {
+            var jobs = snapshot.Jobs ?? new List<JobStatus>();
+            _jobsBindingSource.DataSource = jobs.ToList();
+            _jobsSummary.Text = $"Jobs: {jobs.Count}";
+            ForceControlRefresh(tabJobs);
+        }
+
+        private void ClearJobData()
+        {
+            _jobsBindingSource.DataSource = null;
+            if (_jobsSummary != null)
+            {
+                _jobsSummary.Text = "Jobs: —";
+            }
+
+            ForceControlRefresh(tabJobs);
+        }
+
+        private async Task RefreshTelemetryAsync(string? snapshotRoot)
+        {
+            if (string.IsNullOrWhiteSpace(snapshotRoot) ||
+                !Directory.Exists(snapshotRoot))
+            {
+                ClearTelemetryData();
+                return;
+            }
+
+            var telemetryRoot = Path.Combine(snapshotRoot, "telemetry");
+            if (!Directory.Exists(telemetryRoot))
+            {
+                ClearTelemetryData();
+                return;
+            }
+
+            var eventsPath = Path.Combine(telemetryRoot, "events.json");
+            var errorsPath = Path.Combine(telemetryRoot, "errors.json");
+            var ratesPath = Path.Combine(telemetryRoot, "rates.json");
+
+            var eventsExport = await _exportReader
+                .TryReadAsync<TelemetryEventsExport>(eventsPath)
+                .ConfigureAwait(true);
+            var errorsExport = await _exportReader
+                .TryReadAsync<TelemetryErrorsExport>(errorsPath)
+                .ConfigureAwait(true);
+            var ratesExport = await _exportReader
+                .TryReadAsync<TelemetryRatesExport>(ratesPath)
+                .ConfigureAwait(true);
+
+            _telemetryEventsBindingSource.DataSource =
+                eventsExport?.Events?.ToList();
+            _telemetryErrorsBindingSource.DataSource =
+                errorsExport?.Errors?.ToList();
+            _telemetryRatesBindingSource.DataSource =
+                BuildRateRows(ratesExport);
+
+            UpdateTelemetrySummary(eventsExport, errorsExport, ratesExport);
+            ForceControlRefresh(tabTelemetry);
+        }
+
+        private void ClearTelemetryData()
+        {
+            _telemetryEventsBindingSource.DataSource = null;
+            _telemetryErrorsBindingSource.DataSource = null;
+            _telemetryRatesBindingSource.DataSource = null;
+
+            if (_telemetrySummary != null)
+            {
+                _telemetrySummary.Text = "Telemetry: —";
+            }
+
+            ForceControlRefresh(tabTelemetry);
+        }
+
+        private void UpdateTelemetrySummary(
+            TelemetryEventsExport? eventsExport,
+            TelemetryErrorsExport? errorsExport,
+            TelemetryRatesExport? ratesExport)
+        {
+            var eventsCount = eventsExport?.Events?.Count ?? 0;
+            var errorsCount = errorsExport?.Errors?.Count ?? 0;
+            var generated = eventsExport?.Generated_At
+                ?? errorsExport?.Generated_At
+                ?? ratesExport?.Generated_At
+                ?? "—";
+
+            if (_telemetrySummary != null)
+            {
+                _telemetrySummary.Text =
+                    $"Telemetry: {eventsCount} events • {errorsCount} errors • Updated {generated}";
+            }
+        }
+
+        private static List<TelemetryRateRow> BuildRateRows(
+            TelemetryRatesExport? ratesExport)
+        {
+            var rows = new List<TelemetryRateRow>();
+            if (ratesExport?.Windows == null)
+                return rows;
+
+            foreach (var window in ratesExport.Windows)
+            {
+                if (window?.Metrics == null)
+                    continue;
+
+                AddRateRows(rows, window.Window, "Messages", window.Metrics.Messages);
+                AddRateRows(rows, window.Window, "Triggers", window.Metrics.Triggers);
+                AddRateRows(rows, window.Window, "Actions", window.Metrics.Actions);
+                AddRateRows(rows, window.Window, "Actions Failed", window.Metrics.Actions_Failed);
+            }
+
+            return rows;
+        }
+
+        private static void AddRateRows(
+            List<TelemetryRateRow> rows,
+            string window,
+            string metric,
+            Dictionary<string, int> values)
+        {
+            if (values == null)
+                return;
+
+            foreach (var entry in values.OrderBy(v => v.Key))
+            {
+                rows.Add(new TelemetryRateRow
+                {
+                    Window = window,
+                    Metric = metric,
+                    Platform = ToTitleCase(entry.Key),
+                    Value = entry.Value
+                });
+            }
+        }
+
+        private void SelectFirstPlatformRow()
+        {
+            if (gridPlatforms.Rows.Count == 0)
+                return;
+
+            gridPlatforms.ClearSelection();
+            gridPlatforms.CurrentCell = gridPlatforms.Rows[0].Cells[0];
+            gridPlatforms.Rows[0].Selected = true;
+        }
+
+        private void RefreshRuntimePanels()
+        {
+            gridPlatforms.Refresh();
+            panelRuntimeTable.Refresh();
+            panelRuntimeRight.Refresh();
+            splitRuntime.Refresh();
+            tabRuntime.Refresh();
+        }
+
+        private string? ResolveExportPath(string fileName)
+        {
+            var root = _currentPathStatus?.SnapshotRoot;
+            if (string.IsNullOrWhiteSpace(root))
+                return null;
+
+            var path = Path.Combine(root, fileName);
+            return File.Exists(path) ? path : null;
+        }
+
+        // -----------------------------------------------------------------
         // STEP L - tray icon health mapping
         // -----------------------------------------------------------------
 
@@ -401,13 +1024,11 @@ namespace StreamSuites.DesktopAdmin
                 new ToolStripMenuItem("Open Dashboard");
             itemOpen.Click += (_, __) =>
             {
-                Show();
-                WindowState = FormWindowState.Normal;
-                Activate();
+                ShowDashboard();
             };
 
-            var itemStatus =
-                new ToolStripMenuItem("Status: (placeholder)")
+            _trayStatusItem =
+                new ToolStripMenuItem("🟡 Status: Unknown")
                 {
                     Enabled = false
                 };
@@ -449,7 +1070,7 @@ namespace StreamSuites.DesktopAdmin
 
             _trayMenu.Items.Add(itemOpen);
             _trayMenu.Items.Add(new ToolStripSeparator());
-            _trayMenu.Items.Add(itemStatus);
+            _trayMenu.Items.Add(_trayStatusItem);
             _trayMenu.Items.Add(new ToolStripSeparator());
             _trayMenu.Items.Add(itemPlatforms);
             _trayMenu.Items.Add(itemSettings);
@@ -460,9 +1081,7 @@ namespace StreamSuites.DesktopAdmin
 
             trayIcon.DoubleClick += (_, __) =>
             {
-                Show();
-                WindowState = FormWindowState.Normal;
-                Activate();
+                ShowDashboard();
             };
         }
 
@@ -491,10 +1110,15 @@ namespace StreamSuites.DesktopAdmin
             if (trayIcon == null)
                 return;
 
+            var (dot, label) = GetHealthLabel(health);
             trayIcon.Text =
-                $"StreamSuites - {health}";
+                $"{dot} StreamSuites - {label}";
             trayIcon.BalloonTipTitle =
                 "StreamSuites Snapshot Status";
+            if (_trayStatusItem != null)
+            {
+                _trayStatusItem.Text = $"{dot} Status: {label}";
+            }
 
             switch (health)
             {
@@ -614,10 +1238,16 @@ namespace StreamSuites.DesktopAdmin
                 is not PlatformStatus p)
             {
                 ClearInspector();
+                UpdatePlatformActionButtons(null);
+                RefreshRuntimePanels();
                 return;
             }
 
+            panelRuntimeRight.SuspendLayout();
             PopulateInspector(p);
+            UpdatePlatformActionButtons(p);
+            panelRuntimeRight.ResumeLayout(true);
+            RefreshRuntimePanels();
         }
 
         // -----------------------------------------------------------------
@@ -670,7 +1300,7 @@ namespace StreamSuites.DesktopAdmin
                 Width = 24,
                 Height = 24,
                 Margin = new Padding(0, 6, 6, 6),
-                SizeMode = PictureBoxSizeMode.StretchImage,
+                SizeMode = PictureBoxSizeMode.Zoom,
                 Dock = DockStyle.Left
             };
 
@@ -722,7 +1352,7 @@ namespace StreamSuites.DesktopAdmin
 
             _btnLaunchMain = new Button
             {
-                Text = "Launch / Terminate Main",
+                Text = "Launch Runtime",
                 Dock = DockStyle.Fill,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -731,7 +1361,7 @@ namespace StreamSuites.DesktopAdmin
 
             _btnLaunchClient = new Button
             {
-                Text = "Launch / Terminate Client",
+                Text = "Launch Client",
                 Dock = DockStyle.Fill,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -784,6 +1414,11 @@ namespace StreamSuites.DesktopAdmin
 
             panelRuntimeRight.ResumeLayout(true);
             panelRuntimeRight.Invalidate(true);
+
+            _btnToggleClient.Click += async (_, __) => await ToggleClientAsync();
+            _btnConfigureClient.Click += async (_, __) => await ConfigureClientAsync();
+            _btnLaunchMain.Click += async (_, __) => await ToggleRuntimeAsync();
+            _btnLaunchClient.Click += async (_, __) => await TogglePlatformClientAsync();
 
             // -------------------------------------------------------------
             // SAFE splitter setup AFTER layout is real
@@ -868,15 +1503,6 @@ namespace StreamSuites.DesktopAdmin
 
             SetInspectorIconForPlatform(p.Platform);
 
-            _btnToggleClient.Text =
-                p.Enabled ? "Disable Client" : "Enable Client";
-
-            _lblClientToggleNote.Visible = true;
-            _btnLaunchMain.Visible = true;
-            _btnLaunchClient.Visible =
-                string.Equals(p.Platform, "Discord", StringComparison.OrdinalIgnoreCase);
-            _btnLaunchClient.Enabled = _btnLaunchClient.Visible;
-
             _inspectorBody.Text =
                 $"State: {p.Display_State}\n" +
                 $"Telemetry: {p.Telemetry_Display}\n" +
@@ -934,7 +1560,7 @@ namespace StreamSuites.DesktopAdmin
                     using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                     using var raw = Image.FromStream(fs);
 
-                    _inspectorIconOwned = new Bitmap(raw, new Size(24, 24));
+                    _inspectorIconOwned = new Bitmap(raw);
                     _inspectorIconCache[key] = _inspectorIconOwned;
                     _inspectorIcon.Image = _inspectorIconOwned;
                     InvalidateInspectorHeader();
@@ -967,6 +1593,123 @@ namespace StreamSuites.DesktopAdmin
             _btnLaunchClient.Visible = false;
 
             InvalidateInspectorHeader();
+        }
+
+        private PlatformStatus? GetSelectedPlatform()
+        {
+            return gridPlatforms.CurrentRow?.DataBoundItem as PlatformStatus;
+        }
+
+        private void UpdatePlatformActionButtons(PlatformStatus? platform)
+        {
+            var runtimeRunning = _appState.LastSnapshot?.IsTimestampValid == true;
+            _btnLaunchMain.Text = runtimeRunning ? "Terminate Runtime" : "Launch Runtime";
+            _btnLaunchMain.Enabled = _currentPathStatus?.IsValid == true;
+
+            if (platform == null)
+            {
+                _btnToggleClient.Enabled = false;
+                _btnConfigureClient.Enabled = false;
+                _btnLaunchClient.Enabled = false;
+                _lblClientToggleNote.Visible = false;
+                _btnLaunchMain.Visible = true;
+                _btnLaunchClient.Visible = false;
+                return;
+            }
+
+            var clientRunning = IsClientRunning(platform);
+            _btnToggleClient.Text = platform.Enabled ? "Disable Client" : "Enable Client";
+            _btnLaunchClient.Text = clientRunning ? "Terminate Client" : "Launch Client";
+
+            _lblClientToggleNote.Visible = true;
+            _btnLaunchMain.Visible = true;
+            _btnLaunchClient.Visible = true;
+
+            var hasSnapshot = _appState.LastSnapshot?.Runtime != null;
+            _btnToggleClient.Enabled = hasSnapshot;
+            _btnConfigureClient.Enabled = hasSnapshot;
+            _btnLaunchClient.Enabled = hasSnapshot;
+        }
+
+        private static bool IsClientRunning(PlatformStatus platform)
+        {
+            if (!platform.Enabled)
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(platform.State) &&
+                !string.Equals(platform.State, "disabled", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(platform.Status) &&
+                !string.Equals(platform.Status, "disabled", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private async Task ToggleClientAsync()
+        {
+            var platform = GetSelectedPlatform();
+            if (platform == null)
+                return;
+
+            var command = platform.Enabled ? "platform.disable" : "platform.enable";
+            await _commandDispatcher.QueueCommandAsync(
+                command,
+                new Dictionary<string, string>
+                {
+                    ["platform"] = platform.Platform
+                },
+                CancellationToken.None);
+        }
+
+        private async Task ConfigureClientAsync()
+        {
+            var platform = GetSelectedPlatform();
+            if (platform == null)
+                return;
+
+            await _commandDispatcher.QueueCommandAsync(
+                "platform.configure",
+                new Dictionary<string, string>
+                {
+                    ["platform"] = platform.Platform
+                },
+                CancellationToken.None);
+        }
+
+        private async Task ToggleRuntimeAsync()
+        {
+            var runtimeRunning = _appState.LastSnapshot?.IsTimestampValid == true;
+            var command = runtimeRunning ? "runtime.terminate" : "runtime.launch";
+
+            await _commandDispatcher.QueueCommandAsync(
+                command,
+                new Dictionary<string, string>(),
+                CancellationToken.None);
+        }
+
+        private async Task TogglePlatformClientAsync()
+        {
+            var platform = GetSelectedPlatform();
+            if (platform == null)
+                return;
+
+            var command = IsClientRunning(platform)
+                ? "platform.client.terminate"
+                : "platform.client.launch";
+
+            await _commandDispatcher.QueueCommandAsync(
+                command,
+                new Dictionary<string, string>
+                {
+                    ["platform"] = platform.Platform
+                },
+                CancellationToken.None);
         }
 
         private void InvalidateInspectorHeader()
@@ -1040,6 +1783,32 @@ namespace StreamSuites.DesktopAdmin
                 SnapshotHealthState.Stale => Color.DarkGoldenrod,
                 SnapshotHealthState.Invalid => Color.DarkRed,
                 _ => SystemColors.ControlText
+            };
+        }
+
+        private void UpdateSnapshotHealthIndicators(SnapshotHealthState health)
+        {
+            if (_statusHealthDot == null)
+                return;
+
+            var (dot, _) = GetHealthLabel(health);
+            _statusHealthDot.Text = dot;
+            _statusHealthDot.ForeColor = health switch
+            {
+                SnapshotHealthState.Healthy => Color.DarkGreen,
+                SnapshotHealthState.Stale => Color.DarkGoldenrod,
+                SnapshotHealthState.Invalid => Color.DarkRed,
+                _ => SystemColors.GrayText
+            };
+        }
+
+        private static (string dot, string label) GetHealthLabel(SnapshotHealthState health)
+        {
+            return health switch
+            {
+                SnapshotHealthState.Healthy => ("🟢", "Healthy"),
+                SnapshotHealthState.Stale => ("🟡", "Stale"),
+                _ => ("🔴", "Error")
             };
         }
 
@@ -1229,6 +1998,14 @@ namespace StreamSuites.DesktopAdmin
                 nameof(PlatformStatus.Capabilities) => platform.Capabilities,
                 _ => null
             };
+        }
+
+        private class TelemetryRateRow
+        {
+            public string Window { get; set; } = string.Empty;
+            public string Metric { get; set; } = string.Empty;
+            public string Platform { get; set; } = string.Empty;
+            public int Value { get; set; }
         }
     }
 }

@@ -156,6 +156,7 @@ StreamSuites/
 │   ├── StreamSuites.DesktopAdmin.sln
 │   ├── StreamSuites.DesktopAdmin/
 │   │   ├── App.config
+│   │   ├── AboutDialog.cs
 │   │   ├── MainForm.Designer.cs
 │   │   ├── MainForm.cs
 │   │   ├── MainForm.resx
@@ -197,14 +198,17 @@ StreamSuites/
 │   │   ├── PathConfigService.cs
 │   │   └── StreamSuites.DesktopAdmin.Core.csproj
 │   ├── StreamSuites.DesktopAdmin.Models/
+│   │   ├── AboutExport.cs
 │   │   ├── PlatformStatus.cs
 │   │   ├── RuntimeSnapshot.cs
 │   │   ├── TelemetrySnapshot.cs
+│   │   ├── TelemetryExports.cs
 │   │   ├── TriggerCounter.cs
 │   │   └── StreamSuites.DesktopAdmin.Models.csproj
 │   └── StreamSuites.DesktopAdmin.RuntimeBridge/
 │       ├── AdminCommandDispatcher.cs
 │       ├── FileSnapshotReader.cs
+│       ├── JsonExportReader.cs
 │       ├── RuntimeConnector.cs
 │       └── StreamSuites.DesktopAdmin.RuntimeBridge.csproj
 ├── desktop-admin/.vs/
