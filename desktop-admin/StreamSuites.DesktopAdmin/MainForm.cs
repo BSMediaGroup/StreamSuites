@@ -26,7 +26,7 @@ namespace StreamSuites.DesktopAdmin
         private PathConfiguration _pathConfiguration;
         private SnapshotPathStatus _currentPathStatus;
 
-        private readonly Timer _refreshTimer;
+        private readonly System.Windows.Forms.Timer _refreshTimer;
         private bool _refreshInProgress;
 
         private readonly BindingSource _platformBindingSource;
@@ -37,7 +37,7 @@ namespace StreamSuites.DesktopAdmin
         private readonly ToolTip _snapshotToolTip;
 
         // STEP K - last refresh live counter
-        private readonly Timer _sinceRefreshTimer;
+        private readonly System.Windows.Forms.Timer _sinceRefreshTimer;
         private DateTime? _lastSuccessfulRefreshUtc;
 
         // Inspector UI (STEP G)
@@ -152,14 +152,14 @@ namespace StreamSuites.DesktopAdmin
             tabMain.SelectedIndexChanged += TabMain_SelectedIndexChanged;
             btnRefresh.Click += async (_, __) => await RefreshSnapshotAsync();
 
-            _refreshTimer = new Timer
+            _refreshTimer = new System.Windows.Forms.Timer
             {
                 Interval = GetRefreshIntervalMs()
             };
             _refreshTimer.Tick += async (_, __) =>
                 await RefreshSnapshotAsync();
 
-            _sinceRefreshTimer = new Timer
+            _sinceRefreshTimer = new System.Windows.Forms.Timer
             {
                 Interval = 1000
             };
