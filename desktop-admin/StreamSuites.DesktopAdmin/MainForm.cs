@@ -223,7 +223,18 @@ namespace StreamSuites.DesktopAdmin
 
             Controls.Add(_menuMain);
             MainMenuStrip = _menuMain;
-            Controls.SetChildIndex(_menuMain, 0);
+            EnsureDockOrder();
+        }
+
+        private void EnsureDockOrder()
+        {
+            if (_menuMain == null)
+                return;
+
+            Controls.SetChildIndex(tabMain, 0);
+            Controls.SetChildIndex(statusBar, 1);
+            Controls.SetChildIndex(toolMain, 2);
+            Controls.SetChildIndex(_menuMain, 3);
         }
 
         private void InitializeJobsTab()
