@@ -35,6 +35,9 @@ namespace StreamSuites.DesktopAdmin
         private DataGridView gridPlatforms;
 
         // Placeholder tabs
+        private TabPage tabCreators;
+        private TabPage tabDataSignals;
+        private TabPage tabSettings;
         private TabPage tabJobs;
         private TabPage tabTelemetry;
         private TabPage tabPaths;
@@ -87,6 +90,9 @@ namespace StreamSuites.DesktopAdmin
 
             tabMain = new TabControl();
             tabRuntime = new TabPage();
+            tabCreators = new TabPage();
+            tabDataSignals = new TabPage();
+            tabSettings = new TabPage();
             tabJobs = new TabPage();
             tabTelemetry = new TabPage();
             tabPaths = new TabPage();
@@ -129,14 +135,20 @@ namespace StreamSuites.DesktopAdmin
             tabRuntime.Padding = new Padding(8);
             tabRuntime.Controls.Add(splitRuntime);
 
+            tabCreators.Text = "Creators";
+            tabDataSignals.Text = "Data & Signals";
             tabJobs.Text = "Jobs";
             tabTelemetry.Text = "Telemetry";
+            tabSettings.Text = "Settings";
             tabPaths.Text = "Paths";
             tabPaths.Padding = new Padding(16);
 
             tabMain.TabPages.Add(tabRuntime);
+            tabMain.TabPages.Add(tabCreators);
             tabMain.TabPages.Add(tabJobs);
+            tabMain.TabPages.Add(tabDataSignals);
             tabMain.TabPages.Add(tabTelemetry);
+            tabMain.TabPages.Add(tabSettings);
             tabMain.TabPages.Add(tabPaths);
 
             // Split runtime

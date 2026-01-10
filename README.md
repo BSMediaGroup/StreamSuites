@@ -199,7 +199,10 @@ StreamSuites/
 │   │   └── StreamSuites.DesktopAdmin.Core.csproj
 │   ├── StreamSuites.DesktopAdmin.Models/
 │   │   ├── AboutExport.cs
+│   │   ├── CreatorsExports.cs
+│   │   ├── DataSignalsExports.cs
 │   │   ├── PlatformStatus.cs
+│   │   ├── PlatformExports.cs
 │   │   ├── RuntimeSnapshot.cs
 │   │   ├── TelemetrySnapshot.cs
 │   │   ├── TelemetryExports.cs
