@@ -78,6 +78,7 @@ namespace StreamSuites.DesktopAdmin
         private Label _creatorDetails;
         private Button _creatorEnableButton;
         private Button _creatorDisableButton;
+        private SplitContainer _creatorsSplit;
 
         private Label _dataSignalsSummary;
         private DataGridView _clipsGrid;
@@ -492,13 +493,10 @@ namespace StreamSuites.DesktopAdmin
         {
             tabCreators.Padding = new Padding(8);
 
-            var split = new SplitContainer
+            _creatorsSplit = new SplitContainer
             {
                 Dock = DockStyle.Fill,
-                Orientation = Orientation.Vertical,
-                Panel1MinSize = 420,
-                Panel2MinSize = 260,
-                SplitterDistance = 640
+                Orientation = Orientation.Vertical
             };
 
             var leftLayout = new TableLayoutPanel
@@ -626,13 +624,16 @@ namespace StreamSuites.DesktopAdmin
 
             detailsGroup.Controls.Add(_creatorDetails);
 
-            split.Panel1.Controls.Add(leftLayout);
-            split.Panel2.Controls.Add(detailsGroup);
+            _creatorsSplit.Panel1.Controls.Add(leftLayout);
+            _creatorsSplit.Panel2.Controls.Add(detailsGroup);
 
             tabCreators.Controls.Clear();
-            tabCreators.Controls.Add(split);
+            tabCreators.Controls.Add(_creatorsSplit);
 
             _creatorsGrid.SelectionChanged += CreatorsGrid_SelectionChanged;
+
+            Shown -= ApplyCreatorsSplitterAfterShown;
+            Shown += ApplyCreatorsSplitterAfterShown;
         }
 
         private void InitializeDataSignalsTab()
@@ -838,6 +839,511 @@ namespace StreamSuites.DesktopAdmin
             platformLayout.Controls.Add(_settingsPlatformGrid, 0, 1);
 
             platformGroup.Controls.Add(platformLayout);
+
+            var importGroup = new GroupBox
+            {
+                Text = "Configuration Import / Export",
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            var importLayout = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false
+            };
+
+            var btnExport = new Button
+            {
+                Text = "Export Config (placeholder)",
+                AutoSize = true,
+                Enabled = false
+            };
+
+            var btnImport = new Button
+            {
+                Text = "Import Config (placeholder)",
+                AutoSize = true,
+                Enabled = false
+            };
+
+            _settingsImportExportSummary = new Label
+            {
+                Text = "Runtime-authoritative exports are read-only in this dashboard.",
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Padding = new Padding(12, 6, 0, 0)
+            };
+
+            importLayout.Controls.Add(btnExport);
+            importLayout.Controls.Add(btnImport);
+            importLayout.Controls.Add(_settingsImportExportSummary);
+
+            importGroup.Controls.Add(importLayout);
+
+            layout.Controls.Add(restartGroup, 0, 0);
+            layout.Controls.Add(systemGroup, 0, 1);
+            layout.Controls.Add(pollingGroup, 0, 2);
+            layout.Controls.Add(platformGroup, 0, 3);
+            layout.Controls.Add(importGroup, 0, 4);
+
+            panel.Controls.Add(layout);
+
+            tabSettings.Controls.Clear();
+            tabSettings.Controls.Add(panel);
+        }
+
+        private static GroupBox BuildSettingsGroup(string title, out Label valueLabel)
+        {
+            var group = new GroupBox
+            {
+                Text = title,
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            valueLabel = new Label
+            {
+                AutoSize = true,
+                Dock = DockStyle.Fill,
+                Text = "—"
+            };
+
+            group.Controls.Add(valueLabel);
+            return group;
+        }
+
+        private static GroupBox BuildDataSignalsGroup(string title, out TabControl tabs)
+        {
+            var group = new GroupBox
+            {
+                Text = title,
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            tabs = new TabControl
+            {
+                Dock = DockStyle.Top,
+                Height = 260
+            };
+
+            group.Controls.Add(tabs);
+            return group;
+        }
+
+        private static TabPage BuildTabPage(string title, Control content)
+        {
+            var tab = new TabPage
+            {
+                Text = title,
+                Padding = new Padding(8)
+            };
+
+            content.Dock = DockStyle.Fill;
+            tab.Controls.Add(content);
+            return tab;
+        }
+
+        private static DataGridView BuildDataSignalsGrid()
+        {
+            var grid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AllowUserToResizeRows = false,
+                AllowUserToResizeColumns = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                RowHeadersVisible = false,
+                AutoGenerateColumns = false,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                Height = 200
+            };
+
+            return grid;
+        }
+
+        private static DataGridViewTextBoxColumn BuildTextColumn(
+            string propertyName,
+            string headerText,
+            int minWidth)
+        {
+            return new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = propertyName,
+                HeaderText = headerText,
+                MinimumWidth = minWidth
+            };
+        }
+
+        private DataGridView BuildTelemetryGrid()
+        {
+            var grid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AllowUserToResizeRows = false,
+                AllowUserToResizeColumns = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                RowHeadersVisible = false,
+                AutoGenerateColumns = false,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                Height = 180
+            };
+
+            EnableDoubleBuffering(grid);
+            return grid;
+        }
+
+        private static GroupBox BuildTelemetryGroup(string title, Control content)
+        {
+            var group = new GroupBox
+            {
+                Text = title,
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            content.Dock = DockStyle.Fill;
+            group.Controls.Add(content);
+            return group;
+        }
+
+        private void InitializePlatformTabs()
+        {
+            foreach (var platform in GetPlatformNames())
+            {
+                var tab = tabMain.TabPages.Cast<TabPage>()
+                    .FirstOrDefault(existing =>
+                        string.Equals(existing.Text, platform, StringComparison.OrdinalIgnoreCase));
+
+                if (tab == null)
+                {
+                    tab = new TabPage();
+                    tabMain.TabPages.Add(tab);
+                }
+
+                tab.Text = platform;
+                tab.Padding = new Padding(8);
+                tab.Controls.Clear();
+
+                _platformTabControls[platform] = BuildPlatformTab(tab, platform);
+            }
+        }
+
+        private static string[] GetPlatformNames()
+        {
+            return new[]
+            {
+                "Discord",
+                "Kick",
+                "Pilled",
+                "Rumble",
+                "Twitch",
+                "Twitter",
+                "YouTube"
+            };
+        }
+
+        private PlatformTabControls BuildPlatformTab(TabPage tab, string platform)
+        {
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                ColumnCount = 1,
+                RowCount = 4,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var globalGroup = BuildPlatformGroup("Global Service Status", out var globalLayout);
+            var runtimeGroup = BuildPlatformGroup("Runtime Connectivity", out var runtimeLayout);
+            var localGroup = BuildPlatformGroup("Local Configuration", out var localLayout);
+            var moduleGroup = BuildPlatformGroup("Module Status", out var moduleLayout);
+
+            var globalEnabled = BuildValueRow(globalLayout, "Service Enabled");
+            var globalTelemetry = BuildValueRow(globalLayout, "Telemetry Enabled");
+            var globalPaused = BuildValueRow(globalLayout, "Paused");
+            var globalNote = BuildNoteRow(globalLayout, "Read-only controls. Toggle intent requires restart.");
+
+            var runtimeState = BuildValueRow(runtimeLayout, "Runtime State");
+            var runtimeStatus = BuildValueRow(runtimeLayout, "Status");
+            var runtimeHeartbeat = BuildValueRow(runtimeLayout, "Last Heartbeat");
+            var runtimeEvent = BuildValueRow(runtimeLayout, "Last Event");
+            var runtimeSuccess = BuildValueRow(runtimeLayout, "Last Success");
+            var runtimeMessages = BuildValueRow(runtimeLayout, "Messages Processed");
+            var runtimeTriggers = BuildValueRow(runtimeLayout, "Triggers Fired");
+            var runtimeActions = BuildValueRow(runtimeLayout, "Actions");
+            var runtimeErrors = BuildValueRow(runtimeLayout, "Last Error");
+            var runtimeNote = BuildNoteRow(runtimeLayout, "Runtime snapshots only; no live control.");
+
+            var localCreators = BuildValueRow(localLayout, "Enabled Creators");
+            var localCreatorList = BuildValueRow(localLayout, "Creator IDs");
+            var localSource = BuildValueRow(localLayout, "Source");
+            var localNote = BuildNoteRow(localLayout, "Local configs derived from creator exports.");
+
+            var moduleStatus = BuildValueRow(moduleLayout, "Module Status");
+            var moduleMode = BuildValueRow(moduleLayout, "Mode");
+            var moduleReplay = BuildValueRow(moduleLayout, "Replay Supported");
+            var moduleOverlay = BuildValueRow(moduleLayout, "Overlay Supported");
+            var moduleNotes = BuildValueRow(moduleLayout, "Notes");
+            var moduleNote = BuildNoteRow(moduleLayout, "Scaffolded modules remain read-only.");
+
+            layout.Controls.Add(globalGroup, 0, 0);
+            layout.Controls.Add(runtimeGroup, 0, 1);
+            layout.Controls.Add(localGroup, 0, 2);
+            layout.Controls.Add(moduleGroup, 0, 3);
+
+            panel.Controls.Add(layout);
+            tab.Controls.Add(panel);
+
+            return new PlatformTabControls(
+                platform,
+                globalEnabled,
+                globalTelemetry,
+                globalPaused,
+                globalNote,
+                runtimeState,
+                runtimeStatus,
+                runtimeHeartbeat,
+                runtimeEvent,
+                runtimeSuccess,
+                runtimeMessages,
+                runtimeTriggers,
+                runtimeActions,
+                runtimeErrors,
+                runtimeNote,
+                localCreators,
+                localCreatorList,
+                localSource,
+                localNote,
+                moduleStatus,
+                moduleMode,
+                moduleReplay,
+                moduleOverlay,
+                moduleNotes,
+                moduleNote);
+        }
+
+        private static GroupBox BuildPlatformGroup(string title, out TableLayoutPanel layout)
+        {
+            var group = new GroupBox
+            {
+                Text = title,
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                ColumnCount = 2,
+                RowCount = 0,
+                AutoSize = true
+            };
+
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160f));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+
+            group.Controls.Add(layout);
+            return group;
+        }
+
+        private static Label BuildValueRow(TableLayoutPanel layout, string label)
+        {
+            var rowIndex = layout.RowCount++;
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var nameLabel = new Label
+            {
+                Text = label,
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+            };
+
+            var valueLabel = new Label
+            {
+                Text = "—",
+                AutoSize = true
+            };
+
+            layout.Controls.Add(nameLabel, 0, rowIndex);
+            layout.Controls.Add(valueLabel, 1, rowIndex);
+            return valueLabel;
+        }
+
+        private static Label BuildNoteRow(TableLayoutPanel layout, string text)
+        {
+            var rowIndex = layout.RowCount++;
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var noteLabel = new Label
+            {
+                Text = text,
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Padding = new Padding(0, 6, 0, 0)
+            };
+
+            layout.Controls.Add(noteLabel, 0, rowIndex);
+            layout.SetColumnSpan(noteLabel, 2);
+            return noteLabel;
+        }
+
+        private void ShowDashboard()
+        {
+            Show();
+            WindowState = FormWindowState.Normal;
+            Activate();
+            ForceControlRefresh(tabMain);
+        }
+
+        private async Task ShowAboutDialogAsync()
+        {
+            var aboutPath = ResolveExportPath("about.admin.json");
+            if (string.IsNullOrWhiteSpace(aboutPath))
+            {
+                MessageBox.Show(
+                    this,
+                    "Unable to resolve about metadata. Check snapshot path configuration.",
+                    "About",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            var about = await _exportReader
+                .TryReadAsync<AboutExport>(aboutPath);
+
+            if (about == null)
+            {
+                MessageBox.Show(
+                    this,
+                    "About metadata could not be loaded from exports.",
+                    "About",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            var appName = BuildAboutApplicationName(about);
+            using var dialog = new AboutDialog(appName, about);
+            dialog.ShowDialog(this);
+        }
+
+        private static string BuildAboutApplicationName(AboutExport about)
+        {
+            if (string.Equals(about.Scope, "admin", StringComparison.OrdinalIgnoreCase))
+            {
+                return "StreamSuites Administrator Dashboard";
+            }
+
+            return "StreamSuites";
+        }
+
+        private void TabMain_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            ForceControlRefresh(tabMain.SelectedTab);
+        }
+
+        private void ForceControlRefresh(Control? control)
+        {
+            if (control == null)
+                return;
+
+            control.SuspendLayout();
+            control.ResumeLayout(true);
+            control.Invalidate(true);
+            control.Update();
+        }
+
+        // -----------------------------------------------------------------
+        // Snapshot refresh
+        // -----------------------------------------------------------------
+
+        private async Task RefreshSnapshotAsync()
+        {
+            if (_refreshInProgress)
+                return;
+
+            var pathStatus = RefreshSnapshotPathStatus();
+            if (!pathStatus.IsValid)
+            {
+                HandleInvalidSnapshotPath(pathStatus);
+                return;
+            }
+
+            var snapshotPath = pathStatus.SnapshotFilePath;
+            if (string.IsNullOrWhiteSpace(snapshotPath))
+            {
+                HandleInvalidSnapshotPath(pathStatus);
+                return;
+            }
+
+            try
+            {
+                _refreshInProgress = true;
+
+                var snapshot = await _runtimeConnector
+                    .RefreshSnapshotAsync(snapshotPath)
+                    .ConfigureAwait(true);
+
+                if (snapshot?.Runtime == null)
+                {
+                    UpdateSnapshotStatus("Snapshot: invalid");
+                    ApplySnapshotHealthStyle(SnapshotHealthState.Invalid);
+                    UpdateTrayIconHealth(SnapshotHealthState.Invalid);
+                    UpdateSnapshotHealthIndicators(SnapshotHealthState.Invalid);
+                    SetSnapshotTooltip(null, "Snapshot missing runtime block.");
+                    UpdatePlatformCount("Platforms: invalid");
+                    UpdateStatusRuntime("Runtime: invalid snapshot");
+                    _platformBindingSource.DataSource = null;
+                    ClearJobData();
+                    ClearTelemetryData();
+                    ClearCreatorsData();
+                    ClearDataSignals();
+                    ClearSettingsData();
+                    ClearPlatformTabs();
+                    UpdatePlatformActionButtons(null);
+                    return;
+                }
+
+                var health =
+                    snapshot.HealthState(SnapshotStaleThresholdSeconds);
+                var label =
+                    health.ToString().ToUpperInvariant();
+
+                UpdateSnapshotStatus(
+                    $"Snapshot: {snapshot.Runtime.Version} @ {snapshot.Generated_At} [{label}]"
+                );
+
+                ApplySnapshotHealthStyle(health);
+                UpdateTrayIconHealth(health);
+                UpdateSnapshotHealthIndicators(health);
+                SetSnapshotTooltip(snapshot, null);
+                UpdateStatusRuntime("Runtime: snapshot bound");
 
             var importGroup = new GroupBox
             {
@@ -1692,6 +2198,8 @@ namespace StreamSuites.DesktopAdmin
                     Value = entry.Value
                 });
             }
+
+            return rows;
         }
 
         // -----------------------------------------------------------------
@@ -2924,6 +3432,33 @@ namespace StreamSuites.DesktopAdmin
             splitRuntime.Panel1MinSize = 420;
 
             ClampInspectorSplitter(null, EventArgs.Empty, true);
+        }
+
+        private void ApplyCreatorsSplitterAfterShown(object? sender, EventArgs e)
+        {
+            Shown -= ApplyCreatorsSplitterAfterShown;
+
+            if (_creatorsSplit == null)
+                return;
+
+            _creatorsSplit.Panel1MinSize = 420;
+            _creatorsSplit.Panel2MinSize = 260;
+
+            var total = _creatorsSplit.ClientSize.Width;
+            if (total <= 0)
+                return;
+
+            var desired = total - 320;
+            var min1 = _creatorsSplit.Panel1MinSize;
+            var min2 = _creatorsSplit.Panel2MinSize;
+            var max = total - min2;
+
+            if (desired < min1)
+                desired = min1;
+            if (desired > max)
+                desired = max;
+
+            _creatorsSplit.SplitterDistance = desired;
         }
 
         private void ClampInspectorSplitter(object? sender, EventArgs e)
