@@ -8,7 +8,7 @@ Dashboards and overlays consume exported artifacts only and remain read-only unt
 
 ## Runtime Positioning
 
-- **Project status:** Late Alpha (`v0.2.3-alpha`). The runtime is stable enough for export generation and local inspection, but active runtime ↔ UI coupling is still under construction.
+- **Project status:** Late Alpha (`0.2.3-alpha`). The runtime is stable enough for export generation and local inspection, but active runtime ↔ UI coupling is still under construction.
 - **Runtime authority:** This repository is the authoritative home of the StreamSuites Runtime Engine. All execution, state, telemetry, exports, and lifecycle control originate here.
 - **Dashboard separation:** All dashboard UIs live in separate repositories and consume runtime-exported artifacts only. No dashboard initiates runtime execution or mutates runtime state.
 - **What is live:** Export generation, schemas, runtime metadata, versioning, and historical scaffolding. Existing exports remain authoritative for inspection.
@@ -22,7 +22,7 @@ Tallies are tracked as a **first-class runtime concept** alongside polls and cli
 
 ## Version & Release Authority
 
-- **Current version:** `v0.2.3-alpha`
+- **Current version:** `0.2.3-alpha`
 - **Development stage:** Late Alpha — features are present but still undergoing hardening, observability improvements, and lifecycle tightening prior to beta stabilization.
 - **Versioning model:** Semantic Versioning with pre-release identifiers (`-alpha`, `-beta`) to signal maturity. Pre-release versions do not guarantee API or schema stability.
 - **Build identifiers:** Build values stamp regenerated artifacts, exports, documentation, and binaries for traceability. Build changes may occur without feature changes.
@@ -63,7 +63,7 @@ Tallies are tracked as a **first-class runtime concept** alongside polls and cli
 
 ## Versioning Policy
 
-- **VERSION** (e.g. `v0.2.3-alpha`)
+- **VERSION** (e.g. `0.2.3-alpha`)
   - Represents semantic capability level.
   - Changes indicate meaningful feature, behavior, or contract evolution.
 - **BUILD** (e.g. `YYYY.MM.DD+NNN`)
@@ -631,7 +631,7 @@ send reliability is preserved even when ingest requirements change:
 ## Project Status
 
 - **Status:** Alpha preview, export-driven. Runtime stays authoritative for data snapshots but is not yet connected to the dashboard UI or any live chat socket feeds.
-- **Current snapshot:** v0.2.3-alpha (Build 2025.04) remains the active late-alpha reference state.
+- **Current snapshot:** 0.2.3-alpha (Build 2025.04) remains the active late-alpha reference state.
 - **Operational impact:** chat runtime plumbing, live socket ingestion, and overlay feeds are not live; dashboard and overlay views are preview-only and rely on exported/mock data.
 - **Dashboard and exports:** schemas and exports continue to be maintained for read-only consumption; UI consumers must not assume live connectivity until runtime wiring is delivered.
 
@@ -668,7 +668,7 @@ mutates runtime state; it only reads the published snapshots.
   `scripts/update_version.py` updates the `version` field for every About JSON
   document it can find under `<dashboard-root>/about/` while keeping runtime
   execution paths free of About dependencies.
-  - **Usage**: `python scripts/update_version.py v0.2.3-alpha --build 2025.04 --dashboard-root ../StreamSuites-Dashboard/docs`
+  - **Usage**: `python scripts/update_version.py 0.2.3-alpha --build 2025.04 --dashboard-root ../StreamSuites-Dashboard/docs`
   - If the dashboard checkout is absent, the script safely skips dashboard
     updates while keeping runtime metadata in sync.
 

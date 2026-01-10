@@ -25,7 +25,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "version",
-        help="Version string to stamp (e.g., v0.2.3-alpha)",
+        help="Version string to stamp (e.g., 0.2.3-alpha)",
     )
     parser.add_argument(
         "--build",
@@ -46,6 +46,18 @@ def parse_args() -> argparse.Namespace:
              "(defaults to <dashboard-root>/about)",
     )
     return parser.parse_args()
+
+
+def normalize_version(value: str) -> str:
+    normalized = value.strip()
+
+    if normalized.startswith("Version "):
+        normalized = normalized[len("Version "):]
+
+    if normalized.startswith("v"):
+        normalized = normalized[1:]
+
+    return normalized
 
 
 def _write_json(path: Path, data) -> None:
@@ -172,17 +184,18 @@ def update_dashboard_version_manifest(
 def main() -> int:
     args = parse_args()
     about_dir = args.about_dir or (args.dashboard_root / "about")
+    version = normalize_version(args.version)
 
     changed = False
 
-    changed |= update_runtime_version_py(args.version, args.build)
-    changed |= update_changelog_sources(args.version)
+    changed |= update_runtime_version_py(version, args.build)
+    changed |= update_changelog_sources(version)
     changed |= update_dashboard_version_manifest(
-        args.version,
+        version,
         args.build,
         args.dashboard_root,
     )
-    changed |= update_about_json(args.version, about_dir)
+    changed |= update_about_json(version, about_dir)
 
     if not changed:
         print("No files updated; verify paths or version changes.")

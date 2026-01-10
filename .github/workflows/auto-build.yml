@@ -44,13 +44,14 @@ jobs:
         run: |
           python - <<'PYCODE'
           from datetime import datetime
+          import os
           import re
           from pathlib import Path
 
           version_file = Path("runtime/version.py")
           text = version_file.read_text(encoding="utf-8")
 
-          match = re.search(r'BUILD = "([^"]+)"', text)
+          match = re.search(r'^BUILD = "([^"]+)"$', text, re.MULTILINE)
           if not match:
               raise RuntimeError("BUILD not found in runtime/version.py")
 
@@ -59,35 +60,19 @@ jobs:
 
           if "+" in current:
               date_part, counter = current.split("+", 1)
-              if date_part == today and counter.isdigit():
-                  next_counter = int(counter) + 1
-              else:
-                  next_counter = 1
+              next_counter = int(counter) + 1 if date_part == today else 1
           else:
               next_counter = 1
 
           next_build = f"{today}+{next_counter:03d}"
-          print(f"next_build={next_build}")
+
+          output_path = os.environ.get("GITHUB_OUTPUT")
+          if not output_path:
+              raise RuntimeError("GITHUB_OUTPUT not set")
+
+          with open(output_path, "a", encoding="utf-8") as output:
+              output.write(f"next_build={next_build}\n")
           PYCODE
-          echo "next_build=$(python - <<'PYCODE'
-          from datetime import datetime
-          import re
-          from pathlib import Path
-
-          text = Path("runtime/version.py").read_text(encoding="utf-8")
-          m = re.search(r'BUILD = \"([^\"]+)\"', text)
-          current = m.group(1)
-          today = datetime.utcnow().strftime("%Y.%m.%d")
-
-          if "+" in current:
-              d, c = current.split("+", 1)
-              c = int(c) + 1 if d == today else 1
-          else:
-              c = 1
-
-          print(f"{today}+{c:03d}")
-          PYCODE
-          )" >> "$GITHUB_OUTPUT"
 
       # -----------------------------
       # Update runtime + dashboard versions
@@ -95,7 +80,7 @@ jobs:
       - name: Update version metadata (runtime authoritative)
         run: |
           python scripts/update_version.py \
-            v0.2.3-alpha \
+            0.2.3-alpha \
             --build "${{ steps.build.outputs.next_build }}" \
             --dashboard-root StreamSuites-Dashboard/docs
 
