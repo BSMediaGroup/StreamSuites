@@ -45,6 +45,8 @@ namespace StreamSuites.DesktopAdmin
         private readonly BindingSource _tallyEventsBindingSource;
         private readonly BindingSource _scoreEventsBindingSource;
         private readonly ToolTip _snapshotToolTip;
+        private RuntimeVersionInfo _runtimeVersionInfo;
+        private SnapshotHealthState _lastTrayHealth = SnapshotHealthState.Invalid;
 
         // STEP K - last refresh live counter
         private readonly System.Windows.Forms.Timer _sinceRefreshTimer;
@@ -161,6 +163,7 @@ namespace StreamSuites.DesktopAdmin
             _pathConfigService = new PathConfigService();
             _pathConfiguration = _pathConfigService.Load();
             _currentPathStatus = new SnapshotPathStatus();
+            _runtimeVersionInfo = RuntimeVersionInfo.Unavailable();
 
             _platformBindingSource = new BindingSource();
             _jobsBindingSource = new BindingSource();
@@ -216,6 +219,7 @@ namespace StreamSuites.DesktopAdmin
                 UpdateLastRefreshCounter();
 
             RefreshSnapshotPathStatus();
+            RefreshRuntimeVersionInfo();
 
             Shown += async (_, __) =>
             {
@@ -1248,8 +1252,9 @@ namespace StreamSuites.DesktopAdmin
                 return;
             }
 
+            RefreshRuntimeVersionInfo();
             var appName = BuildAboutApplicationName(about);
-            using var dialog = new AboutDialog(appName, about);
+            using var dialog = new AboutDialog(appName, about, _runtimeVersionInfo);
             dialog.ShowDialog(this);
         }
 
@@ -1287,6 +1292,8 @@ namespace StreamSuites.DesktopAdmin
         {
             if (_refreshInProgress)
                 return;
+
+            RefreshRuntimeVersionInfo();
 
             var pathStatus = RefreshSnapshotPathStatus();
             if (!pathStatus.IsValid)
@@ -1428,6 +1435,7 @@ namespace StreamSuites.DesktopAdmin
                 .ValidateSnapshotRoot(txtSnapshotPath.Text);
 
             UpdatePathTabStatus(_currentPathStatus);
+            RefreshRuntimeVersionInfo();
             return _currentPathStatus;
         }
 
@@ -2223,7 +2231,9 @@ namespace StreamSuites.DesktopAdmin
             _settingsSystemSummary.Text =
                 $"Hot reload: {(hotReload?.Enabled == true ? "Enabled" : "Disabled")} • " +
                 $"Watch path: {hotReload?.Watch_Path ?? "—"} • " +
-                $"Interval: {(hotReload?.Interval_Seconds ?? 0):0.##}s.";
+                $"Interval: {(hotReload?.Interval_Seconds ?? 0):0.##}s • " +
+                $"Runtime {_runtimeVersionInfo.ToDisplayVersion()} • " +
+                $"{_runtimeVersionInfo.ToDisplayBuild()}.";
 
             var polling = snapshot.System?.Platform_Polling_Enabled;
             _settingsPollingSummary.Text =
@@ -2594,9 +2604,9 @@ namespace StreamSuites.DesktopAdmin
             if (trayIcon == null)
                 return;
 
+            _lastTrayHealth = health;
             var (dot, label) = GetHealthLabel(health);
-            trayIcon.Text =
-                $"{dot} StreamSuites - {label}";
+            trayIcon.Text = BuildTrayTooltipText(dot, label);
             trayIcon.BalloonTipTitle =
                 "StreamSuites Snapshot Status";
             if (_trayStatusItem != null)
@@ -3329,7 +3339,8 @@ namespace StreamSuites.DesktopAdmin
             {
                 _snapshotToolTip.SetToolTip(
                     lblSnapshotStatus,
-                    fallback ?? "No snapshot data available."
+                    BuildSnapshotTooltipText(
+                        fallback ?? "No snapshot data available.")
                 );
                 return;
             }
@@ -3342,7 +3353,8 @@ namespace StreamSuites.DesktopAdmin
             {
                 _snapshotToolTip.SetToolTip(
                     lblSnapshotStatus,
-                    $"Generated_At parse failure:\n{snapshot.Generated_At}"
+                    BuildSnapshotTooltipText(
+                        $"Generated_At parse failure:\n{snapshot.Generated_At}")
                 );
                 return;
             }
@@ -3351,9 +3363,10 @@ namespace StreamSuites.DesktopAdmin
 
             _snapshotToolTip.SetToolTip(
                 lblSnapshotStatus,
-                $"Generated at: {generatedAt:yyyy-MM-dd HH:mm:ss} UTC\n" +
-                $"Snapshot age: {Math.Round(ageSeconds)} seconds\n" +
-                $"Stale threshold: {SnapshotStaleThresholdSeconds} seconds"
+                BuildSnapshotTooltipText(
+                    $"Generated at: {generatedAt:yyyy-MM-dd HH:mm:ss} UTC\n" +
+                    $"Snapshot age: {Math.Round(ageSeconds)} seconds\n" +
+                    $"Stale threshold: {SnapshotStaleThresholdSeconds} seconds")
             );
         }
 
@@ -3385,6 +3398,38 @@ namespace StreamSuites.DesktopAdmin
                 Invoke(new Action(() => statusRuntime.Text = text));
             else
                 statusRuntime.Text = text;
+        }
+
+        private void RefreshRuntimeVersionInfo()
+        {
+            _runtimeVersionInfo =
+                RuntimeVersionProvider.Load(_currentPathStatus?.SnapshotRoot);
+            UpdateRuntimeVersionDisplay();
+        }
+
+        private void UpdateRuntimeVersionDisplay()
+        {
+            statusRuntimeVersion.Text =
+                $"Runtime {_runtimeVersionInfo.ToDisplayVersion()} • {_runtimeVersionInfo.ToDisplayBuild()}";
+
+            if (trayIcon != null)
+            {
+                var (dot, label) = GetHealthLabel(_lastTrayHealth);
+                trayIcon.Text = BuildTrayTooltipText(dot, label);
+            }
+        }
+
+        private string BuildTrayTooltipText(string dot, string label)
+        {
+            return $"{dot} StreamSuites {_runtimeVersionInfo.ToDisplayVersion()} • " +
+                   $"{_runtimeVersionInfo.ToDisplayBuild()} - {label}";
+        }
+
+        private string BuildSnapshotTooltipText(string details)
+        {
+            return $"Runtime {_runtimeVersionInfo.ToDisplayVersion()} • " +
+                   $"{_runtimeVersionInfo.ToDisplayBuild()}\n" +
+                   details;
         }
 
         private sealed class CreatorRow
