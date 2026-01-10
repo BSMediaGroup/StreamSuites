@@ -42,7 +42,7 @@ jobs:
       - name: Calculate next build number
         id: build
         run: |
-          python - <<'PYCODE'
+          python <<'PYCODE'
           from datetime import datetime
           import os
           import re
@@ -89,14 +89,15 @@ jobs:
       # -----------------------------
       - name: Commit version updates
         run: |
-          # -----------------------------
-          # Runtime repo commit
-          # -----------------------------
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # -----------------------------
+          # Runtime repo commit
+          # -----------------------------
           git add runtime/version.py changelog runtime/exports || true
-          git diff --cached --quiet || git commit -m "chore(runtime): bump build to ${{ steps.build.outputs.next_build }}"
+          git diff --cached --quiet || \
+            git commit -m "chore(runtime): bump build to ${{ steps.build.outputs.next_build }}"
 
           # -----------------------------
           # Dashboard repo commit
@@ -107,7 +108,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add docs/version.json docs/about docs/data || true
-          git diff --cached --quiet || git commit -m "chore(dashboard): sync version ${{ steps.build.outputs.next_build }}"
+          git diff --cached --quiet || \
+            git commit -m "chore(dashboard): sync version ${{ steps.build.outputs.next_build }}"
 
       # -----------------------------
       # Push runtime changes

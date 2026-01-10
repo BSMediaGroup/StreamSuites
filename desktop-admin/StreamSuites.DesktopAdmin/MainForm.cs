@@ -78,6 +78,7 @@ namespace StreamSuites.DesktopAdmin
         private Label _creatorDetails;
         private Button _creatorEnableButton;
         private Button _creatorDisableButton;
+        private SplitContainer _creatorsSplit;
 
         private Label _dataSignalsSummary;
         private DataGridView _clipsGrid;
@@ -492,13 +493,10 @@ namespace StreamSuites.DesktopAdmin
         {
             tabCreators.Padding = new Padding(8);
 
-            var split = new SplitContainer
+            _creatorsSplit = new SplitContainer
             {
                 Dock = DockStyle.Fill,
-                Orientation = Orientation.Vertical,
-                Panel1MinSize = 420,
-                Panel2MinSize = 260,
-                SplitterDistance = 640
+                Orientation = Orientation.Vertical
             };
 
             var leftLayout = new TableLayoutPanel
@@ -626,13 +624,16 @@ namespace StreamSuites.DesktopAdmin
 
             detailsGroup.Controls.Add(_creatorDetails);
 
-            split.Panel1.Controls.Add(leftLayout);
-            split.Panel2.Controls.Add(detailsGroup);
+            _creatorsSplit.Panel1.Controls.Add(leftLayout);
+            _creatorsSplit.Panel2.Controls.Add(detailsGroup);
 
             tabCreators.Controls.Clear();
-            tabCreators.Controls.Add(split);
+            tabCreators.Controls.Add(_creatorsSplit);
 
             _creatorsGrid.SelectionChanged += CreatorsGrid_SelectionChanged;
+
+            Shown -= ApplyCreatorsSplitterAfterShown;
+            Shown += ApplyCreatorsSplitterAfterShown;
         }
 
         private void InitializeDataSignalsTab()
@@ -1397,15 +1398,16 @@ namespace StreamSuites.DesktopAdmin
 
         private void HandleInvalidSnapshotPath(SnapshotPathStatus pathStatus)
         {
-            var label = string.IsNullOrWhiteSpace(pathStatus?.Message)
+            var message = pathStatus?.Message ?? string.Empty;
+            var label = string.IsNullOrWhiteSpace(message)
                 ? "Snapshot: path not configured"
-                : $"Snapshot: {pathStatus.Message}";
+                : $"Snapshot: {message}";
 
             UpdateSnapshotStatus(label);
             ApplySnapshotHealthStyle(SnapshotHealthState.Invalid);
             UpdateTrayIconHealth(SnapshotHealthState.Invalid);
             UpdateSnapshotHealthIndicators(SnapshotHealthState.Invalid);
-            SetSnapshotTooltip(null, pathStatus?.Message);
+            SetSnapshotTooltip(null, message);
             UpdatePlatformCount("Platforms: unknown");
             _platformBindingSource.DataSource = null;
             UpdateStatusRuntime("Runtime: disconnected");
@@ -2924,6 +2926,33 @@ namespace StreamSuites.DesktopAdmin
             splitRuntime.Panel1MinSize = 420;
 
             ClampInspectorSplitter(null, EventArgs.Empty, true);
+        }
+
+        private void ApplyCreatorsSplitterAfterShown(object? sender, EventArgs e)
+        {
+            Shown -= ApplyCreatorsSplitterAfterShown;
+
+            if (_creatorsSplit == null)
+                return;
+
+            _creatorsSplit.Panel1MinSize = 420;
+            _creatorsSplit.Panel2MinSize = 260;
+
+            var total = _creatorsSplit.ClientSize.Width;
+            if (total <= 0)
+                return;
+
+            var desired = total - 320;
+            var min1 = _creatorsSplit.Panel1MinSize;
+            var min2 = _creatorsSplit.Panel2MinSize;
+            var max = total - min2;
+
+            if (desired < min1)
+                desired = min1;
+            if (desired > max)
+                desired = max;
+
+            _creatorsSplit.SplitterDistance = desired;
         }
 
         private void ClampInspectorSplitter(object? sender, EventArgs e)
