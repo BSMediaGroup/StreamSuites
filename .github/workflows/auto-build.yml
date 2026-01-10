@@ -44,6 +44,7 @@ jobs:
         run: |
           python <<'PYCODE'
           from datetime import datetime
+          import os
           import re
           from pathlib import Path
 
@@ -65,8 +66,12 @@ jobs:
 
           next_build = f"{today}+{next_counter:03d}"
 
-          with open("${GITHUB_OUTPUT}", "a", encoding="utf-8") as f:
-              f.write(f"next_build={next_build}\n")
+          output_path = os.environ.get("GITHUB_OUTPUT")
+          if not output_path:
+              raise RuntimeError("GITHUB_OUTPUT not set")
+
+          with open(output_path, "a", encoding="utf-8") as output:
+              output.write(f"next_build={next_build}\n")
           PYCODE
 
       # -----------------------------
