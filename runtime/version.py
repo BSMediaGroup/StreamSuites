@@ -8,7 +8,7 @@ from __future__ import annotations
 
 PROJECT_NAME = "StreamSuites™ Runtime"
 VERSION = "0.2.3-alpha"
-BUILD = "2026.01.10+003"
+BUILD = "2026.01.10+004"
 OWNER = "Daniel Clancy"
 COPYRIGHT = "© 2026 Brainstream Media Group"
 LICENSE = "Proprietary"
