@@ -359,7 +359,7 @@ namespace StreamSuites.DesktopAdmin.Core
 
         public static RuntimeVersionInfo Load(string? snapshotRoot)
         {
-            var path = ResolveVersionPath(snapshotRoot);
+            var path = ResolveVersionPath();
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
             {
                 return RuntimeVersionInfo.Unavailable(path);
@@ -396,17 +396,17 @@ namespace StreamSuites.DesktopAdmin.Core
             return string.IsNullOrWhiteSpace(value) ? fallback : value;
         }
 
-        private static string? ResolveVersionPath(string? snapshotRoot)
+        private static string? ResolveVersionPath()
         {
-            foreach (var start in GetRootCandidates(snapshotRoot))
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            if (!string.IsNullOrWhiteSpace(baseDir))
             {
-                var directory = new DirectoryInfo(start);
+                var directory = new DirectoryInfo(baseDir);
                 while (directory != null)
                 {
-                    var candidate = Path.Combine(directory.FullName, "runtime", "version.py");
-                    if (File.Exists(candidate))
+                    if (IsRuntimeRepoRoot(directory.FullName))
                     {
-                        return candidate;
+                        return Path.Combine(directory.FullName, "runtime", "version.py");
                     }
 
                     directory = directory.Parent;
@@ -416,18 +416,11 @@ namespace StreamSuites.DesktopAdmin.Core
             return null;
         }
 
-        private static IEnumerable<string> GetRootCandidates(string? snapshotRoot)
+        private static bool IsRuntimeRepoRoot(string candidateRoot)
         {
-            if (!string.IsNullOrWhiteSpace(snapshotRoot))
-            {
-                yield return snapshotRoot;
-            }
-
-            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            if (!string.IsNullOrWhiteSpace(baseDir))
-            {
-                yield return baseDir;
-            }
+            var runtimeVersion = Path.Combine(candidateRoot, "runtime", "version.py");
+            var desktopAdmin = Path.Combine(candidateRoot, "desktop-admin");
+            return File.Exists(runtimeVersion) && Directory.Exists(desktopAdmin);
         }
     }
 }

@@ -184,17 +184,51 @@ namespace StreamSuites.DesktopAdmin
             {
                 var baseDir = AppDomain.CurrentDomain.BaseDirectory;
                 var splashPath = Path.Combine(baseDir, "assets", "bg", "aboutsplash.png");
-                if (!File.Exists(splashPath))
+                if (File.Exists(splashPath))
+                {
+                    return Image.FromFile(splashPath);
+                }
+
+                var sourcePath = FindSourceSplashPath(baseDir);
+                if (sourcePath == null)
                 {
                     return null;
                 }
 
-                return Image.FromFile(splashPath);
+                return Image.FromFile(sourcePath);
             }
             catch
             {
                 return null;
             }
+        }
+
+        private static string? FindSourceSplashPath(string baseDir)
+        {
+            if (string.IsNullOrWhiteSpace(baseDir))
+            {
+                return null;
+            }
+
+            var directory = new DirectoryInfo(baseDir);
+            while (directory != null)
+            {
+                var candidate = Path.Combine(
+                    directory.FullName,
+                    "desktop-admin",
+                    "StreamSuites.DesktopAdmin",
+                    "assets",
+                    "bg",
+                    "aboutsplash.png");
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+
+                directory = directory.Parent;
+            }
+
+            return null;
         }
     }
 }
