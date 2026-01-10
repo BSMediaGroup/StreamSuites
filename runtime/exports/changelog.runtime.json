@@ -4,7 +4,7 @@
     "date": "2026-02-01",
     "title": "Architecture and authority clarified",
     "description": "Documented the two-repository architecture with the runtime as sole authority, Desktop Admin as the privileged local control plane, the web dashboard as a read-only consumer, and ongoing path configuration groundwork without altering runtime behavior.",
-    "version": "v0.2.3-alpha",
+    "version": "0.2.3-alpha",
     "scope": "runtime",
     "tags": [
       "architecture",
@@ -17,7 +17,7 @@
     "date": "2026-01-01",
     "title": "Alpha metadata refresh",
     "description": "Version metadata promoted to v0.2.2-alpha with build 2025.03 while preserving prior runtime history.",
-    "version": "v0.2.3-alpha",
+    "version": "0.2.3-alpha",
     "scope": "runtime",
     "tags": [
       "alpha",
@@ -30,7 +30,7 @@
     "date": "2026-01-15",
     "title": "Runtime resumed",
     "description": "Runtime execution resumed with explicit platform states; Rumble remains PAUSED while YouTube and Twitch move forward.",
-    "version": "v0.2.3-alpha",
+    "version": "0.2.3-alpha",
     "scope": "runtime",
     "tags": [
       "resumed",
@@ -43,7 +43,7 @@
     "date": "2025-12-28",
     "title": "Runtime suspended",
     "description": "Runtime development was indefinitely suspended after repeated failures to achieve a stable, deterministic ingestion baseline across external platforms.",
-    "version": "v0.2.3-alpha",
+    "version": "0.2.3-alpha",
     "scope": "runtime",
     "tags": [
       "suspended",
@@ -56,7 +56,7 @@
     "date": "2025-12-20",
     "title": "Quota enforcement hardened",
     "description": "Daily quota enforcement was stabilized across platforms, consolidating the QuotaRegistry and keeping snapshot exports aligned for downstream readers.",
-    "version": "v0.2.3-alpha",
+    "version": "0.2.3-alpha",
     "scope": "runtime",
     "tags": [
       "quotas",
