@@ -17,6 +17,7 @@ namespace StreamSuites.DesktopAdmin
         // Footer status bar
         private StatusStrip statusBar;
         private ToolStripStatusLabel statusSnapshot;
+        private ToolStripStatusLabel statusRuntimeVersion;
         private ToolStripStatusLabel statusSpacer;
         private ToolStripStatusLabel statusRuntime;
 
@@ -85,6 +86,7 @@ namespace StreamSuites.DesktopAdmin
 
             statusBar = new StatusStrip();
             statusSnapshot = new ToolStripStatusLabel();
+            statusRuntimeVersion = new ToolStripStatusLabel();
             statusSpacer = new ToolStripStatusLabel();
             statusRuntime = new ToolStripStatusLabel();
 
@@ -121,9 +123,11 @@ namespace StreamSuites.DesktopAdmin
 
             // Status bar
             statusSnapshot.Text = "Snapshot: —";
+            statusRuntimeVersion.Text = "Runtime Version unavailable • Build unavailable";
             statusRuntime.Text = "Runtime: disconnected";
             statusSpacer.Spring = true;
             statusBar.Items.Add(statusSnapshot);
+            statusBar.Items.Add(statusRuntimeVersion);
             statusBar.Items.Add(statusSpacer);
             statusBar.Items.Add(statusRuntime);
             statusBar.Dock = DockStyle.Bottom;

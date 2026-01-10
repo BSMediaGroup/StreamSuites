@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace StreamSuites.DesktopAdmin.Core
 {
@@ -293,6 +295,138 @@ namespace StreamSuites.DesktopAdmin.Core
             catch
             {
                 return trimmed;
+            }
+        }
+
+    }
+
+    public sealed class RuntimeVersionInfo
+    {
+        public RuntimeVersionInfo(string version, string build, string sourcePath)
+        {
+            Version = version;
+            Build = build;
+            SourcePath = sourcePath;
+        }
+
+        public string Version { get; }
+
+        public string Build { get; }
+
+        public string SourcePath { get; }
+
+        public bool IsVersionAvailable =>
+            !string.Equals(Version, RuntimeVersionProvider.VersionUnavailable, StringComparison.Ordinal);
+
+        public bool IsBuildAvailable =>
+            !string.Equals(Build, RuntimeVersionProvider.BuildUnavailable, StringComparison.Ordinal);
+
+        public string ToDisplayVersion()
+        {
+            return IsVersionAvailable
+                ? $"v{Version}"
+                : Version;
+        }
+
+        public string ToDisplayBuild()
+        {
+            return IsBuildAvailable
+                ? $"Build {Build}"
+                : Build;
+        }
+
+        public static RuntimeVersionInfo Unavailable(string? sourcePath = null)
+        {
+            return new RuntimeVersionInfo(
+                RuntimeVersionProvider.VersionUnavailable,
+                RuntimeVersionProvider.BuildUnavailable,
+                sourcePath ?? string.Empty);
+        }
+    }
+
+    public static class RuntimeVersionProvider
+    {
+        public const string VersionUnavailable = "Version unavailable";
+        public const string BuildUnavailable = "Build unavailable";
+
+        private static readonly Regex VersionRegex = new(
+            @"^\s*VERSION\s*=\s*[""'](?<value>[^""']+)[""']\s*$",
+            RegexOptions.Multiline);
+
+        private static readonly Regex BuildRegex = new(
+            @"^\s*BUILD\s*=\s*[""'](?<value>[^""']+)[""']\s*$",
+            RegexOptions.Multiline);
+
+        public static RuntimeVersionInfo Load(string? snapshotRoot)
+        {
+            var path = ResolveVersionPath(snapshotRoot);
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                return RuntimeVersionInfo.Unavailable(path);
+            }
+
+            try
+            {
+                var content = File.ReadAllText(path);
+                return ParseContent(content, path);
+            }
+            catch
+            {
+                return RuntimeVersionInfo.Unavailable(path);
+            }
+        }
+
+        private static RuntimeVersionInfo ParseContent(string content, string sourcePath)
+        {
+            var version = ExtractValue(VersionRegex, content, VersionUnavailable);
+            var build = ExtractValue(BuildRegex, content, BuildUnavailable);
+
+            return new RuntimeVersionInfo(version, build, sourcePath);
+        }
+
+        private static string ExtractValue(Regex regex, string content, string fallback)
+        {
+            var match = regex.Match(content);
+            if (!match.Success)
+            {
+                return fallback;
+            }
+
+            var value = match.Groups["value"].Value.Trim();
+            return string.IsNullOrWhiteSpace(value) ? fallback : value;
+        }
+
+        private static string? ResolveVersionPath(string? snapshotRoot)
+        {
+            foreach (var start in GetRootCandidates(snapshotRoot))
+            {
+                var directory = new DirectoryInfo(start);
+                while (directory != null)
+                {
+                    var candidate = Path.Combine(directory.FullName, "runtime", "version.py");
+                    if (File.Exists(candidate))
+                    {
+                        return candidate;
+                    }
+
+                    directory = directory.Parent;
+                }
+            }
+
+            return null;
+        }
+
+        private static IEnumerable<string> GetRootCandidates(string? snapshotRoot)
+        {
+            if (!string.IsNullOrWhiteSpace(snapshotRoot))
+            {
+                yield return snapshotRoot;
+            }
+
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            if (!string.IsNullOrWhiteSpace(baseDir))
+            {
+                yield return baseDir;
             }
         }
     }
