@@ -2,13 +2,17 @@ using System;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
+using StreamSuites.DesktopAdmin.Core;
 using StreamSuites.DesktopAdmin.Models;
 
 namespace StreamSuites.DesktopAdmin
 {
     public class AboutDialog : Form
     {
-        public AboutDialog(string applicationName, AboutExport export)
+        public AboutDialog(
+            string applicationName,
+            AboutExport export,
+            RuntimeVersionInfo runtimeVersion)
         {
             Text = $"About {applicationName}";
             StartPosition = FormStartPosition.CenterParent;
@@ -46,7 +50,7 @@ namespace StreamSuites.DesktopAdmin
                 Margin = new Padding(0, 0, 0, 8)
             };
 
-            logo.Image = LoadLogo() ?? SystemIcons.Application.ToBitmap();
+            logo.Image = LoadAboutSplash() ?? LoadLogo() ?? SystemIcons.Application.ToBitmap();
 
             var lblName = new Label
             {
@@ -91,13 +95,13 @@ namespace StreamSuites.DesktopAdmin
 
             var txtVersion = new Label
             {
-                Text = export.Version,
+                Text = runtimeVersion.ToDisplayVersion(),
                 AutoSize = true
             };
 
             var txtBuild = new Label
             {
-                Text = export.Build,
+                Text = runtimeVersion.ToDisplayBuild(),
                 AutoSize = true
             };
 
@@ -167,6 +171,25 @@ namespace StreamSuites.DesktopAdmin
 
                 using var icon = new Icon(iconPath);
                 return icon.ToBitmap();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static Image? LoadAboutSplash()
+        {
+            try
+            {
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                var splashPath = Path.Combine(baseDir, "assets", "bg", "aboutsplash.png");
+                if (!File.Exists(splashPath))
+                {
+                    return null;
+                }
+
+                return Image.FromFile(splashPath);
             }
             catch
             {
