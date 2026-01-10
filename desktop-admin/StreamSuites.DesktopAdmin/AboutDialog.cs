@@ -1,4 +1,6 @@
+using System;
 using System.Drawing;
+using System.IO;
 using System.Windows.Forms;
 using StreamSuites.DesktopAdmin.Models;
 
@@ -19,7 +21,7 @@ namespace StreamSuites.DesktopAdmin
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount = 6,
+                RowCount = 7,
                 Padding = new Padding(12),
                 AutoSize = true
             };
@@ -31,8 +33,20 @@ namespace StreamSuites.DesktopAdmin
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var logo = new PictureBox
+            {
+                Width = 96,
+                Height = 96,
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0, 0, 0, 8)
+            };
+
+            logo.Image = LoadLogo() ?? SystemIcons.Application.ToBitmap();
 
             var lblName = new Label
             {
@@ -110,17 +124,20 @@ namespace StreamSuites.DesktopAdmin
                 Width = 90
             };
 
-            layout.Controls.Add(lblName, 0, 0);
-            layout.Controls.Add(txtName, 1, 0);
-            layout.Controls.Add(lblVersion, 0, 1);
-            layout.Controls.Add(txtVersion, 1, 1);
-            layout.Controls.Add(lblBuild, 0, 2);
-            layout.Controls.Add(txtBuild, 1, 2);
-            layout.Controls.Add(lblUpdated, 0, 3);
-            layout.Controls.Add(txtUpdated, 1, 3);
-            layout.Controls.Add(lblLicense, 0, 4);
-            layout.Controls.Add(txtLicense, 1, 4);
-            layout.Controls.Add(btnClose, 1, 5);
+            layout.Controls.Add(logo, 0, 0);
+            layout.SetColumnSpan(logo, 2);
+
+            layout.Controls.Add(lblName, 0, 1);
+            layout.Controls.Add(txtName, 1, 1);
+            layout.Controls.Add(lblVersion, 0, 2);
+            layout.Controls.Add(txtVersion, 1, 2);
+            layout.Controls.Add(lblBuild, 0, 3);
+            layout.Controls.Add(txtBuild, 1, 3);
+            layout.Controls.Add(lblUpdated, 0, 4);
+            layout.Controls.Add(txtUpdated, 1, 4);
+            layout.Controls.Add(lblLicense, 0, 5);
+            layout.Controls.Add(txtLicense, 1, 5);
+            layout.Controls.Add(btnClose, 1, 6);
 
             Controls.Add(layout);
 
@@ -135,6 +152,26 @@ namespace StreamSuites.DesktopAdmin
             }
 
             return export.Copyright;
+        }
+
+        private static Image? LoadLogo()
+        {
+            try
+            {
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                var iconPath = Path.Combine(baseDir, "assets", "streamsuites.ico");
+                if (!File.Exists(iconPath))
+                {
+                    return null;
+                }
+
+                using var icon = new Icon(iconPath);
+                return icon.ToBitmap();
+            }
+            catch
+            {
+                return null;
+            }
         }
     }
 }

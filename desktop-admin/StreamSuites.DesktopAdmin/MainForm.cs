@@ -34,6 +34,16 @@ namespace StreamSuites.DesktopAdmin
         private readonly BindingSource _telemetryEventsBindingSource;
         private readonly BindingSource _telemetryErrorsBindingSource;
         private readonly BindingSource _telemetryRatesBindingSource;
+        private readonly BindingSource _creatorsBindingSource;
+        private readonly BindingSource _platformFlagsBindingSource;
+        private readonly BindingSource _clipsBindingSource;
+        private readonly BindingSource _pollsBindingSource;
+        private readonly BindingSource _talliesBindingSource;
+        private readonly BindingSource _scoreboardsBindingSource;
+        private readonly BindingSource _chatEventsBindingSource;
+        private readonly BindingSource _pollVotesBindingSource;
+        private readonly BindingSource _tallyEventsBindingSource;
+        private readonly BindingSource _scoreEventsBindingSource;
         private readonly ToolTip _snapshotToolTip;
 
         // STEP K - last refresh live counter
@@ -62,6 +72,32 @@ namespace StreamSuites.DesktopAdmin
         private DataGridView _telemetryErrorsGrid;
         private DataGridView _telemetryRatesGrid;
         private Label _telemetrySummary;
+
+        private DataGridView _creatorsGrid;
+        private Label _creatorsSummary;
+        private Label _creatorDetails;
+        private Button _creatorEnableButton;
+        private Button _creatorDisableButton;
+        private SplitContainer _creatorsSplit;
+
+        private Label _dataSignalsSummary;
+        private DataGridView _clipsGrid;
+        private DataGridView _pollsGrid;
+        private DataGridView _talliesGrid;
+        private DataGridView _scoreboardsGrid;
+        private DataGridView _chatEventsGrid;
+        private DataGridView _pollVotesGrid;
+        private DataGridView _tallyEventsGrid;
+        private DataGridView _scoreEventsGrid;
+
+        private Label _settingsRestartSummary;
+        private Label _settingsSystemSummary;
+        private Label _settingsPollingSummary;
+        private Label _settingsImportExportSummary;
+        private DataGridView _settingsPlatformGrid;
+
+        private readonly Dictionary<string, PlatformTabControls> _platformTabControls
+            = new(StringComparer.OrdinalIgnoreCase);
 
         public MainForm()
         {
@@ -131,6 +167,16 @@ namespace StreamSuites.DesktopAdmin
             _telemetryEventsBindingSource = new BindingSource();
             _telemetryErrorsBindingSource = new BindingSource();
             _telemetryRatesBindingSource = new BindingSource();
+            _creatorsBindingSource = new BindingSource();
+            _platformFlagsBindingSource = new BindingSource();
+            _clipsBindingSource = new BindingSource();
+            _pollsBindingSource = new BindingSource();
+            _talliesBindingSource = new BindingSource();
+            _scoreboardsBindingSource = new BindingSource();
+            _chatEventsBindingSource = new BindingSource();
+            _pollVotesBindingSource = new BindingSource();
+            _tallyEventsBindingSource = new BindingSource();
+            _scoreEventsBindingSource = new BindingSource();
             gridPlatforms.DataSource = _platformBindingSource;
 
             InitializePlatformGrid();
@@ -138,6 +184,9 @@ namespace StreamSuites.DesktopAdmin
             InitializeMenu();
             InitializeJobsTab();
             InitializeTelemetryTab();
+            InitializeCreatorsTab();
+            InitializeDataSignalsTab();
+            InitializeSettingsTab();
             InitializePlatformTabs();
             UpdatePlatformActionButtons(null);
 
@@ -440,6 +489,500 @@ namespace StreamSuites.DesktopAdmin
             tabTelemetry.Controls.Add(panel);
         }
 
+        private void InitializeCreatorsTab()
+        {
+            tabCreators.Padding = new Padding(8);
+
+            _creatorsSplit = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Vertical
+            };
+
+            var leftLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                Padding = new Padding(8)
+            };
+
+            leftLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            leftLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            leftLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            _creatorsSummary = new Label
+            {
+                Text = "Creators: —",
+                AutoSize = true,
+                Dock = DockStyle.Fill
+            };
+
+            _creatorsGrid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AllowUserToResizeRows = false,
+                AllowUserToResizeColumns = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                RowHeadersVisible = false,
+                AutoGenerateColumns = false,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
+            };
+
+            _creatorsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(CreatorRow.CreatorId),
+                HeaderText = "Creator ID",
+                MinimumWidth = 120
+            });
+
+            _creatorsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(CreatorRow.DisplayName),
+                HeaderText = "Display Name",
+                MinimumWidth = 160
+            });
+
+            _creatorsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(CreatorRow.PlatformsEnabled),
+                HeaderText = "Platforms Enabled",
+                MinimumWidth = 180
+            });
+
+            _creatorsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(CreatorRow.Status),
+                HeaderText = "Status",
+                MinimumWidth = 100
+            });
+
+            _creatorsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(CreatorRow.Notes),
+                HeaderText = "Notes",
+                MinimumWidth = 220
+            });
+
+            _creatorsGrid.DataSource = _creatorsBindingSource;
+            EnableDoubleBuffering(_creatorsGrid);
+
+            var actionsPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false
+            };
+
+            _creatorEnableButton = new Button
+            {
+                Text = "Enable (placeholder)",
+                AutoSize = true,
+                Enabled = false
+            };
+
+            _creatorDisableButton = new Button
+            {
+                Text = "Disable (placeholder)",
+                AutoSize = true,
+                Enabled = false
+            };
+
+            var actionsNote = new Label
+            {
+                Text = "Read-only: creator edits apply in runtime export pipelines.",
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Padding = new Padding(12, 6, 0, 0)
+            };
+
+            actionsPanel.Controls.Add(_creatorEnableButton);
+            actionsPanel.Controls.Add(_creatorDisableButton);
+            actionsPanel.Controls.Add(actionsNote);
+
+            leftLayout.Controls.Add(_creatorsSummary, 0, 0);
+            leftLayout.Controls.Add(_creatorsGrid, 0, 1);
+            leftLayout.Controls.Add(actionsPanel, 0, 2);
+
+            var detailsGroup = new GroupBox
+            {
+                Text = "Creator Details",
+                Dock = DockStyle.Fill,
+                Padding = new Padding(8)
+            };
+
+            _creatorDetails = new Label
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                Text = "Select a creator to view details."
+            };
+
+            detailsGroup.Controls.Add(_creatorDetails);
+
+            _creatorsSplit.Panel1.Controls.Add(leftLayout);
+            _creatorsSplit.Panel2.Controls.Add(detailsGroup);
+
+            tabCreators.Controls.Clear();
+            tabCreators.Controls.Add(_creatorsSplit);
+
+            _creatorsGrid.SelectionChanged += CreatorsGrid_SelectionChanged;
+
+            Shown -= ApplyCreatorsSplitterAfterShown;
+            Shown += ApplyCreatorsSplitterAfterShown;
+        }
+
+        private void InitializeDataSignalsTab()
+        {
+            tabDataSignals.Padding = new Padding(8);
+
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                ColumnCount = 1,
+                RowCount = 4,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var noticeGroup = new GroupBox
+            {
+                Text = "Runtime-owned, dashboard-visible",
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            _dataSignalsSummary = new Label
+            {
+                AutoSize = true,
+                Dock = DockStyle.Fill,
+                Text = "Runtime exports provide read-only observability for entities and signals."
+            };
+
+            noticeGroup.Controls.Add(_dataSignalsSummary);
+
+            var entitiesGroup = BuildDataSignalsGroup("Entities", out var entitiesTabs);
+            var signalsGroup = BuildDataSignalsGroup("Signals", out var signalsTabs);
+
+            _clipsGrid = BuildDataSignalsGrid();
+            _clipsGrid.Columns.Add(BuildTextColumn(nameof(ClipRow.ClipId), "Clip ID", 120));
+            _clipsGrid.Columns.Add(BuildTextColumn(nameof(ClipRow.Title), "Title", 200));
+            _clipsGrid.Columns.Add(BuildTextColumn(nameof(ClipRow.Creator), "Creator", 120));
+            _clipsGrid.Columns.Add(BuildTextColumn(nameof(ClipRow.State), "State", 100));
+            _clipsGrid.Columns.Add(BuildTextColumn(nameof(ClipRow.PublishedAt), "Published", 150));
+            _clipsGrid.Columns.Add(BuildTextColumn(nameof(ClipRow.Duration), "Duration", 90));
+            _clipsGrid.DataSource = _clipsBindingSource;
+            EnableDoubleBuffering(_clipsGrid);
+
+            _pollsGrid = BuildDataSignalsGrid();
+            _pollsGrid.Columns.Add(BuildTextColumn(nameof(PollRow.PollId), "Poll ID", 130));
+            _pollsGrid.Columns.Add(BuildTextColumn(nameof(PollRow.Question), "Question", 220));
+            _pollsGrid.Columns.Add(BuildTextColumn(nameof(PollRow.Creator), "Creator", 120));
+            _pollsGrid.Columns.Add(BuildTextColumn(nameof(PollRow.State), "State", 90));
+            _pollsGrid.Columns.Add(BuildTextColumn(nameof(PollRow.OpenedAt), "Opened", 150));
+            _pollsGrid.Columns.Add(BuildTextColumn(nameof(PollRow.ClosedAt), "Closed", 150));
+            _pollsGrid.Columns.Add(BuildTextColumn(nameof(PollRow.OptionsSummary), "Options", 220));
+            _pollsGrid.DataSource = _pollsBindingSource;
+            EnableDoubleBuffering(_pollsGrid);
+
+            _talliesGrid = BuildDataSignalsGrid();
+            _talliesGrid.Columns.Add(BuildTextColumn(nameof(TallyRow.TallyId), "Tally ID", 130));
+            _talliesGrid.Columns.Add(BuildTextColumn(nameof(TallyRow.Label), "Label", 200));
+            _talliesGrid.Columns.Add(BuildTextColumn(nameof(TallyRow.Creator), "Creator", 120));
+            _talliesGrid.Columns.Add(BuildTextColumn(nameof(TallyRow.Count), "Count", 90));
+            _talliesGrid.Columns.Add(BuildTextColumn(nameof(TallyRow.UpdatedAt), "Updated", 150));
+            _talliesGrid.DataSource = _talliesBindingSource;
+            EnableDoubleBuffering(_talliesGrid);
+
+            _scoreboardsGrid = BuildDataSignalsGrid();
+            _scoreboardsGrid.Columns.Add(BuildTextColumn(nameof(ScoreboardRow.ScoreboardId), "Scoreboard ID", 150));
+            _scoreboardsGrid.Columns.Add(BuildTextColumn(nameof(ScoreboardRow.Title), "Title", 200));
+            _scoreboardsGrid.Columns.Add(BuildTextColumn(nameof(ScoreboardRow.Creator), "Creator", 120));
+            _scoreboardsGrid.Columns.Add(BuildTextColumn(nameof(ScoreboardRow.Entries), "Entries", 90));
+            _scoreboardsGrid.Columns.Add(BuildTextColumn(nameof(ScoreboardRow.FinalizedAt), "Finalized", 150));
+            _scoreboardsGrid.DataSource = _scoreboardsBindingSource;
+            EnableDoubleBuffering(_scoreboardsGrid);
+
+            _chatEventsGrid = BuildDataSignalsGrid();
+            _chatEventsGrid.Columns.Add(BuildTextColumn(nameof(ChatEventRow.Timestamp), "Timestamp", 160));
+            _chatEventsGrid.Columns.Add(BuildTextColumn(nameof(ChatEventRow.Creator), "Creator", 120));
+            _chatEventsGrid.Columns.Add(BuildTextColumn(nameof(ChatEventRow.Platform), "Platform", 110));
+            _chatEventsGrid.Columns.Add(BuildTextColumn(nameof(ChatEventRow.Username), "User", 120));
+            _chatEventsGrid.Columns.Add(BuildTextColumn(nameof(ChatEventRow.Message), "Message", 280));
+            _chatEventsGrid.DataSource = _chatEventsBindingSource;
+            EnableDoubleBuffering(_chatEventsGrid);
+
+            _pollVotesGrid = BuildDataSignalsGrid();
+            _pollVotesGrid.Columns.Add(BuildTextColumn(nameof(PollVoteRow.Timestamp), "Timestamp", 160));
+            _pollVotesGrid.Columns.Add(BuildTextColumn(nameof(PollVoteRow.PollId), "Poll ID", 130));
+            _pollVotesGrid.Columns.Add(BuildTextColumn(nameof(PollVoteRow.OptionId), "Option ID", 150));
+            _pollVotesGrid.Columns.Add(BuildTextColumn(nameof(PollVoteRow.Creator), "Creator", 120));
+            _pollVotesGrid.Columns.Add(BuildTextColumn(nameof(PollVoteRow.VoterId), "Voter ID", 150));
+            _pollVotesGrid.DataSource = _pollVotesBindingSource;
+            EnableDoubleBuffering(_pollVotesGrid);
+
+            _tallyEventsGrid = BuildDataSignalsGrid();
+            _tallyEventsGrid.Columns.Add(BuildTextColumn(nameof(TallyEventRow.Timestamp), "Timestamp", 160));
+            _tallyEventsGrid.Columns.Add(BuildTextColumn(nameof(TallyEventRow.TallyId), "Tally ID", 130));
+            _tallyEventsGrid.Columns.Add(BuildTextColumn(nameof(TallyEventRow.Creator), "Creator", 120));
+            _tallyEventsGrid.Columns.Add(BuildTextColumn(nameof(TallyEventRow.Delta), "Delta", 80));
+            _tallyEventsGrid.DataSource = _tallyEventsBindingSource;
+            EnableDoubleBuffering(_tallyEventsGrid);
+
+            _scoreEventsGrid = BuildDataSignalsGrid();
+            _scoreEventsGrid.Columns.Add(BuildTextColumn(nameof(ScoreEventRow.Timestamp), "Timestamp", 160));
+            _scoreEventsGrid.Columns.Add(BuildTextColumn(nameof(ScoreEventRow.ScoreboardId), "Scoreboard ID", 150));
+            _scoreEventsGrid.Columns.Add(BuildTextColumn(nameof(ScoreEventRow.Creator), "Creator", 120));
+            _scoreEventsGrid.Columns.Add(BuildTextColumn(nameof(ScoreEventRow.Label), "Label", 160));
+            _scoreEventsGrid.Columns.Add(BuildTextColumn(nameof(ScoreEventRow.ScoreDelta), "Score Δ", 90));
+            _scoreEventsGrid.DataSource = _scoreEventsBindingSource;
+            EnableDoubleBuffering(_scoreEventsGrid);
+
+            entitiesTabs.TabPages.Add(BuildTabPage("Clips", _clipsGrid));
+            entitiesTabs.TabPages.Add(BuildTabPage("Polls", _pollsGrid));
+            entitiesTabs.TabPages.Add(BuildTabPage("Tallies", _talliesGrid));
+            entitiesTabs.TabPages.Add(BuildTabPage("Scoreboards", _scoreboardsGrid));
+
+            signalsTabs.TabPages.Add(BuildTabPage("Chat trigger events", _chatEventsGrid));
+            signalsTabs.TabPages.Add(BuildTabPage("Poll votes", _pollVotesGrid));
+            signalsTabs.TabPages.Add(BuildTabPage("Tally increments", _tallyEventsGrid));
+            signalsTabs.TabPages.Add(BuildTabPage("Score updates", _scoreEventsGrid));
+
+            layout.Controls.Add(noticeGroup, 0, 0);
+            layout.Controls.Add(entitiesGroup, 0, 1);
+            layout.Controls.Add(signalsGroup, 0, 2);
+
+            panel.Controls.Add(layout);
+
+            tabDataSignals.Controls.Clear();
+            tabDataSignals.Controls.Add(panel);
+        }
+
+        private void InitializeSettingsTab()
+        {
+            tabSettings.Padding = new Padding(8);
+
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                ColumnCount = 1,
+                RowCount = 5,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var restartGroup = BuildSettingsGroup("Pending Changes / Restart Queue", out _settingsRestartSummary);
+            var systemGroup = BuildSettingsGroup("System Settings", out _settingsSystemSummary);
+            var pollingGroup = BuildSettingsGroup("Platform Polling State", out _settingsPollingSummary);
+
+            var platformGroup = new GroupBox
+            {
+                Text = "Global Platform Service Enable Flags",
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            var platformLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                AutoSize = true
+            };
+
+            var platformNote = new Label
+            {
+                Text = "Read-only view. Runtime remains authoritative; enable changes require restart.",
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText
+            };
+
+            _settingsPlatformGrid = BuildDataSignalsGrid();
+            _settingsPlatformGrid.Height = 200;
+            _settingsPlatformGrid.Columns.Add(BuildTextColumn(nameof(PlatformFlagRow.Platform), "Platform", 140));
+            _settingsPlatformGrid.Columns.Add(BuildTextColumn(nameof(PlatformFlagRow.Enabled), "Enabled", 90));
+            _settingsPlatformGrid.Columns.Add(BuildTextColumn(nameof(PlatformFlagRow.State), "Runtime State", 140));
+            _settingsPlatformGrid.Columns.Add(BuildTextColumn(nameof(PlatformFlagRow.Notes), "Notes", 240));
+            _settingsPlatformGrid.DataSource = _platformFlagsBindingSource;
+            EnableDoubleBuffering(_settingsPlatformGrid);
+
+            platformLayout.Controls.Add(platformNote, 0, 0);
+            platformLayout.Controls.Add(_settingsPlatformGrid, 0, 1);
+
+            platformGroup.Controls.Add(platformLayout);
+
+            var importGroup = new GroupBox
+            {
+                Text = "Configuration Import / Export",
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            var importLayout = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false
+            };
+
+            var btnExport = new Button
+            {
+                Text = "Export Config (placeholder)",
+                AutoSize = true,
+                Enabled = false
+            };
+
+            var btnImport = new Button
+            {
+                Text = "Import Config (placeholder)",
+                AutoSize = true,
+                Enabled = false
+            };
+
+            _settingsImportExportSummary = new Label
+            {
+                Text = "Runtime-authoritative exports are read-only in this dashboard.",
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Padding = new Padding(12, 6, 0, 0)
+            };
+
+            importLayout.Controls.Add(btnExport);
+            importLayout.Controls.Add(btnImport);
+            importLayout.Controls.Add(_settingsImportExportSummary);
+
+            importGroup.Controls.Add(importLayout);
+
+            layout.Controls.Add(restartGroup, 0, 0);
+            layout.Controls.Add(systemGroup, 0, 1);
+            layout.Controls.Add(pollingGroup, 0, 2);
+            layout.Controls.Add(platformGroup, 0, 3);
+            layout.Controls.Add(importGroup, 0, 4);
+
+            panel.Controls.Add(layout);
+
+            tabSettings.Controls.Clear();
+            tabSettings.Controls.Add(panel);
+        }
+
+        private static GroupBox BuildSettingsGroup(string title, out Label valueLabel)
+        {
+            var group = new GroupBox
+            {
+                Text = title,
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            valueLabel = new Label
+            {
+                AutoSize = true,
+                Dock = DockStyle.Fill,
+                Text = "—"
+            };
+
+            group.Controls.Add(valueLabel);
+            return group;
+        }
+
+        private static GroupBox BuildDataSignalsGroup(string title, out TabControl tabs)
+        {
+            var group = new GroupBox
+            {
+                Text = title,
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            tabs = new TabControl
+            {
+                Dock = DockStyle.Top,
+                Height = 260
+            };
+
+            group.Controls.Add(tabs);
+            return group;
+        }
+
+        private static TabPage BuildTabPage(string title, Control content)
+        {
+            var tab = new TabPage
+            {
+                Text = title,
+                Padding = new Padding(8)
+            };
+
+            content.Dock = DockStyle.Fill;
+            tab.Controls.Add(content);
+            return tab;
+        }
+
+        private static DataGridView BuildDataSignalsGrid()
+        {
+            var grid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AllowUserToResizeRows = false,
+                AllowUserToResizeColumns = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                RowHeadersVisible = false,
+                AutoGenerateColumns = false,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                Height = 200
+            };
+
+            return grid;
+        }
+
+        private static DataGridViewTextBoxColumn BuildTextColumn(
+            string propertyName,
+            string headerText,
+            int minWidth)
+        {
+            return new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = propertyName,
+                HeaderText = headerText,
+                MinimumWidth = minWidth
+            };
+        }
+
         private DataGridView BuildTelemetryGrid()
         {
             var grid = new DataGridView
@@ -480,26 +1023,21 @@ namespace StreamSuites.DesktopAdmin
         {
             foreach (var platform in GetPlatformNames())
             {
-                if (tabMain.TabPages.Cast<TabPage>()
-                    .Any(tab => string.Equals(tab.Text, platform, StringComparison.OrdinalIgnoreCase)))
+                var tab = tabMain.TabPages.Cast<TabPage>()
+                    .FirstOrDefault(existing =>
+                        string.Equals(existing.Text, platform, StringComparison.OrdinalIgnoreCase));
+
+                if (tab == null)
                 {
-                    continue;
+                    tab = new TabPage();
+                    tabMain.TabPages.Add(tab);
                 }
 
-                var tab = new TabPage
-                {
-                    Text = platform,
-                    Padding = new Padding(12)
-                };
+                tab.Text = platform;
+                tab.Padding = new Padding(8);
+                tab.Controls.Clear();
 
-                var label = new Label
-                {
-                    AutoSize = true,
-                    Text = $"{platform} configuration will appear here."
-                };
-
-                tab.Controls.Add(label);
-                tabMain.TabPages.Add(tab);
+                _platformTabControls[platform] = BuildPlatformTab(tab, platform);
             }
         }
 
@@ -515,6 +1053,163 @@ namespace StreamSuites.DesktopAdmin
                 "Twitter",
                 "YouTube"
             };
+        }
+
+        private PlatformTabControls BuildPlatformTab(TabPage tab, string platform)
+        {
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                ColumnCount = 1,
+                RowCount = 4,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var globalGroup = BuildPlatformGroup("Global Service Status", out var globalLayout);
+            var runtimeGroup = BuildPlatformGroup("Runtime Connectivity", out var runtimeLayout);
+            var localGroup = BuildPlatformGroup("Local Configuration", out var localLayout);
+            var moduleGroup = BuildPlatformGroup("Module Status", out var moduleLayout);
+
+            var globalEnabled = BuildValueRow(globalLayout, "Service Enabled");
+            var globalTelemetry = BuildValueRow(globalLayout, "Telemetry Enabled");
+            var globalPaused = BuildValueRow(globalLayout, "Paused");
+            var globalNote = BuildNoteRow(globalLayout, "Read-only controls. Toggle intent requires restart.");
+
+            var runtimeState = BuildValueRow(runtimeLayout, "Runtime State");
+            var runtimeStatus = BuildValueRow(runtimeLayout, "Status");
+            var runtimeHeartbeat = BuildValueRow(runtimeLayout, "Last Heartbeat");
+            var runtimeEvent = BuildValueRow(runtimeLayout, "Last Event");
+            var runtimeSuccess = BuildValueRow(runtimeLayout, "Last Success");
+            var runtimeMessages = BuildValueRow(runtimeLayout, "Messages Processed");
+            var runtimeTriggers = BuildValueRow(runtimeLayout, "Triggers Fired");
+            var runtimeActions = BuildValueRow(runtimeLayout, "Actions");
+            var runtimeErrors = BuildValueRow(runtimeLayout, "Last Error");
+            var runtimeNote = BuildNoteRow(runtimeLayout, "Runtime snapshots only; no live control.");
+
+            var localCreators = BuildValueRow(localLayout, "Enabled Creators");
+            var localCreatorList = BuildValueRow(localLayout, "Creator IDs");
+            var localSource = BuildValueRow(localLayout, "Source");
+            var localNote = BuildNoteRow(localLayout, "Local configs derived from creator exports.");
+
+            var moduleStatus = BuildValueRow(moduleLayout, "Module Status");
+            var moduleMode = BuildValueRow(moduleLayout, "Mode");
+            var moduleReplay = BuildValueRow(moduleLayout, "Replay Supported");
+            var moduleOverlay = BuildValueRow(moduleLayout, "Overlay Supported");
+            var moduleNotes = BuildValueRow(moduleLayout, "Notes");
+            var moduleNote = BuildNoteRow(moduleLayout, "Scaffolded modules remain read-only.");
+
+            layout.Controls.Add(globalGroup, 0, 0);
+            layout.Controls.Add(runtimeGroup, 0, 1);
+            layout.Controls.Add(localGroup, 0, 2);
+            layout.Controls.Add(moduleGroup, 0, 3);
+
+            panel.Controls.Add(layout);
+            tab.Controls.Add(panel);
+
+            return new PlatformTabControls(
+                platform,
+                globalEnabled,
+                globalTelemetry,
+                globalPaused,
+                globalNote,
+                runtimeState,
+                runtimeStatus,
+                runtimeHeartbeat,
+                runtimeEvent,
+                runtimeSuccess,
+                runtimeMessages,
+                runtimeTriggers,
+                runtimeActions,
+                runtimeErrors,
+                runtimeNote,
+                localCreators,
+                localCreatorList,
+                localSource,
+                localNote,
+                moduleStatus,
+                moduleMode,
+                moduleReplay,
+                moduleOverlay,
+                moduleNotes,
+                moduleNote);
+        }
+
+        private static GroupBox BuildPlatformGroup(string title, out TableLayoutPanel layout)
+        {
+            var group = new GroupBox
+            {
+                Text = title,
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                ColumnCount = 2,
+                RowCount = 0,
+                AutoSize = true
+            };
+
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160f));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+
+            group.Controls.Add(layout);
+            return group;
+        }
+
+        private static Label BuildValueRow(TableLayoutPanel layout, string label)
+        {
+            var rowIndex = layout.RowCount++;
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var nameLabel = new Label
+            {
+                Text = label,
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+            };
+
+            var valueLabel = new Label
+            {
+                Text = "—",
+                AutoSize = true
+            };
+
+            layout.Controls.Add(nameLabel, 0, rowIndex);
+            layout.Controls.Add(valueLabel, 1, rowIndex);
+            return valueLabel;
+        }
+
+        private static Label BuildNoteRow(TableLayoutPanel layout, string text)
+        {
+            var rowIndex = layout.RowCount++;
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var noteLabel = new Label
+            {
+                Text = text,
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Padding = new Padding(0, 6, 0, 0)
+            };
+
+            layout.Controls.Add(noteLabel, 0, rowIndex);
+            layout.SetColumnSpan(noteLabel, 2);
+            return noteLabel;
         }
 
         private void ShowDashboard()
@@ -627,6 +1322,10 @@ namespace StreamSuites.DesktopAdmin
                     _platformBindingSource.DataSource = null;
                     ClearJobData();
                     ClearTelemetryData();
+                    ClearCreatorsData();
+                    ClearDataSignals();
+                    ClearSettingsData();
+                    ClearPlatformTabs();
                     UpdatePlatformActionButtons(null);
                     return;
                 }
@@ -655,6 +1354,17 @@ namespace StreamSuites.DesktopAdmin
                 UpdateJobData(snapshot);
                 await RefreshTelemetryAsync(_currentPathStatus.SnapshotRoot)
                     .ConfigureAwait(true);
+                var creatorConfig = await LoadCreatorConfigAsync()
+                    .ConfigureAwait(true);
+                var adminCreators = await LoadAdminCreatorsAsync()
+                    .ConfigureAwait(true);
+                var platformExport = await LoadPlatformsExportAsync()
+                    .ConfigureAwait(true);
+                UpdateCreatorsData(snapshot, creatorConfig, adminCreators);
+                await RefreshDataSignalsAsync(_currentPathStatus.SnapshotRoot)
+                    .ConfigureAwait(true);
+                UpdateSettingsData(snapshot);
+                UpdatePlatformTabs(snapshot, creatorConfig, platformExport);
 
                 if (!string.IsNullOrWhiteSpace(_currentSortProperty))
                     ApplyGridSort(_currentSortProperty, _currentSortDirection);
@@ -674,6 +1384,10 @@ namespace StreamSuites.DesktopAdmin
                 UpdateStatusRuntime("Runtime: disconnected");
                 ClearJobData();
                 ClearTelemetryData();
+                ClearCreatorsData();
+                ClearDataSignals();
+                ClearSettingsData();
+                ClearPlatformTabs();
                 UpdatePlatformActionButtons(null);
             }
             finally
@@ -684,15 +1398,16 @@ namespace StreamSuites.DesktopAdmin
 
         private void HandleInvalidSnapshotPath(SnapshotPathStatus pathStatus)
         {
-            var label = string.IsNullOrWhiteSpace(pathStatus?.Message)
+            var message = pathStatus?.Message ?? string.Empty;
+            var label = string.IsNullOrWhiteSpace(message)
                 ? "Snapshot: path not configured"
-                : $"Snapshot: {pathStatus.Message}";
+                : $"Snapshot: {message}";
 
             UpdateSnapshotStatus(label);
             ApplySnapshotHealthStyle(SnapshotHealthState.Invalid);
             UpdateTrayIconHealth(SnapshotHealthState.Invalid);
             UpdateSnapshotHealthIndicators(SnapshotHealthState.Invalid);
-            SetSnapshotTooltip(null, pathStatus?.Message);
+            SetSnapshotTooltip(null, message);
             UpdatePlatformCount("Platforms: unknown");
             _platformBindingSource.DataSource = null;
             UpdateStatusRuntime("Runtime: disconnected");
@@ -700,6 +1415,10 @@ namespace StreamSuites.DesktopAdmin
             lblLastRefresh.Text = "Last refresh: —";
             ClearJobData();
             ClearTelemetryData();
+            ClearCreatorsData();
+            ClearDataSignals();
+            ClearSettingsData();
+            ClearPlatformTabs();
             UpdatePlatformActionButtons(null);
         }
 
@@ -975,6 +1694,760 @@ namespace StreamSuites.DesktopAdmin
                     Value = entry.Value
                 });
             }
+        }
+
+        // -----------------------------------------------------------------
+        // Creators
+        // -----------------------------------------------------------------
+
+        private void CreatorsGrid_SelectionChanged(object? sender, EventArgs e)
+        {
+            if (_creatorsGrid.CurrentRow?.DataBoundItem is CreatorRow row)
+            {
+                UpdateCreatorDetails(row);
+                return;
+            }
+
+            UpdateCreatorDetails(null);
+        }
+
+        private async Task<CreatorConfigExport?> LoadCreatorConfigAsync()
+        {
+            var configPath = ResolveSnapshotPath("shared", "config", "creators.json");
+            return await _exportReader.TryReadAsync<CreatorConfigExport>(configPath ?? string.Empty)
+                .ConfigureAwait(true);
+        }
+
+        private async Task<AdminCreatorsExport?> LoadAdminCreatorsAsync()
+        {
+            var adminPath = ResolveSnapshotPath("admin", "creators.json");
+            return await _exportReader.TryReadAsync<AdminCreatorsExport>(adminPath ?? string.Empty)
+                .ConfigureAwait(true);
+        }
+
+        private async Task<PlatformsExport?> LoadPlatformsExportAsync()
+        {
+            var platformsPath = ResolveSnapshotPath("platforms.json");
+            return await _exportReader.TryReadAsync<PlatformsExport>(platformsPath ?? string.Empty)
+                .ConfigureAwait(true);
+        }
+
+        private void UpdateCreatorsData(
+            RuntimeSnapshot snapshot,
+            CreatorConfigExport? creatorConfig,
+            AdminCreatorsExport? adminCreators)
+        {
+            var snapshotCreators = snapshot.Creators ?? new List<CreatorStatus>();
+            var rows = BuildCreatorRows(snapshotCreators, creatorConfig, adminCreators);
+
+            _creatorsBindingSource.DataSource = rows;
+            _creatorsSummary.Text =
+                $"Creators: {rows.Count} • Runtime snapshot: {snapshotCreators.Count}";
+
+            SelectFirstCreatorRow();
+            ForceControlRefresh(tabCreators);
+        }
+
+        private void ClearCreatorsData()
+        {
+            _creatorsBindingSource.DataSource = null;
+            if (_creatorsSummary != null)
+            {
+                _creatorsSummary.Text = "Creators: —";
+            }
+
+            UpdateCreatorDetails(null);
+            ForceControlRefresh(tabCreators);
+        }
+
+        private void SelectFirstCreatorRow()
+        {
+            if (_creatorsGrid == null || _creatorsGrid.Rows.Count == 0)
+                return;
+
+            _creatorsGrid.ClearSelection();
+            _creatorsGrid.CurrentCell = _creatorsGrid.Rows[0].Cells[0];
+            _creatorsGrid.Rows[0].Selected = true;
+        }
+
+        private void UpdateCreatorDetails(CreatorRow? row)
+        {
+            if (_creatorDetails == null)
+                return;
+
+            if (row == null)
+            {
+                _creatorDetails.Text = "Select a creator to view details.";
+                return;
+            }
+
+            var platforms = string.IsNullOrWhiteSpace(row.PlatformsEnabled)
+                ? "—"
+                : row.PlatformsEnabled;
+
+            var notes = string.IsNullOrWhiteSpace(row.Notes)
+                ? "—"
+                : row.Notes;
+
+            _creatorDetails.Text =
+                $"Creator ID: {row.CreatorId}\n" +
+                $"Display Name: {row.DisplayName}\n" +
+                $"Status: {row.Status}\n" +
+                $"Enabled: {(row.Enabled ? "Yes" : "No")}\n" +
+                $"Platforms: {platforms}\n" +
+                $"Last Heartbeat: {row.LastHeartbeat ?? "—"}\n" +
+                $"Error: {row.Error ?? "None"}\n" +
+                $"Notes: {notes}\n" +
+                $"Sources: {row.SourceSummary}";
+        }
+
+        private static List<CreatorRow> BuildCreatorRows(
+            IList<CreatorStatus> snapshotCreators,
+            CreatorConfigExport? creatorConfig,
+            AdminCreatorsExport? adminCreators)
+        {
+            var rows = new List<CreatorRow>();
+            var creatorMap = new Dictionary<string, CreatorRow>(StringComparer.OrdinalIgnoreCase);
+
+            void EnsureRow(string creatorId)
+            {
+                if (string.IsNullOrWhiteSpace(creatorId))
+                    return;
+
+                if (creatorMap.ContainsKey(creatorId))
+                    return;
+
+                var row = new CreatorRow
+                {
+                    CreatorId = creatorId,
+                    DisplayName = creatorId,
+                    PlatformsEnabled = "—",
+                    Status = "Unknown",
+                    Notes = "—",
+                    SourceSummary = "—"
+                };
+
+                creatorMap[creatorId] = row;
+                rows.Add(row);
+            }
+
+            if (creatorConfig?.Creators != null)
+            {
+                foreach (var creator in creatorConfig.Creators)
+                {
+                    EnsureRow(creator.Creator_Id);
+                    var row = creatorMap[creator.Creator_Id];
+                    row.DisplayName = string.IsNullOrWhiteSpace(creator.Display_Name)
+                        ? row.DisplayName
+                        : creator.Display_Name;
+                    row.Notes = string.IsNullOrWhiteSpace(creator.Notes)
+                        ? row.Notes
+                        : creator.Notes;
+                    row.ConfigPlatforms = creator.Platforms ?? new Dictionary<string, bool>();
+                    row.Enabled = creator.Enabled;
+                    row.SourceSummary = MergeSources(row.SourceSummary, "shared/config/creators.json");
+                }
+            }
+
+            if (adminCreators?.Creators != null)
+            {
+                foreach (var creator in adminCreators.Creators)
+                {
+                    EnsureRow(creator.Creator_Id);
+                    var row = creatorMap[creator.Creator_Id];
+                    row.DisplayName = string.IsNullOrWhiteSpace(creator.Display_Name)
+                        ? row.DisplayName
+                        : creator.Display_Name;
+                    row.AdminPlatforms = creator.Platforms ?? new Dictionary<string, AdminPlatformState>();
+                    row.Notes = string.IsNullOrWhiteSpace(creator.Notes)
+                        ? row.Notes
+                        : creator.Notes;
+                    row.SourceSummary = MergeSources(row.SourceSummary, "runtime/admin/creators.json");
+                }
+            }
+
+            if (snapshotCreators != null)
+            {
+                foreach (var creator in snapshotCreators)
+                {
+                    EnsureRow(creator.Creator_Id);
+                    var row = creatorMap[creator.Creator_Id];
+                    row.DisplayName = string.IsNullOrWhiteSpace(creator.Display_Name)
+                        ? row.DisplayName
+                        : creator.Display_Name;
+                    row.Enabled = creator.Enabled;
+                    row.SnapshotPlatforms = creator.Platforms ?? new Dictionary<string, bool>();
+                    row.LastHeartbeat = creator.Last_Heartbeat;
+                    row.Error = creator.Error;
+                    row.Status = BuildCreatorStatus(creator.Enabled, creator.Error);
+                    row.SourceSummary = MergeSources(row.SourceSummary, "runtime_snapshot.json");
+                }
+            }
+
+            foreach (var row in rows)
+            {
+                var platformList = BuildCreatorPlatformList(row);
+                row.PlatformsEnabled = string.IsNullOrWhiteSpace(platformList)
+                    ? "—"
+                    : platformList;
+
+                if (row.Status == "Unknown")
+                {
+                    row.Status = row.Enabled ? "Active" : "Registered";
+                }
+            }
+
+            return rows
+                .OrderBy(r => r.CreatorId, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static string BuildCreatorStatus(bool enabled, string? error)
+        {
+            if (!string.IsNullOrWhiteSpace(error))
+                return "Error";
+
+            return enabled ? "Active" : "Disabled";
+        }
+
+        private static string BuildCreatorPlatformList(CreatorRow row)
+        {
+            var platforms = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var entry in row.ConfigPlatforms)
+            {
+                platforms[entry.Key] = entry.Value;
+            }
+
+            foreach (var entry in row.AdminPlatforms)
+            {
+                platforms[entry.Key] = entry.Value?.Enabled ?? false;
+            }
+
+            foreach (var entry in row.SnapshotPlatforms)
+            {
+                platforms[entry.Key] = entry.Value;
+            }
+
+            var enabledPlatforms = platforms
+                .Where(p => p.Value)
+                .Select(p => ToTitleCase(p.Key))
+                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return enabledPlatforms.Count == 0
+                ? string.Empty
+                : string.Join(", ", enabledPlatforms);
+        }
+
+        private static string MergeSources(string existing, string source)
+        {
+            if (string.IsNullOrWhiteSpace(existing) || existing == "—")
+            {
+                return source;
+            }
+
+            if (existing.Contains(source, StringComparison.OrdinalIgnoreCase))
+            {
+                return existing;
+            }
+
+            return $"{existing}, {source}";
+        }
+
+        // -----------------------------------------------------------------
+        // Data & Signals
+        // -----------------------------------------------------------------
+
+        private async Task RefreshDataSignalsAsync(string? snapshotRoot)
+        {
+            if (string.IsNullOrWhiteSpace(snapshotRoot) || !Directory.Exists(snapshotRoot))
+            {
+                ClearDataSignals();
+                return;
+            }
+
+            var clipsPath = ResolveSnapshotPath("clips.json");
+            var pollsPath = ResolveSnapshotPath("polls.json");
+            var talliesPath = ResolveSnapshotPath("tallies.json");
+            var scoreboardsPath = ResolveSnapshotPath("scoreboards.json");
+
+            var chatEventsPath = ResolveSnapshotPath("signals", "chat_events.json");
+            var pollVotesPath = ResolveSnapshotPath("signals", "poll_votes.json");
+            var tallyEventsPath = ResolveSnapshotPath("signals", "tally_events.json");
+            var scoreEventsPath = ResolveSnapshotPath("signals", "score_events.json");
+
+            var clipsExport = await _exportReader
+                .TryReadAsync<ClipsExport>(clipsPath ?? string.Empty)
+                .ConfigureAwait(true);
+            var pollsExport = await _exportReader
+                .TryReadAsync<PollsExport>(pollsPath ?? string.Empty)
+                .ConfigureAwait(true);
+            var talliesExport = await _exportReader
+                .TryReadAsync<TalliesExport>(talliesPath ?? string.Empty)
+                .ConfigureAwait(true);
+            var scoreboardsExport = await _exportReader
+                .TryReadAsync<ScoreboardsExport>(scoreboardsPath ?? string.Empty)
+                .ConfigureAwait(true);
+
+            var chatExport = await _exportReader
+                .TryReadAsync<ChatEventsExport>(chatEventsPath ?? string.Empty)
+                .ConfigureAwait(true);
+            var pollVotesExport = await _exportReader
+                .TryReadAsync<PollVotesExport>(pollVotesPath ?? string.Empty)
+                .ConfigureAwait(true);
+            var tallyEventsExport = await _exportReader
+                .TryReadAsync<TallyEventsExport>(tallyEventsPath ?? string.Empty)
+                .ConfigureAwait(true);
+            var scoreEventsExport = await _exportReader
+                .TryReadAsync<ScoreEventsExport>(scoreEventsPath ?? string.Empty)
+                .ConfigureAwait(true);
+
+            _clipsBindingSource.DataSource = clipsExport?.Clips?
+                .Select(clip => new ClipRow
+                {
+                    ClipId = clip.Clip_Id,
+                    Title = clip.Title,
+                    Creator = clip.Creator,
+                    State = clip.State,
+                    PublishedAt = clip.Published_At ?? "—",
+                    Duration = clip.Duration_Seconds > 0
+                        ? $"{clip.Duration_Seconds}s"
+                        : "—"
+                })
+                .OrderByDescending(row => ParseTimestamp(row.PublishedAt))
+                .ToList();
+
+            _pollsBindingSource.DataSource = pollsExport?.Polls?
+                .Select(poll => new PollRow
+                {
+                    PollId = poll.Poll_Id,
+                    Question = poll.Question,
+                    Creator = poll.Creator,
+                    State = poll.State,
+                    OpenedAt = poll.Opened_At ?? "—",
+                    ClosedAt = poll.Closed_At ?? "—",
+                    OptionsSummary = BuildPollOptionsSummary(poll.Options)
+                })
+                .OrderByDescending(row => ParseTimestamp(row.OpenedAt))
+                .ToList();
+
+            _talliesBindingSource.DataSource = talliesExport?.Tallies?
+                .Select(tally => new TallyRow
+                {
+                    TallyId = tally.Tally_Id,
+                    Label = tally.Label,
+                    Creator = tally.Creator,
+                    Count = tally.Count,
+                    UpdatedAt = tally.Last_Updated_At ?? "—"
+                })
+                .OrderByDescending(row => ParseTimestamp(row.UpdatedAt))
+                .ToList();
+
+            _scoreboardsBindingSource.DataSource = scoreboardsExport?.Scoreboards?
+                .Select(scoreboard => new ScoreboardRow
+                {
+                    ScoreboardId = scoreboard.Scoreboard_Id,
+                    Title = scoreboard.Title,
+                    Creator = scoreboard.Creator,
+                    Entries = scoreboard.Entries?.Count ?? 0,
+                    FinalizedAt = scoreboard.Finalized_At ?? "—"
+                })
+                .OrderByDescending(row => ParseTimestamp(row.FinalizedAt))
+                .ToList();
+
+            _chatEventsBindingSource.DataSource = chatExport?.Events?
+                .Select(evt => new ChatEventRow
+                {
+                    Timestamp = evt.Message_At ?? "—",
+                    Creator = evt.Creator,
+                    Platform = ToTitleCase(evt.Platform),
+                    Username = evt.Username,
+                    Message = evt.Message
+                })
+                .OrderByDescending(row => ParseTimestamp(row.Timestamp))
+                .ToList();
+
+            _pollVotesBindingSource.DataSource = pollVotesExport?.Votes?
+                .Select(vote => new PollVoteRow
+                {
+                    Timestamp = vote.Voted_At ?? "—",
+                    PollId = vote.Poll_Id,
+                    OptionId = vote.Option_Id,
+                    Creator = vote.Creator,
+                    VoterId = vote.Voter_Id
+                })
+                .OrderByDescending(row => ParseTimestamp(row.Timestamp))
+                .ToList();
+
+            _tallyEventsBindingSource.DataSource = tallyEventsExport?.Events?
+                .Select(evt => new TallyEventRow
+                {
+                    Timestamp = evt.Updated_At ?? "—",
+                    TallyId = evt.Tally_Id,
+                    Creator = evt.Creator,
+                    Delta = evt.Delta
+                })
+                .OrderByDescending(row => ParseTimestamp(row.Timestamp))
+                .ToList();
+
+            _scoreEventsBindingSource.DataSource = scoreEventsExport?.Events?
+                .Select(evt => new ScoreEventRow
+                {
+                    Timestamp = evt.Scored_At ?? "—",
+                    ScoreboardId = evt.Scoreboard_Id,
+                    Creator = evt.Creator,
+                    Label = evt.Label,
+                    ScoreDelta = evt.Score_Delta
+                })
+                .OrderByDescending(row => ParseTimestamp(row.Timestamp))
+                .ToList();
+
+            UpdateDataSignalsSummary(clipsExport, pollsExport, talliesExport, scoreboardsExport,
+                chatExport, pollVotesExport, tallyEventsExport, scoreEventsExport);
+
+            ForceControlRefresh(tabDataSignals);
+        }
+
+        private void ClearDataSignals()
+        {
+            _clipsBindingSource.DataSource = null;
+            _pollsBindingSource.DataSource = null;
+            _talliesBindingSource.DataSource = null;
+            _scoreboardsBindingSource.DataSource = null;
+            _chatEventsBindingSource.DataSource = null;
+            _pollVotesBindingSource.DataSource = null;
+            _tallyEventsBindingSource.DataSource = null;
+            _scoreEventsBindingSource.DataSource = null;
+
+            if (_dataSignalsSummary != null)
+            {
+                _dataSignalsSummary.Text =
+                    "Runtime exports provide read-only observability for entities and signals.";
+            }
+
+            ForceControlRefresh(tabDataSignals);
+        }
+
+        private void UpdateDataSignalsSummary(
+            ClipsExport? clipsExport,
+            PollsExport? pollsExport,
+            TalliesExport? talliesExport,
+            ScoreboardsExport? scoreboardsExport,
+            ChatEventsExport? chatExport,
+            PollVotesExport? pollVotesExport,
+            TallyEventsExport? tallyEventsExport,
+            ScoreEventsExport? scoreEventsExport)
+        {
+            if (_dataSignalsSummary == null)
+                return;
+
+            var entityCount =
+                (clipsExport?.Clips?.Count ?? 0) +
+                (pollsExport?.Polls?.Count ?? 0) +
+                (talliesExport?.Tallies?.Count ?? 0) +
+                (scoreboardsExport?.Scoreboards?.Count ?? 0);
+
+            var signalCount =
+                (chatExport?.Events?.Count ?? 0) +
+                (pollVotesExport?.Votes?.Count ?? 0) +
+                (tallyEventsExport?.Events?.Count ?? 0) +
+                (scoreEventsExport?.Events?.Count ?? 0);
+
+            var updatedAt =
+                GetMetaTimestamp(clipsExport?.Meta) ??
+                GetMetaTimestamp(pollsExport?.Meta) ??
+                GetMetaTimestamp(talliesExport?.Meta) ??
+                GetMetaTimestamp(scoreboardsExport?.Meta) ??
+                GetMetaTimestamp(chatExport?.Meta) ??
+                GetMetaTimestamp(pollVotesExport?.Meta) ??
+                GetMetaTimestamp(tallyEventsExport?.Meta) ??
+                GetMetaTimestamp(scoreEventsExport?.Meta) ??
+                "—";
+
+            _dataSignalsSummary.Text =
+                $"Runtime exports: {entityCount} entities • {signalCount} signals • Updated {updatedAt}";
+        }
+
+        private static string BuildPollOptionsSummary(List<PollOptionExport>? options)
+        {
+            if (options == null || options.Count == 0)
+                return "—";
+
+            return string.Join(", ",
+                options.Select(option => $"{option.Label} ({option.Votes})"));
+        }
+
+        private static string? GetMetaTimestamp(AdminExportMeta? meta)
+        {
+            if (meta == null)
+                return null;
+
+            if (!string.IsNullOrWhiteSpace(meta.Generated_At))
+                return meta.Generated_At;
+
+            if (!string.IsNullOrWhiteSpace(meta.Captured_At))
+                return meta.Captured_At;
+
+            return null;
+        }
+
+        private static DateTime ParseTimestamp(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value) || value == "—")
+                return DateTime.MinValue;
+
+            return DateTime.TryParse(value, out var parsed)
+                ? parsed
+                : DateTime.MinValue;
+        }
+
+        // -----------------------------------------------------------------
+        // Settings
+        // -----------------------------------------------------------------
+
+        private void UpdateSettingsData(RuntimeSnapshot snapshot)
+        {
+            var restart = snapshot.Restart_Intent;
+            var pending = restart?.Pending;
+
+            _settingsRestartSummary.Text =
+                $"Restart required: {(restart?.Required == true ? "Yes" : "No")} • " +
+                $"Pending sections: " +
+                $"System {(pending?.System == true ? "Yes" : "No")}, " +
+                $"Creators {(pending?.Creators == true ? "Yes" : "No")}, " +
+                $"Triggers {(pending?.Triggers == true ? "Yes" : "No")}, " +
+                $"Platforms {(pending?.Platforms == true ? "Yes" : "No")}.";
+
+            var hotReload = snapshot.System?.Hot_Reload;
+            _settingsSystemSummary.Text =
+                $"Hot reload: {(hotReload?.Enabled == true ? "Enabled" : "Disabled")} • " +
+                $"Watch path: {hotReload?.Watch_Path ?? "—"} • " +
+                $"Interval: {(hotReload?.Interval_Seconds ?? 0):0.##}s.";
+
+            var polling = snapshot.System?.Platform_Polling_Enabled;
+            _settingsPollingSummary.Text =
+                $"Platform polling enabled: {(polling?.Enabled == true ? "Yes" : "No")} • " +
+                "Runtime-authoritative; dashboard is read-only.";
+
+            var platformFlags = new List<PlatformFlagRow>();
+            var platformStates = snapshot.Platforms ?? new List<PlatformStatus>();
+
+            if (snapshot.System?.Platforms != null)
+            {
+                foreach (var entry in snapshot.System.Platforms.OrderBy(k => k.Key))
+                {
+                    var status = platformStates.FirstOrDefault(p =>
+                        string.Equals(p.Platform, entry.Key, StringComparison.OrdinalIgnoreCase));
+                    platformFlags.Add(new PlatformFlagRow
+                    {
+                        Platform = ToTitleCase(entry.Key),
+                        Enabled = entry.Value ? "Yes" : "No",
+                        State = status?.Display_State ?? "—",
+                        Notes = status?.Error ?? "—"
+                    });
+                }
+            }
+
+            _platformFlagsBindingSource.DataSource = platformFlags;
+            ForceControlRefresh(tabSettings);
+        }
+
+        private void ClearSettingsData()
+        {
+            if (_settingsRestartSummary != null)
+                _settingsRestartSummary.Text = "—";
+            if (_settingsSystemSummary != null)
+                _settingsSystemSummary.Text = "—";
+            if (_settingsPollingSummary != null)
+                _settingsPollingSummary.Text = "—";
+
+            _platformFlagsBindingSource.DataSource = null;
+            ForceControlRefresh(tabSettings);
+        }
+
+        // -----------------------------------------------------------------
+        // Platform tabs
+        // -----------------------------------------------------------------
+
+        private void UpdatePlatformTabs(
+            RuntimeSnapshot snapshot,
+            CreatorConfigExport? creatorConfig,
+            PlatformsExport? platformsExport)
+        {
+            foreach (var entry in _platformTabControls)
+            {
+                var platformKey = entry.Key;
+                var controls = entry.Value;
+                var platformStatus = snapshot.Platforms?
+                    .FirstOrDefault(p =>
+                        string.Equals(p.Platform, platformKey, StringComparison.OrdinalIgnoreCase));
+                var platformFlag = GetPlatformFlag(snapshot, platformKey);
+
+                var moduleStatus = platformsExport?.Platforms?
+                    .FirstOrDefault(p =>
+                        string.Equals(p.Name, platformKey, StringComparison.OrdinalIgnoreCase));
+
+                controls.GlobalEnabled.Text = platformFlag.HasValue
+                    ? platformFlag.Value
+                        ? "Yes"
+                        : "No"
+                    : "—";
+                controls.GlobalTelemetry.Text = platformStatus?.Telemetry_Display ?? "—";
+                controls.GlobalPaused.Text = platformStatus?.Paused == true ? "Yes" : "No";
+
+                controls.RuntimeState.Text = platformStatus?.Display_State ?? "—";
+                controls.RuntimeStatus.Text = platformStatus?.Status ?? "—";
+                controls.RuntimeHeartbeat.Text = platformStatus?.Last_Heartbeat ?? "—";
+                controls.RuntimeEvent.Text = platformStatus?.Last_Event_Ts ?? "—";
+                controls.RuntimeSuccess.Text = platformStatus?.Last_Success_Ts ?? "—";
+                controls.RuntimeMessages.Text = platformStatus == null
+                    ? "—"
+                    : platformStatus.Counters.Messages.ToString();
+                controls.RuntimeTriggers.Text = platformStatus == null
+                    ? "—"
+                    : platformStatus.Counters.Triggers.ToString();
+                controls.RuntimeActions.Text = platformStatus == null
+                    ? "—"
+                    : $"{platformStatus.Counters.Actions} (fail {platformStatus.Counters.Actions_Failed})";
+                controls.RuntimeErrors.Text = platformStatus?.Error ?? "None";
+
+                var creatorInfo = BuildCreatorConfigSummary(creatorConfig, platformKey);
+                controls.LocalCreators.Text = creatorInfo.EnabledCountText;
+                controls.LocalCreatorList.Text = creatorInfo.CreatorListText;
+                controls.LocalSource.Text = creatorInfo.Source;
+
+                if (moduleStatus != null)
+                {
+                    controls.ModuleStatus.Text = FormatModuleStatus(moduleStatus.Status);
+                    controls.ModuleMode.Text = string.IsNullOrWhiteSpace(moduleStatus.Mode)
+                        ? "—"
+                        : moduleStatus.Mode;
+                    controls.ModuleReplay.Text = moduleStatus.Replay_Supported ? "Yes" : "No";
+                    controls.ModuleOverlay.Text = moduleStatus.Overlay_Supported ? "Yes" : "No";
+                    controls.ModuleNotes.Text = moduleStatus.Notes ?? "—";
+                }
+                else
+                {
+                    controls.ModuleStatus.Text = "—";
+                    controls.ModuleMode.Text = "—";
+                    controls.ModuleReplay.Text = "—";
+                    controls.ModuleOverlay.Text = "—";
+                    controls.ModuleNotes.Text = "—";
+                }
+            }
+        }
+
+        private void ClearPlatformTabs()
+        {
+            foreach (var entry in _platformTabControls.Values)
+            {
+                entry.Reset();
+            }
+        }
+
+        private CreatorConfigSummary BuildCreatorConfigSummary(
+            CreatorConfigExport? creatorConfig,
+            string platformKey)
+        {
+            var creators = creatorConfig?.Creators ?? new List<CreatorConfigEntry>();
+            var enabledCreators = new List<string>();
+
+            foreach (var creator in creators)
+            {
+                if (creator.Platforms != null &&
+                    creator.Platforms.TryGetValue(platformKey.ToLowerInvariant(), out var enabled) &&
+                    enabled)
+                {
+                    enabledCreators.Add(creator.Creator_Id);
+                }
+            }
+
+            var enabledCount = enabledCreators.Count;
+            var listText = enabledCount == 0
+                ? "—"
+                : string.Join(", ", enabledCreators.OrderBy(c => c, StringComparer.OrdinalIgnoreCase));
+
+            return new CreatorConfigSummary
+            {
+                EnabledCountText = enabledCount == 0 ? "0" : enabledCount.ToString(),
+                CreatorListText = listText,
+                Source = creatorConfig?.Creators?.Count > 0
+                    ? "shared/config/creators.json"
+                    : "—"
+            };
+        }
+
+        private static bool? GetPlatformFlag(RuntimeSnapshot snapshot, string platformKey)
+        {
+            if (snapshot.System?.Platforms == null)
+                return null;
+
+            foreach (var entry in snapshot.System.Platforms)
+            {
+                if (string.Equals(entry.Key, platformKey, StringComparison.OrdinalIgnoreCase))
+                    return entry.Value;
+            }
+
+            return null;
+        }
+
+        private static string FormatModuleStatus(string? status)
+        {
+            if (string.IsNullOrWhiteSpace(status))
+                return "—";
+
+            return status.Trim().ToLowerInvariant() switch
+            {
+                "active" => "Active",
+                "planned" => "Planned",
+                "scaffold" => "In Progress (Scaffold)",
+                "scaffolded" => "In Progress (Scaffold)",
+                "in_progress" => "In Progress",
+                "paused" => "Paused",
+                _ => ToTitleCase(status)
+            };
+        }
+
+        private string? ResolveSnapshotPath(params string[] segments)
+        {
+            var roots = GetSnapshotRoots();
+            if (roots.Count == 0)
+                return null;
+
+            foreach (var root in roots)
+            {
+                var candidate = Path.Combine(root, Path.Combine(segments));
+                if (File.Exists(candidate))
+                    return candidate;
+            }
+
+            return null;
+        }
+
+        private List<string> GetSnapshotRoots()
+        {
+            var roots = new List<string>();
+            var root = _currentPathStatus?.SnapshotRoot;
+
+            if (!string.IsNullOrWhiteSpace(root))
+            {
+                roots.Add(root);
+
+                var parent = Directory.GetParent(root)?.FullName;
+                if (!string.IsNullOrWhiteSpace(parent))
+                {
+                    roots.Add(parent);
+
+                    var grandParent = Directory.GetParent(parent)?.FullName;
+                    if (!string.IsNullOrWhiteSpace(grandParent))
+                    {
+                        roots.Add(grandParent);
+                    }
+                }
+            }
+
+            return roots.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
 
         private void SelectFirstPlatformRow()
@@ -1455,6 +2928,33 @@ namespace StreamSuites.DesktopAdmin
             ClampInspectorSplitter(null, EventArgs.Empty, true);
         }
 
+        private void ApplyCreatorsSplitterAfterShown(object? sender, EventArgs e)
+        {
+            Shown -= ApplyCreatorsSplitterAfterShown;
+
+            if (_creatorsSplit == null)
+                return;
+
+            _creatorsSplit.Panel1MinSize = 420;
+            _creatorsSplit.Panel2MinSize = 260;
+
+            var total = _creatorsSplit.ClientSize.Width;
+            if (total <= 0)
+                return;
+
+            var desired = total - 320;
+            var min1 = _creatorsSplit.Panel1MinSize;
+            var min2 = _creatorsSplit.Panel2MinSize;
+            var max = total - min2;
+
+            if (desired < min1)
+                desired = min1;
+            if (desired > max)
+                desired = max;
+
+            _creatorsSplit.SplitterDistance = desired;
+        }
+
         private void ClampInspectorSplitter(object? sender, EventArgs e)
         {
             ClampInspectorSplitter(sender, e, false);
@@ -1885,6 +3385,219 @@ namespace StreamSuites.DesktopAdmin
                 Invoke(new Action(() => statusRuntime.Text = text));
             else
                 statusRuntime.Text = text;
+        }
+
+        private sealed class CreatorRow
+        {
+            public string CreatorId { get; set; } = string.Empty;
+            public string DisplayName { get; set; } = string.Empty;
+            public string PlatformsEnabled { get; set; } = string.Empty;
+            public string Status { get; set; } = string.Empty;
+            public string Notes { get; set; } = "—";
+            public bool Enabled { get; set; }
+            public string? LastHeartbeat { get; set; }
+            public string? Error { get; set; }
+            public string SourceSummary { get; set; } = "—";
+
+            public Dictionary<string, bool> ConfigPlatforms { get; set; } = new();
+            public Dictionary<string, AdminPlatformState> AdminPlatforms { get; set; } = new();
+            public Dictionary<string, bool> SnapshotPlatforms { get; set; } = new();
+        }
+
+        private sealed class ClipRow
+        {
+            public string ClipId { get; set; } = string.Empty;
+            public string Title { get; set; } = string.Empty;
+            public string Creator { get; set; } = string.Empty;
+            public string State { get; set; } = string.Empty;
+            public string PublishedAt { get; set; } = string.Empty;
+            public string Duration { get; set; } = string.Empty;
+        }
+
+        private sealed class PollRow
+        {
+            public string PollId { get; set; } = string.Empty;
+            public string Question { get; set; } = string.Empty;
+            public string Creator { get; set; } = string.Empty;
+            public string State { get; set; } = string.Empty;
+            public string OpenedAt { get; set; } = string.Empty;
+            public string ClosedAt { get; set; } = string.Empty;
+            public string OptionsSummary { get; set; } = string.Empty;
+        }
+
+        private sealed class TallyRow
+        {
+            public string TallyId { get; set; } = string.Empty;
+            public string Label { get; set; } = string.Empty;
+            public string Creator { get; set; } = string.Empty;
+            public int Count { get; set; }
+            public string UpdatedAt { get; set; } = string.Empty;
+        }
+
+        private sealed class ScoreboardRow
+        {
+            public string ScoreboardId { get; set; } = string.Empty;
+            public string Title { get; set; } = string.Empty;
+            public string Creator { get; set; } = string.Empty;
+            public int Entries { get; set; }
+            public string FinalizedAt { get; set; } = string.Empty;
+        }
+
+        private sealed class ChatEventRow
+        {
+            public string Timestamp { get; set; } = string.Empty;
+            public string Creator { get; set; } = string.Empty;
+            public string Platform { get; set; } = string.Empty;
+            public string Username { get; set; } = string.Empty;
+            public string Message { get; set; } = string.Empty;
+        }
+
+        private sealed class PollVoteRow
+        {
+            public string Timestamp { get; set; } = string.Empty;
+            public string PollId { get; set; } = string.Empty;
+            public string OptionId { get; set; } = string.Empty;
+            public string Creator { get; set; } = string.Empty;
+            public string VoterId { get; set; } = string.Empty;
+        }
+
+        private sealed class TallyEventRow
+        {
+            public string Timestamp { get; set; } = string.Empty;
+            public string TallyId { get; set; } = string.Empty;
+            public string Creator { get; set; } = string.Empty;
+            public int Delta { get; set; }
+        }
+
+        private sealed class ScoreEventRow
+        {
+            public string Timestamp { get; set; } = string.Empty;
+            public string ScoreboardId { get; set; } = string.Empty;
+            public string Creator { get; set; } = string.Empty;
+            public string Label { get; set; } = string.Empty;
+            public int ScoreDelta { get; set; }
+        }
+
+        private sealed class PlatformFlagRow
+        {
+            public string Platform { get; set; } = string.Empty;
+            public string Enabled { get; set; } = string.Empty;
+            public string State { get; set; } = string.Empty;
+            public string Notes { get; set; } = string.Empty;
+        }
+
+        private sealed class CreatorConfigSummary
+        {
+            public string EnabledCountText { get; set; } = "0";
+            public string CreatorListText { get; set; } = "—";
+            public string Source { get; set; } = "—";
+        }
+
+        private sealed class PlatformTabControls
+        {
+            public PlatformTabControls(
+                string platform,
+                Label globalEnabled,
+                Label globalTelemetry,
+                Label globalPaused,
+                Label globalNote,
+                Label runtimeState,
+                Label runtimeStatus,
+                Label runtimeHeartbeat,
+                Label runtimeEvent,
+                Label runtimeSuccess,
+                Label runtimeMessages,
+                Label runtimeTriggers,
+                Label runtimeActions,
+                Label runtimeErrors,
+                Label runtimeNote,
+                Label localCreators,
+                Label localCreatorList,
+                Label localSource,
+                Label localNote,
+                Label moduleStatus,
+                Label moduleMode,
+                Label moduleReplay,
+                Label moduleOverlay,
+                Label moduleNotes,
+                Label moduleNote)
+            {
+                Platform = platform;
+                GlobalEnabled = globalEnabled;
+                GlobalTelemetry = globalTelemetry;
+                GlobalPaused = globalPaused;
+                GlobalNote = globalNote;
+                RuntimeState = runtimeState;
+                RuntimeStatus = runtimeStatus;
+                RuntimeHeartbeat = runtimeHeartbeat;
+                RuntimeEvent = runtimeEvent;
+                RuntimeSuccess = runtimeSuccess;
+                RuntimeMessages = runtimeMessages;
+                RuntimeTriggers = runtimeTriggers;
+                RuntimeActions = runtimeActions;
+                RuntimeErrors = runtimeErrors;
+                RuntimeNote = runtimeNote;
+                LocalCreators = localCreators;
+                LocalCreatorList = localCreatorList;
+                LocalSource = localSource;
+                LocalNote = localNote;
+                ModuleStatus = moduleStatus;
+                ModuleMode = moduleMode;
+                ModuleReplay = moduleReplay;
+                ModuleOverlay = moduleOverlay;
+                ModuleNotes = moduleNotes;
+                ModuleNote = moduleNote;
+            }
+
+            public string Platform { get; }
+            public Label GlobalEnabled { get; }
+            public Label GlobalTelemetry { get; }
+            public Label GlobalPaused { get; }
+            public Label GlobalNote { get; }
+            public Label RuntimeState { get; }
+            public Label RuntimeStatus { get; }
+            public Label RuntimeHeartbeat { get; }
+            public Label RuntimeEvent { get; }
+            public Label RuntimeSuccess { get; }
+            public Label RuntimeMessages { get; }
+            public Label RuntimeTriggers { get; }
+            public Label RuntimeActions { get; }
+            public Label RuntimeErrors { get; }
+            public Label RuntimeNote { get; }
+            public Label LocalCreators { get; }
+            public Label LocalCreatorList { get; }
+            public Label LocalSource { get; }
+            public Label LocalNote { get; }
+            public Label ModuleStatus { get; }
+            public Label ModuleMode { get; }
+            public Label ModuleReplay { get; }
+            public Label ModuleOverlay { get; }
+            public Label ModuleNotes { get; }
+            public Label ModuleNote { get; }
+
+            public void Reset()
+            {
+                GlobalEnabled.Text = "—";
+                GlobalTelemetry.Text = "—";
+                GlobalPaused.Text = "—";
+                RuntimeState.Text = "—";
+                RuntimeStatus.Text = "—";
+                RuntimeHeartbeat.Text = "—";
+                RuntimeEvent.Text = "—";
+                RuntimeSuccess.Text = "—";
+                RuntimeMessages.Text = "—";
+                RuntimeTriggers.Text = "—";
+                RuntimeActions.Text = "—";
+                RuntimeErrors.Text = "—";
+                LocalCreators.Text = "—";
+                LocalCreatorList.Text = "—";
+                LocalSource.Text = "—";
+                ModuleStatus.Text = "—";
+                ModuleMode.Text = "—";
+                ModuleReplay.Text = "—";
+                ModuleOverlay.Text = "—";
+                ModuleNotes.Text = "—";
+            }
         }
 
         private static int GetRefreshIntervalMs()
