@@ -26,6 +26,8 @@ namespace StreamSuites.DesktopAdmin
         private readonly JsonExportReader _exportReader;
         private readonly BridgeState _bridgeState;
         private readonly BridgeServer _bridgeServer;
+        private readonly EventHandler _bridgeStateChangedHandler;
+        private bool _bridgeUiDetached;
 
         private readonly PathConfigService _pathConfigService;
         private PathConfiguration _pathConfiguration;
@@ -66,6 +68,8 @@ namespace StreamSuites.DesktopAdmin
         private Label _bridgePortLabel;
         private Label _bridgeErrorLabel;
         private Button _bridgeToggleButton;
+        private Label _bridgeHeaderStatus;
+        private TabPage _tabBridge;
 
         private const int SnapshotStaleThresholdSeconds = 20;
         private const string LiveChatUrl = "http://localhost:8210/livechat/index.html";
@@ -73,6 +77,7 @@ namespace StreamSuites.DesktopAdmin
         // Tray menu (STEP L)
         private ContextMenuStrip _trayMenu;
         private ToolStripMenuItem _trayStatusItem;
+        private ToolStripMenuItem _trayBridgeStatusItem;
 
         private ToolStripStatusLabel _statusHealthDot;
 
@@ -156,6 +161,7 @@ namespace StreamSuites.DesktopAdmin
         public MainForm()
         {
             InitializeComponent();
+            _bridgeHeaderStatus = lblBridgeStatus;
 
             // Reduce first-paint artefacts / flicker
             SetStyle(
@@ -213,7 +219,8 @@ namespace StreamSuites.DesktopAdmin
             _exportReader = new JsonExportReader(fileAccessor);
             _bridgeState = new BridgeState();
             _bridgeServer = new BridgeServer(_bridgeState, 8787, LogBridge);
-            _bridgeState.StateChanged += (_, __) => UpdateBridgeUi();
+            _bridgeStateChangedHandler = (_, __) => UpdateBridgeUi();
+            _bridgeState.StateChanged += _bridgeStateChangedHandler;
 
             _pathConfigService = new PathConfigService();
             _pathConfiguration = _pathConfigService.Load();
@@ -241,6 +248,7 @@ namespace StreamSuites.DesktopAdmin
             InitializeNavigationTabs();
             InitializePlatformGrid();
             InitializeInspectorPanel();
+            InitializeBridgeTab();
             InitializeMenu();
             InitializeJobsTab();
             InitializeTelemetryTab();
@@ -293,11 +301,10 @@ namespace StreamSuites.DesktopAdmin
                 await StartBridgeServerAsync();
                 await RefreshSnapshotAsync();
                 _refreshTimer.Start();
-                _sinceRefreshTimer.Start();
-            };
+            _sinceRefreshTimer.Start();
+        };
 
-            FormClosing += async (_, __) =>
-                await StopBridgeServerAsync();
+            FormClosing += MainForm_FormClosing;
         }
 
         private void InitializeMenu()
@@ -338,6 +345,7 @@ namespace StreamSuites.DesktopAdmin
 
             var menuNavigate = new ToolStripMenuItem("Navigate");
             menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Overview", tabRuntime));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Bridge / Connectivity", _tabBridge));
             menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Creators", tabCreators));
             menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Chat Triggers", _tabChatTriggers));
             menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Jobs", tabJobs));
@@ -432,9 +440,11 @@ namespace StreamSuites.DesktopAdmin
             _tabSupport = new TabPage("Support") { Padding = new Padding(8) };
             _tabUpdates = new TabPage("Updates") { Padding = new Padding(8) };
             _tabAbout = new TabPage("About") { Padding = new Padding(8) };
+            _tabBridge = new TabPage("Bridge / Connectivity") { Padding = new Padding(8) };
 
             tabMain.TabPages.Clear();
             tabMain.TabPages.Add(tabRuntime);
+            tabMain.TabPages.Add(_tabBridge);
             tabMain.TabPages.Add(tabCreators);
             tabMain.TabPages.Add(_tabChatTriggers);
             tabMain.TabPages.Add(tabJobs);
@@ -525,6 +535,113 @@ namespace StreamSuites.DesktopAdmin
 
             tabJobs.Controls.Clear();
             tabJobs.Controls.Add(layout);
+        }
+
+        private void InitializeBridgeTab()
+        {
+            if (_tabBridge == null)
+                return;
+
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true
+            };
+
+            var bridgeGroup = new GroupBox
+            {
+                Text = "Bridge Server",
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            var bridgeLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                ColumnCount = 2,
+                AutoSize = true
+            };
+
+            bridgeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            bridgeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+
+            bridgeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            bridgeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            bridgeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            bridgeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var bridgeStatusTitle = new Label
+            {
+                Text = "Status:",
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Padding = new Padding(0, 4, 6, 4)
+            };
+
+            _bridgeStatusLabel = new Label
+            {
+                AutoSize = true,
+                Padding = new Padding(0, 4, 0, 4),
+                Text = "Stopped"
+            };
+
+            var bridgePortTitle = new Label
+            {
+                Text = "Address:",
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Padding = new Padding(0, 4, 6, 4)
+            };
+
+            _bridgePortLabel = new Label
+            {
+                AutoSize = true,
+                Padding = new Padding(0, 4, 0, 4),
+                Text = "—"
+            };
+
+            var bridgeErrorTitle = new Label
+            {
+                Text = "Last error:",
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Padding = new Padding(0, 4, 6, 4)
+            };
+
+            _bridgeErrorLabel = new Label
+            {
+                AutoSize = true,
+                Padding = new Padding(0, 4, 0, 4),
+                Text = "—",
+                ForeColor = SystemColors.GrayText
+            };
+
+            _bridgeToggleButton = new Button
+            {
+                Text = "Start Bridge",
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0, 6, 0, 0)
+            };
+
+            bridgeLayout.Controls.Add(bridgeStatusTitle, 0, 0);
+            bridgeLayout.Controls.Add(_bridgeStatusLabel, 1, 0);
+            bridgeLayout.Controls.Add(bridgePortTitle, 0, 1);
+            bridgeLayout.Controls.Add(_bridgePortLabel, 1, 1);
+            bridgeLayout.Controls.Add(bridgeErrorTitle, 0, 2);
+            bridgeLayout.Controls.Add(_bridgeErrorLabel, 1, 2);
+            bridgeLayout.Controls.Add(_bridgeToggleButton, 0, 3);
+            bridgeLayout.SetColumnSpan(_bridgeToggleButton, 2);
+
+            bridgeGroup.Controls.Add(bridgeLayout);
+
+            panel.Controls.Add(bridgeGroup);
+            _tabBridge.Controls.Clear();
+            _tabBridge.Controls.Add(panel);
+
+            _bridgeToggleButton.Click += async (_, __) => await ToggleBridgeServerAsync();
+            UpdateBridgeUi();
         }
 
         private void InitializeChatTriggersTab()
@@ -2173,8 +2290,26 @@ namespace StreamSuites.DesktopAdmin
                 await StartBridgeServerAsync();
         }
 
+        private async void MainForm_FormClosing(object? sender, FormClosingEventArgs e)
+        {
+            DetachBridgeUi();
+            await StopBridgeServerAsync();
+        }
+
+        private void DetachBridgeUi()
+        {
+            if (_bridgeUiDetached)
+                return;
+
+            _bridgeState.StateChanged -= _bridgeStateChangedHandler;
+            _bridgeUiDetached = true;
+        }
+
         private void UpdateBridgeUi()
         {
+            if (IsDisposed || Disposing || !IsHandleCreated)
+                return;
+
             if (_bridgeStatusLabel == null ||
                 _bridgeToggleButton == null ||
                 _bridgePortLabel == null ||
@@ -2185,6 +2320,8 @@ namespace StreamSuites.DesktopAdmin
 
             void Apply()
             {
+                var (dot, label) = GetBridgeStatusLabel(snapshot.Status);
+                var address = BuildBridgeAddress(snapshot.BoundPort);
                 var statusText = snapshot.Status switch
                 {
                     "running" => "Running",
@@ -2196,12 +2333,12 @@ namespace StreamSuites.DesktopAdmin
                 _bridgeStatusLabel.ForeColor = snapshot.Status switch
                 {
                     "running" => Color.DarkGreen,
-                    "error" => Color.DarkRed,
+                    "error" => Color.DarkOrange,
                     _ => SystemColors.ControlText
                 };
 
                 _bridgePortLabel.Text = snapshot.BoundPort > 0
-                    ? snapshot.BoundPort.ToString(CultureInfo.InvariantCulture)
+                    ? address
                     : "—";
 
                 _bridgeErrorLabel.Text = string.IsNullOrWhiteSpace(snapshot.LastError)
@@ -2214,12 +2351,64 @@ namespace StreamSuites.DesktopAdmin
                 _bridgeToggleButton.Text = snapshot.Status == "running"
                     ? "Stop Bridge"
                     : "Start Bridge";
+
+                if (_bridgeHeaderStatus != null)
+                {
+                    _bridgeHeaderStatus.Text = $"Bridge: {statusText} ({address})";
+                    _bridgeHeaderStatus.ForeColor = _bridgeStatusLabel.ForeColor;
+                }
+
+                if (_trayBridgeStatusItem != null)
+                {
+                    _trayBridgeStatusItem.Text = $"{dot} Bridge: {label}";
+                }
+
+                if (trayIcon != null)
+                {
+                    var (snapshotDot, snapshotLabel) = GetHealthLabel(_lastTrayHealth);
+                    trayIcon.Text = BuildTrayTooltipText(snapshotDot, snapshotLabel);
+                }
             }
 
             if (InvokeRequired)
                 Invoke(new Action(Apply));
             else
                 Apply();
+        }
+
+        private static string FormatRuntimeStatus(string status)
+        {
+            return status switch
+            {
+                "running" => "Running",
+                "stopped" => "Stopped",
+                _ => "Unknown"
+            };
+        }
+
+        private static string FormatBridgeStatus(string status)
+        {
+            return status switch
+            {
+                "running" => "Running",
+                "error" => "Error",
+                _ => "Stopped"
+            };
+        }
+
+        private static (string dot, string label) GetBridgeStatusLabel(string status)
+        {
+            return status switch
+            {
+                "running" => ("🟢", "Running"),
+                "error" => ("🟠", "Error"),
+                _ => ("🔴", "Stopped")
+            };
+        }
+
+        private static string BuildBridgeAddress(int port)
+        {
+            return port > 0 ? $"127.0.0.1:{port}" : "—";
         }
 
         private async Task RefreshSnapshotAsync()
@@ -3890,6 +4079,11 @@ namespace StreamSuites.DesktopAdmin
                 {
                     Enabled = false
                 };
+            _trayBridgeStatusItem =
+                new ToolStripMenuItem("🔴 Bridge: Stopped")
+                {
+                    Enabled = false
+                };
 
             var itemSettings =
                 new ToolStripMenuItem("Settings (placeholder)");
@@ -3929,6 +4123,7 @@ namespace StreamSuites.DesktopAdmin
             _trayMenu.Items.Add(itemOpen);
             _trayMenu.Items.Add(new ToolStripSeparator());
             _trayMenu.Items.Add(_trayStatusItem);
+            _trayMenu.Items.Add(_trayBridgeStatusItem);
             _trayMenu.Items.Add(new ToolStripSeparator());
             _trayMenu.Items.Add(itemPlatforms);
             _trayMenu.Items.Add(itemSettings);
@@ -4174,98 +4369,6 @@ namespace StreamSuites.DesktopAdmin
             headerPanel.Controls.Add(_inspectorIcon);
 
             // -------------------------------------------------------------
-            // Bridge status (top section)
-            // -------------------------------------------------------------
-
-            var bridgeGroup = new GroupBox
-            {
-                Text = "Bridge Server",
-                Dock = DockStyle.Top,
-                AutoSize = true,
-                Padding = new Padding(8)
-            };
-
-            var bridgeLayout = new TableLayoutPanel
-            {
-                Dock = DockStyle.Top,
-                ColumnCount = 2,
-                AutoSize = true
-            };
-
-            bridgeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            bridgeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-
-            bridgeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            bridgeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            bridgeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            bridgeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-
-            var bridgeStatusTitle = new Label
-            {
-                Text = "Status:",
-                AutoSize = true,
-                ForeColor = SystemColors.GrayText,
-                Padding = new Padding(0, 4, 6, 4)
-            };
-
-            _bridgeStatusLabel = new Label
-            {
-                AutoSize = true,
-                Padding = new Padding(0, 4, 0, 4),
-                Text = "Stopped"
-            };
-
-            var bridgePortTitle = new Label
-            {
-                Text = "Port:",
-                AutoSize = true,
-                ForeColor = SystemColors.GrayText,
-                Padding = new Padding(0, 4, 6, 4)
-            };
-
-            _bridgePortLabel = new Label
-            {
-                AutoSize = true,
-                Padding = new Padding(0, 4, 0, 4),
-                Text = "—"
-            };
-
-            var bridgeErrorTitle = new Label
-            {
-                Text = "Last error:",
-                AutoSize = true,
-                ForeColor = SystemColors.GrayText,
-                Padding = new Padding(0, 4, 6, 4)
-            };
-
-            _bridgeErrorLabel = new Label
-            {
-                AutoSize = true,
-                Padding = new Padding(0, 4, 0, 4),
-                Text = "—",
-                ForeColor = SystemColors.GrayText
-            };
-
-            _bridgeToggleButton = new Button
-            {
-                Text = "Start Bridge",
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Margin = new Padding(0, 6, 0, 0)
-            };
-
-            bridgeLayout.Controls.Add(bridgeStatusTitle, 0, 0);
-            bridgeLayout.Controls.Add(_bridgeStatusLabel, 1, 0);
-            bridgeLayout.Controls.Add(bridgePortTitle, 0, 1);
-            bridgeLayout.Controls.Add(_bridgePortLabel, 1, 1);
-            bridgeLayout.Controls.Add(bridgeErrorTitle, 0, 2);
-            bridgeLayout.Controls.Add(_bridgeErrorLabel, 1, 2);
-            bridgeLayout.Controls.Add(_bridgeToggleButton, 0, 3);
-            bridgeLayout.SetColumnSpan(_bridgeToggleButton, 2);
-
-            bridgeGroup.Controls.Add(bridgeLayout);
-
-            // -------------------------------------------------------------
             // Action buttons (bottom)
             // -------------------------------------------------------------
 
@@ -4360,7 +4463,6 @@ namespace StreamSuites.DesktopAdmin
 
             panelRuntimeRight.Controls.Add(_inspectorBody);
             panelRuntimeRight.Controls.Add(actionsPanel);
-            panelRuntimeRight.Controls.Add(bridgeGroup);
             panelRuntimeRight.Controls.Add(headerPanel);
 
             panelRuntimeRight.ResumeLayout(true);
@@ -4370,8 +4472,6 @@ namespace StreamSuites.DesktopAdmin
             _btnConfigureClient.Click += async (_, __) => await ConfigureClientAsync();
             _btnLaunchMain.Click += async (_, __) => await ToggleRuntimeAsync();
             _btnLaunchClient.Click += async (_, __) => await TogglePlatformClientAsync();
-            _bridgeToggleButton.Click += async (_, __) => await ToggleBridgeServerAsync();
-            UpdateBridgeUi();
 
             // -------------------------------------------------------------
             // SAFE splitter setup AFTER layout is real
@@ -4883,8 +4983,15 @@ namespace StreamSuites.DesktopAdmin
 
         private string BuildTrayTooltipText(string dot, string label)
         {
+            var snapshot = _bridgeState.GetSnapshot();
+            var runtimeStatus = FormatRuntimeStatus(snapshot.RuntimeStatus);
+            var bridgeStatus = FormatBridgeStatus(snapshot.Status);
+            var address = BuildBridgeAddress(snapshot.BoundPort);
             return $"{dot} StreamSuites {_runtimeVersionInfo.ToDisplayVersion()} • " +
-                   $"{_runtimeVersionInfo.ToDisplayBuild()} - {label}";
+                   $"{_runtimeVersionInfo.ToDisplayBuild()} - {label}\n" +
+                   $"StreamSuites Runtime: {runtimeStatus}\n" +
+                   $"Snapshot State: {label}\n" +
+                   $"Bridge Server: {bridgeStatus} ({address})";
         }
 
         private string BuildSnapshotTooltipText(string details)
