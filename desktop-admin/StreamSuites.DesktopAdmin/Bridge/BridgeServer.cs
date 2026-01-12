@@ -16,16 +16,23 @@ namespace StreamSuites.DesktopAdmin.Bridge
         };
 
         private readonly BridgeState _state;
+        private readonly RuntimeLifecycleController _runtimeController;
         private readonly Action<string> _log;
         private readonly int _port;
         private readonly object _sync = new();
         private HttpListener _listener;
         private CancellationTokenSource _cts;
         private Task _listenTask;
+        private string _lastLoggedRuntimeStatus;
 
-        public BridgeServer(BridgeState state, int port, Action<string> log)
+        public BridgeServer(
+            BridgeState state,
+            RuntimeLifecycleController runtimeController,
+            int port,
+            Action<string> log)
         {
             _state = state ?? throw new ArgumentNullException(nameof(state));
+            _runtimeController = runtimeController ?? throw new ArgumentNullException(nameof(runtimeController));
             _log = log ?? throw new ArgumentNullException(nameof(log));
             _port = port <= 0 ? 8787 : port;
         }
@@ -151,7 +158,8 @@ namespace StreamSuites.DesktopAdmin.Bridge
                     return;
                 }
 
-                if (!string.Equals(request.HttpMethod, "GET", StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(request.HttpMethod, "GET", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(request.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase))
                 {
                     response.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
                     response.Close();
@@ -161,7 +169,8 @@ namespace StreamSuites.DesktopAdmin.Bridge
                 var path = request.Url?.AbsolutePath ?? string.Empty;
                 var snapshot = _state.GetSnapshot();
 
-                if (string.Equals(path, "/health", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(path, "/health", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(request.HttpMethod, "GET", StringComparison.OrdinalIgnoreCase))
                 {
                     _log("[Bridge] GET /health");
                     await WriteJsonAsync(response, new
@@ -172,14 +181,57 @@ namespace StreamSuites.DesktopAdmin.Bridge
                     return;
                 }
 
-                if (string.Equals(path, "/status", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(path, "/status", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(request.HttpMethod, "GET", StringComparison.OrdinalIgnoreCase))
                 {
+                    var runtimeSnapshot = _runtimeController.GetSnapshot();
                     _log("[Bridge] GET /status");
+                    LogRuntimeStatusChange(runtimeSnapshot.Status);
                     await WriteJsonAsync(response, new
                     {
                         bridge = snapshot.Status,
-                        runtime = snapshot.RuntimeStatus,
-                        version = snapshot.RuntimeVersion
+                        runtime = runtimeSnapshot.Status,
+                        runtimePid = runtimeSnapshot.RuntimePid,
+                        runtimeUptime = runtimeSnapshot.RuntimeUptimeSeconds,
+                        version = runtimeSnapshot.Version
+                    }, token).ConfigureAwait(false);
+                    return;
+                }
+
+                if (string.Equals(path, "/commands/runtime/start", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(request.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase))
+                {
+                    _log("[Bridge] POST /commands/runtime/start");
+                    var runtimeSnapshot = await _runtimeController
+                        .StartAsync(token)
+                        .ConfigureAwait(false);
+                    LogRuntimeStatusChange(runtimeSnapshot.Status);
+                    await WriteJsonAsync(response, new
+                    {
+                        bridge = snapshot.Status,
+                        runtime = runtimeSnapshot.Status,
+                        runtimePid = runtimeSnapshot.RuntimePid,
+                        runtimeUptime = runtimeSnapshot.RuntimeUptimeSeconds,
+                        version = runtimeSnapshot.Version
+                    }, token).ConfigureAwait(false);
+                    return;
+                }
+
+                if (string.Equals(path, "/commands/runtime/stop", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(request.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase))
+                {
+                    _log("[Bridge] POST /commands/runtime/stop");
+                    var runtimeSnapshot = await _runtimeController
+                        .StopAsync(token)
+                        .ConfigureAwait(false);
+                    LogRuntimeStatusChange(runtimeSnapshot.Status);
+                    await WriteJsonAsync(response, new
+                    {
+                        bridge = snapshot.Status,
+                        runtime = runtimeSnapshot.Status,
+                        runtimePid = runtimeSnapshot.RuntimePid,
+                        runtimeUptime = runtimeSnapshot.RuntimeUptimeSeconds,
+                        version = runtimeSnapshot.Version
                     }, token).ConfigureAwait(false);
                     return;
                 }
@@ -208,7 +260,7 @@ namespace StreamSuites.DesktopAdmin.Bridge
 
             response.Headers["Access-Control-Allow-Origin"] = origin;
             response.Headers["Vary"] = "Origin";
-            response.Headers["Access-Control-Allow-Methods"] = "GET, OPTIONS";
+            response.Headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
             response.Headers["Access-Control-Allow-Headers"] = "Content-Type";
         }
 
@@ -239,6 +291,15 @@ namespace StreamSuites.DesktopAdmin.Bridge
             await response.OutputStream.WriteAsync(bytes, 0, bytes.Length, token)
                 .ConfigureAwait(false);
             response.Close();
+        }
+
+        private void LogRuntimeStatusChange(string status)
+        {
+            if (string.Equals(_lastLoggedRuntimeStatus, status, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            _lastLoggedRuntimeStatus = status;
+            _log($"[Bridge] Runtime status: {status}");
         }
     }
 }

@@ -10,6 +10,8 @@ namespace StreamSuites.DesktopAdmin.Bridge
         private int _boundPort;
         private string _runtimeStatus = "unknown";
         private string _runtimeVersion = "unknown";
+        private int? _runtimePid;
+        private double? _runtimeUptimeSeconds;
 
         public event EventHandler StateChanged;
 
@@ -22,6 +24,8 @@ namespace StreamSuites.DesktopAdmin.Bridge
                     _lastError,
                     _boundPort,
                     _runtimeStatus,
+                    _runtimePid,
+                    _runtimeUptimeSeconds,
                     _runtimeVersion);
             }
         }
@@ -82,6 +86,23 @@ namespace StreamSuites.DesktopAdmin.Bridge
             OnStateChanged();
         }
 
+        public void SetRuntimeDetails(
+            string status,
+            int? runtimePid,
+            double? runtimeUptimeSeconds,
+            string version)
+        {
+            lock (_lock)
+            {
+                _runtimeStatus = string.IsNullOrWhiteSpace(status) ? "unknown" : status;
+                _runtimePid = runtimePid;
+                _runtimeUptimeSeconds = runtimeUptimeSeconds;
+                _runtimeVersion = string.IsNullOrWhiteSpace(version) ? "unknown" : version;
+            }
+
+            OnStateChanged();
+        }
+
         private void OnStateChanged()
         {
             StateChanged?.Invoke(this, EventArgs.Empty);
@@ -95,12 +116,16 @@ namespace StreamSuites.DesktopAdmin.Bridge
             string lastError,
             int boundPort,
             string runtimeStatus,
+            int? runtimePid,
+            double? runtimeUptimeSeconds,
             string runtimeVersion)
         {
             Status = status;
             LastError = lastError;
             BoundPort = boundPort;
             RuntimeStatus = runtimeStatus;
+            RuntimePid = runtimePid;
+            RuntimeUptimeSeconds = runtimeUptimeSeconds;
             RuntimeVersion = runtimeVersion;
         }
 
@@ -108,6 +133,8 @@ namespace StreamSuites.DesktopAdmin.Bridge
         public string LastError { get; }
         public int BoundPort { get; }
         public string RuntimeStatus { get; }
+        public int? RuntimePid { get; }
+        public double? RuntimeUptimeSeconds { get; }
         public string RuntimeVersion { get; }
     }
 }
