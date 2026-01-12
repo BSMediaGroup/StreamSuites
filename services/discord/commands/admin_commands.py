@@ -33,6 +33,7 @@ from services.discord.commands.admin import AdminCommandHandler
 from services.discord.logging import DiscordLogAdapter
 from services.discord.permissions import DiscordPermissionResolver
 from services.discord.status import DiscordStatusManager
+from services.discord.embeds import success_embed, error_embed, info_embed
 
 if TYPE_CHECKING:
     from services.discord.runtime.supervisor import DiscordSupervisor
@@ -79,7 +80,7 @@ def setup(
     async def admin_runtime_status(
         interaction: discord.Interaction,
     ):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
 
         result = await handler.cmd_runtime_status(
             user_id=interaction.user.id,
@@ -87,64 +88,148 @@ def setup(
         )
 
         await interaction.followup.send(
-            content=f"✅ Runtime: **{result['runtime']}**",
-            ephemeral=True,
+            embed=info_embed(
+                "Discord Runtime Status",
+                f"Runtime: **{result['runtime']}**",
+            ),
+            ephemeral=False,
         )
 
     # --------------------------------------------------
-    # /admin-set-status
+    # /toggle
     # --------------------------------------------------
 
     @app_commands.command(
-        name="admin-set-status",
-        description="Set the Discord bot custom status",
+        name="toggle",
+        description="Toggle a platform's live status on/off",
     )
     @app_commands.describe(
-        text="Status text to display",
-        emoji="Optional emoji (unicode, no colons)",
+        platform="Platform name (e.g., twitch, youtube, rumble)",
     )
     @require_admin()
-    async def admin_set_status(
+    async def toggle_platform(
         interaction: discord.Interaction,
-        text: str,
-        emoji: str | None = None,
+        platform: str,
     ):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
 
-        result = await handler.cmd_set_status(
+        result = await handler.cmd_toggle_platform(
             user_id=interaction.user.id,
             guild_id=interaction.guild.id,
-            text=text,
-            emoji=emoji,
+            platform=platform,
         )
 
-        await interaction.followup.send(
-            content=f"✅ {result['message']}",
-            ephemeral=True,
+        embed = (
+            success_embed("Platform Toggle", result["message"])
+            if result.get("ok")
+            else error_embed("Platform Toggle Failed", result["message"])
         )
+        await interaction.followup.send(embed=embed, ephemeral=False)
 
     # --------------------------------------------------
-    # /admin-clear-status
+    # /trigger
     # --------------------------------------------------
 
     @app_commands.command(
-        name="admin-clear-status",
-        description="Clear the Discord bot custom status",
+        name="trigger",
+        description="Manually fire a named trigger or pipeline event",
+    )
+    @app_commands.describe(
+        name="Trigger name or command (e.g., clip)",
     )
     @require_admin()
-    async def admin_clear_status(
+    async def trigger(
+        interaction: discord.Interaction,
+        name: str,
+    ):
+        await interaction.response.defer(ephemeral=False)
+
+        result = await handler.cmd_trigger(
+            user_id=interaction.user.id,
+            guild_id=interaction.guild.id,
+            name=name,
+        )
+
+        embed = (
+            success_embed("Trigger Executed", result["message"])
+            if result.get("ok")
+            else error_embed("Trigger Failed", result["message"])
+        )
+        await interaction.followup.send(embed=embed, ephemeral=False)
+
+    # --------------------------------------------------
+    # /jobs
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="jobs",
+        description="List active and recent jobs in the runtime",
+    )
+    @require_admin()
+    async def jobs(
         interaction: discord.Interaction,
     ):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
 
-        result = await handler.cmd_clear_status(
+        result = await handler.cmd_jobs(
             user_id=interaction.user.id,
             guild_id=interaction.guild.id,
         )
 
+        active_jobs = result.get("active_jobs", [])
+        if not active_jobs:
+            message = "No active jobs at the moment."
+        else:
+            lines = []
+            for job in active_jobs[:10]:
+                job_id = str(job.get("id", ""))[:8]
+                job_type = job.get("type", "unknown")
+                status = job.get("status", "unknown")
+                creator = job.get("creator_id", "unknown")
+                lines.append(f"- {job_type} ({job_id}) [{status}] creator={creator}")
+            message = (
+                f"Active Jobs ({len(active_jobs)}):\n" + "\n".join(lines)
+            )
+
+        recent_count = result.get("recent_completed_count", 0)
+        message += f"\nRecent completions (last hour): {recent_count}"
+
+        embed = info_embed("Runtime Jobs", message)
+        await interaction.followup.send(embed=embed, ephemeral=False)
+
+    # --------------------------------------------------
+    # /status
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="status",
+        description="Show a high-level StreamSuites system status summary",
+    )
+    @require_admin()
+    async def status(
+        interaction: discord.Interaction,
+    ):
+        await interaction.response.defer(ephemeral=False)
+
+        result = await handler.cmd_status(
+            user_id=interaction.user.id,
+            guild_id=interaction.guild.id,
+        )
+
+        platform_lines = result.get("platform_lines") or []
+        platform_block = "\n".join(platform_lines) if platform_lines else "No platform data available."
+        active_jobs = result.get("active_jobs", 0)
+        generated_at = result.get("generated_at") or "unknown"
+
+        message = (
+            f"System Status (snapshot: {generated_at})\n"
+            f"{platform_block}\n"
+            f"Active jobs: {active_jobs}"
+        )
+
         await interaction.followup.send(
-            content=f"✅ {result['message']}",
-            ephemeral=True,
+            embed=info_embed("System Status", message),
+            ephemeral=False,
         )
 
     # --------------------------------------------------

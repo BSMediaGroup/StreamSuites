@@ -201,6 +201,7 @@ StreamSuites/
 │   │   ├── AboutExport.cs
 │   │   ├── CreatorsExports.cs
 │   │   ├── DataSignalsExports.cs
+│   │   ├── DiscordConfigExport.cs
 │   │   ├── PlatformStatus.cs
 │   │   ├── PlatformExports.cs
 │   │   ├── RuntimeSnapshot.cs
@@ -324,6 +325,7 @@ StreamSuites/
 │   │   ├── README.md
 │   │   ├── announcements.py
 │   │   ├── client.py
+│   │   ├── embeds.py
 │   │   ├── commands/
 │   │   │   ├── README.md
 │   │   │   ├── __init__.py
@@ -333,6 +335,7 @@ StreamSuites/
 │   │   │   ├── public.py
 │   │   │   └── services.py
 │   │   ├── heartbeat.py
+│   │   ├── guild_logging.py
 │   │   ├── logging.py
 │   │   ├── permissions.py
 │   │   ├── runtime/
@@ -424,6 +427,8 @@ StreamSuites/
 │   │   ├── chat_behaviour.json
 │   │   ├── clip_rules.json
 │   │   ├── creators.json
+│   │   ├── discord.json
+│   │   ├── discord.py
 │   │   ├── logging.json
 │   │   ├── monetization.json
 │   │   ├── posting_rules.json

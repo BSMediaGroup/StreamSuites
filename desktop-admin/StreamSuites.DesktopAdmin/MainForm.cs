@@ -9,6 +9,7 @@ using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -115,6 +116,19 @@ namespace StreamSuites.DesktopAdmin
         private Label _settingsPollingSummary;
         private Label _settingsImportExportSummary;
         private DataGridView _settingsPlatformGrid;
+
+        private ComboBox _discordGuildSelector;
+        private CheckBox _discordLoggingEnabledToggle;
+        private TextBox _discordLoggingChannelId;
+        private TextBox _discordNotificationsGeneral;
+        private TextBox _discordNotificationsRumble;
+        private TextBox _discordNotificationsYoutube;
+        private TextBox _discordNotificationsKick;
+        private TextBox _discordNotificationsPilled;
+        private TextBox _discordNotificationsTwitch;
+        private Button _discordConfigSaveButton;
+        private Label _discordConfigStatus;
+        private DiscordConfigExport _discordConfigCache = new DiscordConfigExport();
 
         private TabPage _tabChatTriggers;
         private TabPage _tabClips;
@@ -1497,7 +1511,7 @@ namespace StreamSuites.DesktopAdmin
             {
                 Dock = DockStyle.Top,
                 ColumnCount = 1,
-                RowCount = 5,
+                RowCount = 6,
                 AutoSize = true,
                 Padding = new Padding(8)
             };
@@ -1507,10 +1521,12 @@ namespace StreamSuites.DesktopAdmin
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
             var restartGroup = BuildSettingsGroup("Pending Changes / Restart Queue", out _settingsRestartSummary);
             var systemGroup = BuildSettingsGroup("System Settings", out _settingsSystemSummary);
             var pollingGroup = BuildSettingsGroup("Platform Polling State", out _settingsPollingSummary);
+            var discordGroup = BuildDiscordConfigGroup();
 
             var platformGroup = new GroupBox
             {
@@ -1597,7 +1613,8 @@ namespace StreamSuites.DesktopAdmin
             layout.Controls.Add(systemGroup, 0, 1);
             layout.Controls.Add(pollingGroup, 0, 2);
             layout.Controls.Add(platformGroup, 0, 3);
-            layout.Controls.Add(importGroup, 0, 4);
+            layout.Controls.Add(discordGroup, 0, 4);
+            layout.Controls.Add(importGroup, 0, 5);
 
             panel.Controls.Add(layout);
 
@@ -1624,6 +1641,123 @@ namespace StreamSuites.DesktopAdmin
 
             group.Controls.Add(valueLabel);
             return group;
+        }
+
+        private GroupBox BuildDiscordConfigGroup()
+        {
+            var group = new GroupBox
+            {
+                Text = "Discord Bot Configuration",
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                AutoSize = true
+            };
+
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+
+            _discordGuildSelector = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDown,
+                Width = 240,
+                AutoCompleteMode = AutoCompleteMode.SuggestAppend,
+                AutoCompleteSource = AutoCompleteSource.ListItems
+            };
+
+            _discordLoggingEnabledToggle = new CheckBox
+            {
+                Text = "Enabled",
+                AutoSize = true
+            };
+
+            _discordLoggingChannelId = BuildDiscordChannelTextBox();
+            _discordNotificationsGeneral = BuildDiscordChannelTextBox();
+            _discordNotificationsRumble = BuildDiscordChannelTextBox();
+            _discordNotificationsYoutube = BuildDiscordChannelTextBox();
+            _discordNotificationsKick = BuildDiscordChannelTextBox();
+            _discordNotificationsPilled = BuildDiscordChannelTextBox();
+            _discordNotificationsTwitch = BuildDiscordChannelTextBox();
+
+            _discordConfigSaveButton = new Button
+            {
+                Text = "Save Discord Bot Config",
+                AutoSize = true
+            };
+
+            _discordConfigStatus = new Label
+            {
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Padding = new Padding(8, 6, 0, 0)
+            };
+
+            AddDiscordConfigRow(layout, "Guild ID", _discordGuildSelector);
+            AddDiscordConfigRow(layout, "Logging enabled", _discordLoggingEnabledToggle);
+            AddDiscordConfigRow(layout, "Logging channel ID", _discordLoggingChannelId);
+            AddDiscordConfigRow(layout, "General notifications channel", _discordNotificationsGeneral);
+            AddDiscordConfigRow(layout, "Rumble clips channel", _discordNotificationsRumble);
+            AddDiscordConfigRow(layout, "YouTube clips channel", _discordNotificationsYoutube);
+            AddDiscordConfigRow(layout, "Kick clips channel", _discordNotificationsKick);
+            AddDiscordConfigRow(layout, "Pilled clips channel", _discordNotificationsPilled);
+            AddDiscordConfigRow(layout, "Twitch clips channel", _discordNotificationsTwitch);
+
+            var actions = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Padding = new Padding(0, 6, 0, 0)
+            };
+            actions.Controls.Add(_discordConfigSaveButton);
+            actions.Controls.Add(_discordConfigStatus);
+
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.Controls.Add(actions, 0, layout.RowStyles.Count - 1);
+            layout.SetColumnSpan(actions, 2);
+
+            group.Controls.Add(layout);
+
+            _discordGuildSelector.SelectedIndexChanged += (_, __) => ApplyDiscordGuildSelection();
+            _discordGuildSelector.Leave += (_, __) => ApplyDiscordGuildSelection();
+            _discordConfigSaveButton.Click += async (_, __) => await SaveDiscordConfigAsync();
+
+            return group;
+        }
+
+        private static TextBox BuildDiscordChannelTextBox()
+        {
+            return new TextBox
+            {
+                Width = 240,
+                PlaceholderText = "Not set"
+            };
+        }
+
+        private static void AddDiscordConfigRow(
+            TableLayoutPanel layout,
+            string labelText,
+            Control control)
+        {
+            var label = new Label
+            {
+                Text = labelText,
+                AutoSize = true,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(0, 6, 8, 0)
+            };
+
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            var rowIndex = layout.RowStyles.Count - 1;
+            layout.Controls.Add(label, 0, rowIndex);
+            layout.Controls.Add(control, 1, rowIndex);
         }
 
         private static GroupBox BuildDataSignalsGroup(string title, out TabControl tabs)
@@ -2077,6 +2211,8 @@ namespace StreamSuites.DesktopAdmin
                 await RefreshDataSignalsAsync(_currentPathStatus.SnapshotRoot)
                     .ConfigureAwait(true);
                 await RefreshChatTriggersAsync(_currentPathStatus.SnapshotRoot)
+                    .ConfigureAwait(true);
+                await RefreshDiscordConfigAsync()
                     .ConfigureAwait(true);
                 UpdateSettingsData(snapshot);
                 UpdatePlatformTabs(snapshot, creatorConfig, platformExport);
@@ -3123,7 +3259,210 @@ namespace StreamSuites.DesktopAdmin
                 _settingsPollingSummary.Text = "—";
 
             _platformFlagsBindingSource.DataSource = null;
+            ClearDiscordConfigSection();
             ForceControlRefresh(tabSettings);
+        }
+
+        private async Task RefreshDiscordConfigAsync()
+        {
+            var configPath = ResolveSnapshotPath("shared", "config", "discord.json");
+            var config = await _exportReader
+                .TryReadAsync<DiscordConfigExport>(configPath ?? string.Empty)
+                .ConfigureAwait(true);
+
+            _discordConfigCache = config ?? new DiscordConfigExport();
+            UpdateDiscordConfigStatus(configPath);
+            UpdateDiscordGuildList();
+            ApplyDiscordGuildSelection();
+        }
+
+        private void UpdateDiscordConfigStatus(string? configPath)
+        {
+            if (_discordConfigStatus == null)
+                return;
+
+            if (string.IsNullOrWhiteSpace(configPath))
+            {
+                _discordConfigStatus.Text = "discord.json not found; using defaults.";
+                _discordConfigStatus.ForeColor = SystemColors.GrayText;
+                return;
+            }
+
+            _discordConfigStatus.Text = $"Loaded from {configPath}";
+            _discordConfigStatus.ForeColor = SystemColors.GrayText;
+        }
+
+        private void UpdateDiscordGuildList()
+        {
+            if (_discordGuildSelector == null)
+                return;
+
+            var current = _discordGuildSelector.Text;
+            _discordGuildSelector.Items.Clear();
+
+            foreach (var guildId in _discordConfigCache.Guilds.Keys
+                         .OrderBy(id => id, StringComparer.OrdinalIgnoreCase))
+            {
+                _discordGuildSelector.Items.Add(guildId);
+            }
+
+            if (!string.IsNullOrWhiteSpace(current))
+            {
+                _discordGuildSelector.Text = current;
+            }
+        }
+
+        private void ApplyDiscordGuildSelection()
+        {
+            if (_discordGuildSelector == null)
+                return;
+
+            var guildId = _discordGuildSelector.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(guildId))
+            {
+                ClearDiscordConfigSection();
+                return;
+            }
+
+            if (_discordConfigCache.Guilds.TryGetValue(guildId, out var config))
+            {
+                _discordLoggingEnabledToggle.Checked = config.Logging_Enabled;
+                _discordLoggingChannelId.Text = FormatChannelId(config.Logging_Channel_Id);
+                _discordNotificationsGeneral.Text = FormatChannelId(config.Notifications_General);
+                _discordNotificationsRumble.Text = FormatChannelId(config.Notifications_Rumble_Clips);
+                _discordNotificationsYoutube.Text = FormatChannelId(config.Notifications_Youtube_Clips);
+                _discordNotificationsKick.Text = FormatChannelId(config.Notifications_Kick_Clips);
+                _discordNotificationsPilled.Text = FormatChannelId(config.Notifications_Pilled_Clips);
+                _discordNotificationsTwitch.Text = FormatChannelId(config.Notifications_Twitch_Clips);
+                return;
+            }
+
+            _discordLoggingEnabledToggle.Checked = false;
+            _discordLoggingChannelId.Text = string.Empty;
+            _discordNotificationsGeneral.Text = string.Empty;
+            _discordNotificationsRumble.Text = string.Empty;
+            _discordNotificationsYoutube.Text = string.Empty;
+            _discordNotificationsKick.Text = string.Empty;
+            _discordNotificationsPilled.Text = string.Empty;
+            _discordNotificationsTwitch.Text = string.Empty;
+        }
+
+        private void ClearDiscordConfigSection()
+        {
+            if (_discordGuildSelector != null)
+                _discordGuildSelector.Text = string.Empty;
+
+            if (_discordLoggingEnabledToggle != null)
+                _discordLoggingEnabledToggle.Checked = false;
+
+            if (_discordLoggingChannelId != null)
+                _discordLoggingChannelId.Text = string.Empty;
+            if (_discordNotificationsGeneral != null)
+                _discordNotificationsGeneral.Text = string.Empty;
+            if (_discordNotificationsRumble != null)
+                _discordNotificationsRumble.Text = string.Empty;
+            if (_discordNotificationsYoutube != null)
+                _discordNotificationsYoutube.Text = string.Empty;
+            if (_discordNotificationsKick != null)
+                _discordNotificationsKick.Text = string.Empty;
+            if (_discordNotificationsPilled != null)
+                _discordNotificationsPilled.Text = string.Empty;
+            if (_discordNotificationsTwitch != null)
+                _discordNotificationsTwitch.Text = string.Empty;
+
+            if (_discordConfigStatus != null)
+                _discordConfigStatus.Text = "Discord config not loaded.";
+        }
+
+        private static string FormatChannelId(long? value)
+        {
+            return value.HasValue ? value.Value.ToString() : string.Empty;
+        }
+
+        private static bool TryParseChannelId(string? raw, out long? value)
+        {
+            value = null;
+            if (string.IsNullOrWhiteSpace(raw))
+                return true;
+
+            if (long.TryParse(raw.Trim(), out var parsed))
+            {
+                value = parsed;
+                return true;
+            }
+
+            return false;
+        }
+
+        private async Task SaveDiscordConfigAsync()
+        {
+            if (_discordGuildSelector == null)
+                return;
+
+            var guildId = _discordGuildSelector.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(guildId))
+            {
+                _discordConfigStatus.Text = "Enter a guild ID before saving.";
+                _discordConfigStatus.ForeColor = Color.DarkRed;
+                return;
+            }
+
+            if (!TryParseChannelId(_discordLoggingChannelId.Text, out var loggingChannelId))
+            {
+                _discordConfigStatus.Text = "Logging channel ID must be numeric.";
+                _discordConfigStatus.ForeColor = Color.DarkRed;
+                return;
+            }
+
+            if (!TryParseChannelId(_discordNotificationsGeneral.Text, out var generalId) ||
+                !TryParseChannelId(_discordNotificationsRumble.Text, out var rumbleId) ||
+                !TryParseChannelId(_discordNotificationsYoutube.Text, out var youtubeId) ||
+                !TryParseChannelId(_discordNotificationsKick.Text, out var kickId) ||
+                !TryParseChannelId(_discordNotificationsPilled.Text, out var pilledId) ||
+                !TryParseChannelId(_discordNotificationsTwitch.Text, out var twitchId))
+            {
+                _discordConfigStatus.Text = "Notification channel IDs must be numeric.";
+                _discordConfigStatus.ForeColor = Color.DarkRed;
+                return;
+            }
+
+            var entry = new DiscordGuildConfig
+            {
+                Logging_Enabled = _discordLoggingEnabledToggle.Checked,
+                Logging_Channel_Id = loggingChannelId,
+                Notifications_General = generalId,
+                Notifications_Rumble_Clips = rumbleId,
+                Notifications_Youtube_Clips = youtubeId,
+                Notifications_Kick_Clips = kickId,
+                Notifications_Pilled_Clips = pilledId,
+                Notifications_Twitch_Clips = twitchId
+            };
+
+            _discordConfigCache.Guilds[guildId] = entry;
+
+            var writePath = ResolveConfigWritePath("shared", "config", "discord.json");
+            if (string.IsNullOrWhiteSpace(writePath))
+            {
+                _discordConfigStatus.Text = "Unable to resolve config path.";
+                _discordConfigStatus.ForeColor = Color.DarkRed;
+                return;
+            }
+
+            var json = JsonSerializer.Serialize(
+                _discordConfigCache,
+                new JsonSerializerOptions { WriteIndented = true }
+            );
+
+            var directory = Path.GetDirectoryName(writePath);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            await File.WriteAllTextAsync(writePath, json).ConfigureAwait(true);
+            _discordConfigStatus.Text = $"Saved to {writePath}";
+            _discordConfigStatus.ForeColor = SystemColors.GrayText;
+            UpdateDiscordGuildList();
         }
 
         // -----------------------------------------------------------------
@@ -3280,6 +3619,24 @@ namespace StreamSuites.DesktopAdmin
                 var candidate = Path.Combine(root, Path.Combine(segments));
                 if (File.Exists(candidate))
                     return candidate;
+            }
+
+            return null;
+        }
+
+        private string? ResolveConfigWritePath(params string[] segments)
+        {
+            var roots = GetSnapshotRoots();
+            if (roots.Count == 0)
+                return null;
+
+            foreach (var root in roots)
+            {
+                var sharedPath = Path.Combine(root, "shared");
+                if (Directory.Exists(sharedPath))
+                {
+                    return Path.Combine(root, Path.Combine(segments));
+                }
             }
 
             return null;

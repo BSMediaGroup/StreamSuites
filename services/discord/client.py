@@ -34,6 +34,7 @@ from services.discord.status import DiscordStatusManager
 from services.discord.logging import DiscordLogAdapter
 from services.discord.permissions import DiscordPermissionResolver
 from services.discord.heartbeat import DiscordHeartbeat
+from services.discord.guild_logging import DiscordGuildLogDispatcher
 
 # Command modules (registration only)
 from services.discord.commands import services as service_commands
@@ -82,6 +83,20 @@ class DiscordClient:
         self.logger = DiscordLogAdapter()
         self.permissions = DiscordPermissionResolver()
         self.heartbeat = DiscordHeartbeat()
+        self.guild_logger = DiscordGuildLogDispatcher()
+
+    # --------------------------------------------------
+
+    @staticmethod
+    def _load_guild_id() -> Optional[int]:
+        raw = os.getenv("DISCORD_GUILD_ID")
+        if not raw:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            log.warning(f"Invalid DISCORD_GUILD_ID value: {raw}")
+            return None
 
     # --------------------------------------------------
 
@@ -155,6 +170,8 @@ class DiscordClient:
             except Exception as e:
                 log.warning(f"Failed to apply Discord status on ready: {e}")
 
+            await self.guild_logger.log_startup(bot, event="startup")
+
             if self._supervisor:
                 self._supervisor.notify_connected()
 
@@ -186,6 +203,8 @@ class DiscordClient:
             if self._supervisor:
                 self._supervisor.notify_connected()
 
+            await self.guild_logger.log_startup(bot, event="reconnect")
+
         @bot.event
         async def on_disconnect():
             log.warning("Discord connection lost")
@@ -193,6 +212,21 @@ class DiscordClient:
 
             if self._supervisor:
                 self._supervisor.notify_disconnected()
+
+        @bot.event
+        async def on_app_command_completion(interaction: discord.Interaction, command):
+            await self.guild_logger.log_command(interaction, success=True)
+
+        @bot.event
+        async def on_app_command_error(
+            interaction: discord.Interaction,
+            error: discord.app_commands.AppCommandError,
+        ):
+            await self.guild_logger.log_command(
+                interaction,
+                success=False,
+                error=str(error),
+            )
 
         @bot.event
         async def on_guild_join(guild: discord.Guild):

@@ -67,6 +67,12 @@ class JobRegistry:
 
         return count
 
+    def count_active_jobs(self, creator_id: str, job_type: str) -> int:
+        """
+        Public wrapper for active job counts by creator + job type.
+        """
+        return self._count_active_jobs(creator_id, job_type)
+
     # ------------------------------------------------------------
     # READ-ONLY VISIBILITY HOOKS (SAFE FOR DASHBOARD)
     # ------------------------------------------------------------
