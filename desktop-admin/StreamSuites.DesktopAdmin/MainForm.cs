@@ -3349,7 +3349,6 @@ namespace StreamSuites.DesktopAdmin
 
         private void ClearDiscordConfigSection()
         {
-            _discordConfigCache = new DiscordConfigExport();
             if (_discordGuildSelector != null)
                 _discordGuildSelector.Text = string.Empty;
 
