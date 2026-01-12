@@ -221,8 +221,8 @@ namespace StreamSuites.DesktopAdmin.Bridge
                 if (string.Equals(path, "/commands/runtime/stop", StringComparison.OrdinalIgnoreCase) &&
                     string.Equals(request.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase))
                 {
-                    _log("[Bridge] POST /commands/runtime/stop");
-                    var runtimeSnapshot = _runtimeController.StopInBackground();
+                    _log("[Bridge] POST /commands/runtime/stop (runtime only)");
+                    var runtimeSnapshot = _runtimeController.StopRuntimeInBackground();
                     LogRuntimeStatusChange(runtimeSnapshot.Status);
                     await WriteJsonAsync(response, new
                     {

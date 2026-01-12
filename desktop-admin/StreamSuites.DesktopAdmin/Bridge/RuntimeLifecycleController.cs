@@ -118,6 +118,12 @@ namespace StreamSuites.DesktopAdmin.Bridge
             }
         }
 
+        public Task<RuntimeLifecycleSnapshot> StopRuntimeAsync(
+            CancellationToken cancellationToken = default)
+        {
+            return StopAsync(cancellationToken);
+        }
+
         public RuntimeLifecycleSnapshot StopInBackground()
         {
             var canDispatch = TryBeginTransition(RuntimeTransition.Stopping, out var snapshot);
@@ -138,6 +144,11 @@ namespace StreamSuites.DesktopAdmin.Bridge
             });
 
             return snapshot;
+        }
+
+        public RuntimeLifecycleSnapshot StopRuntimeInBackground()
+        {
+            return StopInBackground();
         }
 
         private bool TryBeginTransition(RuntimeTransition transition, out RuntimeLifecycleSnapshot snapshot)
