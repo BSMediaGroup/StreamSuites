@@ -19,6 +19,9 @@ log = get_logger("shared.config.discord")
 _CONFIG_PATH = Path(__file__).parent / "discord.json"
 _CREATORS_PATH = Path(__file__).parent / "creators.json"
 
+DISCORD_PERMISSION_ADMINISTRATOR = 1 << 3
+DISCORD_PERMISSION_MANAGE_GUILD = 1 << 5
+
 CLIP_NOTIFICATION_LABELS: Dict[str, str] = {
     "rumble": "Rumble clips",
     "youtube": "YouTube clips",
@@ -106,6 +109,48 @@ def _normalize_admin_list(raw: Any) -> list[str]:
         if admin_id:
             normalized.append(admin_id)
     return normalized
+
+
+def _normalize_permission_bits(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        raw = value.strip()
+        if raw.isdigit():
+            try:
+                return int(raw)
+            except ValueError:
+                return None
+    return None
+
+
+def _permissions_allow_manage(value: Any) -> bool:
+    permissions = _normalize_permission_bits(value)
+    if permissions is None:
+        return False
+    return bool(
+        permissions & DISCORD_PERMISSION_ADMINISTRATOR
+        or permissions & DISCORD_PERMISSION_MANAGE_GUILD
+    )
+
+
+def _normalize_guild_id(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        raw = value.strip()
+        if raw.isdigit():
+            try:
+                return int(raw)
+            except ValueError:
+                return None
+    return None
 
 
 def _set_notification_channel(data: Dict[str, Any], kind: str, value: Any) -> None:
@@ -389,7 +434,10 @@ def build_guild_exports(
     *,
     config: Optional[Dict[str, Any]] = None,
     bot_guild_ids: Optional[Iterable[int]] = None,
+    bot_guilds: Optional[Dict[int, str]] = None,
     user_id: Optional[str] = None,
+    oauth_guilds: Optional[Iterable[Dict[str, Any]]] = None,
+    oauth_guild_permissions: Optional[Dict[str, Any]] = None,
     path: Optional[Path] = None,
 ) -> list[Dict[str, Any]]:
     config = config or load_discord_config(path)
@@ -405,6 +453,16 @@ def build_guild_exports(
                 continue
 
     bot_guild_id_set: set[int] = set()
+    bot_guild_names: Dict[int, str] = {}
+    if isinstance(bot_guilds, dict):
+        for guild_id, guild_name in bot_guilds.items():
+            normalized_id = _normalize_guild_id(guild_id)
+            if normalized_id is None:
+                continue
+            bot_guild_id_set.add(normalized_id)
+            if isinstance(guild_name, str) and guild_name.strip():
+                bot_guild_names[normalized_id] = guild_name.strip()
+
     if bot_guild_ids:
         for guild_id in bot_guild_ids:
             try:
@@ -413,19 +471,62 @@ def build_guild_exports(
                 continue
         guild_ids.update(bot_guild_id_set)
 
+    oauth_permissions: Dict[int, int] = {}
+    oauth_guild_names: Dict[int, str] = {}
+    if isinstance(oauth_guild_permissions, dict):
+        for guild_id, permissions_value in oauth_guild_permissions.items():
+            normalized_id = _normalize_guild_id(guild_id)
+            if normalized_id is None:
+                continue
+            normalized_permissions = _normalize_permission_bits(permissions_value)
+            if normalized_permissions is None:
+                continue
+            oauth_permissions[normalized_id] = normalized_permissions
+
+    if oauth_guilds:
+        for entry in oauth_guilds:
+            if not isinstance(entry, dict):
+                continue
+            normalized_id = _normalize_guild_id(entry.get("id") or entry.get("guild_id"))
+            if normalized_id is None:
+                continue
+            normalized_permissions = _normalize_permission_bits(
+                entry.get("permissions") or entry.get("permissions_value")
+            )
+            if normalized_permissions is not None:
+                oauth_permissions.setdefault(normalized_id, normalized_permissions)
+            name = entry.get("name")
+            if isinstance(name, str) and name.strip():
+                oauth_guild_names.setdefault(normalized_id, name.strip())
+
+    admin_override = is_discord_admin(user_id, config=config, path=path) if user_id else False
+
     exports: list[Dict[str, Any]] = []
     for guild_id in sorted(guild_ids):
         entry = get_guild_config(guild_id, config=config, path=path)
+        bot_present = guild_id in bot_guild_id_set
+        oauth_allowed = False
+        if bot_present:
+            oauth_allowed = _permissions_allow_manage(oauth_permissions.get(guild_id))
+        authorized_for_user = bot_present and (admin_override or oauth_allowed)
+        if authorized_for_user:
+            authorization_reason = "admin_override" if admin_override else "oauth_permissions"
+        else:
+            authorization_reason = "none"
+
         export = {
             "guild_id": guild_id,
-            "bot_present": guild_id in bot_guild_id_set,
+            "guild_name": bot_guild_names.get(guild_id) or oauth_guild_names.get(guild_id),
+            "bot_present": bot_present,
+            "authorized_for_user": authorized_for_user,
+            "authorization_reason": authorization_reason,
             "logging": entry.get("logging", {}),
             "notifications": entry.get("notifications", {}),
         }
         if user_id is not None:
             export["authorized_admin_override"] = (
-                is_discord_admin(user_id, config=config, path=path)
-                and export["bot_present"]
+                admin_override
+                and bot_present
             )
         exports.append(export)
     return exports
