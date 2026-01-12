@@ -1,3 +1,60 @@
 {
-  "_comment": "Placeholder for chat event storage schema. Define structures for persisted chat events in a future iteration without affecting current runtime behavior."
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "StreamSuites Unified ChatEvent",
+  "type": "object",
+  "required": [
+    "event_id",
+    "ts",
+    "stream_id",
+    "source_platform",
+    "author",
+    "content",
+    "flags"
+  ],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "ts": { "type": "string", "description": "ISO8601 UTC timestamp" },
+    "stream_id": { "type": "string" },
+    "source_platform": {
+      "type": "string",
+      "enum": [
+        "rumble",
+        "youtube",
+        "twitch",
+        "discord",
+        "kick",
+        "pilled",
+        "streamsuites"
+      ]
+    },
+    "author": {
+      "type": "object",
+      "required": ["author_id", "display_name", "badges", "roles"],
+      "properties": {
+        "author_id": { "type": "string" },
+        "display_name": { "type": "string" },
+        "avatar_url": { "type": ["string", "null"] },
+        "badges": { "type": "array", "items": { "type": "string" } },
+        "roles": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "content": {
+      "type": "object",
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "type": "string", "enum": ["message"] },
+        "text": { "type": "string" }
+      }
+    },
+    "flags": {
+      "type": "object",
+      "required": ["is_synthetic", "is_system", "is_highlighted"],
+      "properties": {
+        "is_synthetic": { "type": "boolean" },
+        "is_system": { "type": "boolean" },
+        "is_highlighted": { "type": "boolean" }
+      }
+    },
+    "raw": { "type": ["object", "null"] }
+  }
 }

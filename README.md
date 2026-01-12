@@ -263,6 +263,10 @@ StreamSuites/
 ├── exports/
 │   └── public/
 │       └── .gitkeep
+├── livechat/
+│   ├── index.html
+│   ├── livechat.css
+│   └── livechat.js
 ├── media/
 │   ├── capture/
 │   │   ├── rumble.py
@@ -324,6 +328,9 @@ StreamSuites/
 │   ├── update_version.py
 │   └── validate_config.py
 ├── services/
+│   ├── chat_api/
+│   │   ├── __init__.py
+│   │   └── server.py
 │   ├── chat_replay/
 │   │   ├── README.md
 │   │   ├── contracts/
@@ -456,6 +463,8 @@ StreamSuites/
 │           ├── chat_worker.py
 │           └── livestream_worker.py
 ├── shared/
+│   ├── chat/
+│   │   └── events.py
 │   ├── config/
 │   │   ├── chat_behaviour.json
 │   │   ├── clip_rules.json
@@ -488,6 +497,7 @@ StreamSuites/
 │   ├── runtime/
 │   │   ├── __init__.py
 │   │   ├── admin_contract.py
+│   │   ├── chat_context.py
 │   │   ├── quotas.py
 │   │   ├── quotas_snapshot.py
 │   │   ├── hot_reload.py
@@ -517,6 +527,7 @@ StreamSuites/
 │   │   │   ├── index.py
 │   │   │   ├── reader.py
 │   │   │   ├── schema.json
+│   │   │   ├── store.py
 │   │   │   └── writer.py
 │   │   ├── file_lock.py
 │   │   ├── paths.py

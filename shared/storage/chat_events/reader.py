@@ -9,6 +9,7 @@ filtering of malformed events to keep OBS overlays safe.
 from __future__ import annotations
 
 import json
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,7 @@ log = get_logger("shared.chat_events.reader")
 # repo so snapshot builders can derive replay availability without guessing.
 CHAT_LOG_ROOT = Path("shared/state/chat_logs")
 CHAT_EVENT_STORAGE_ROOT = Path("shared/storage/chat_events")
+CHAT_DB_PATH = Path("data/streamsuites.db")
 
 
 @dataclass
@@ -128,7 +130,7 @@ def _load_events_from_file(path: Path) -> Tuple[List[_ReplayEvent], bool, int]:
     platform_hint = _platform_from_path(path)
 
     for candidate in candidates:
-        ts_value = candidate.get("timestamp") or candidate.get("message_at") or candidate.get("received_at")
+        ts_value = candidate.get("ts") or candidate.get("timestamp") or candidate.get("message_at") or candidate.get("received_at")
         ts = _parse_iso8601(ts_value) if ts_value else None
         if not ts:
             overlay_safe = False
@@ -138,7 +140,7 @@ def _load_events_from_file(path: Path) -> Tuple[List[_ReplayEvent], bool, int]:
             overlay_safe = False
         last_seen_ts = ts
 
-        platform = candidate.get("platform") or platform_hint
+        platform = candidate.get("source_platform") or candidate.get("platform") or platform_hint
         platform_normalized = platform.lower() if isinstance(platform, str) else None
 
         parsed_events.append(
@@ -157,14 +159,77 @@ def _load_events_from_file(path: Path) -> Tuple[List[_ReplayEvent], bool, int]:
     return parsed_events, overlay_safe, total_seen
 
 
+def _load_events_from_sqlite() -> Tuple[List[_ReplayEvent], bool, int]:
+    if not CHAT_DB_PATH.exists():
+        return [], True, 0
+
+    overlay_safe = True
+    parsed_events: List[_ReplayEvent] = []
+    total_seen = 0
+    last_seen_ts: Optional[datetime] = None
+
+    conn = None
+    try:
+        conn = sqlite3.connect(CHAT_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT source_platform, ts FROM chat_events ORDER BY ts, id"
+        ).fetchall()
+    except Exception as exc:
+        log.warning(f"Failed to read chat events from sqlite: {exc}")
+        return [], False, 0
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    for row in rows:
+        total_seen += 1
+        ts_raw = row["ts"]
+        ts = _parse_iso8601(ts_raw)
+        if not ts:
+            overlay_safe = False
+            continue
+
+        if last_seen_ts and ts < last_seen_ts:
+            overlay_safe = False
+        last_seen_ts = ts
+
+        platform = row["source_platform"]
+        platform_normalized = platform.lower() if isinstance(platform, str) else None
+
+        parsed_events.append(
+            _ReplayEvent(
+                platform=platform_normalized,
+                timestamp=ts,
+                iso=ts.isoformat().replace("+00:00", "Z"),
+            )
+        )
+
+    if total_seen and len(parsed_events) != total_seen:
+        overlay_safe = False
+
+    return parsed_events, overlay_safe, total_seen
+
+
 def build_replay_metadata() -> ReplayMetadata:
     overlay_safe = True
     events: List[_ReplayEvent] = []
+    total_seen = 0
+
+    sqlite_events, sqlite_safe, sqlite_total = _load_events_from_sqlite()
+    if sqlite_events:
+        events.extend(sqlite_events)
+        overlay_safe = overlay_safe and sqlite_safe
+        total_seen += sqlite_total
 
     for path in _iter_event_files([CHAT_LOG_ROOT, CHAT_EVENT_STORAGE_ROOT]):
-        parsed, file_safe, _ = _load_events_from_file(path)
+        parsed, file_safe, file_seen = _load_events_from_file(path)
         overlay_safe = overlay_safe and file_safe
         events.extend(parsed)
+        total_seen += file_seen
 
     events.sort(key=lambda evt: evt.sort_key())
 

@@ -19,6 +19,7 @@ from core.jobs import JobRegistry
 from core.state_exporter import runtime_snapshot_exporter, runtime_state
 from media.jobs.clip_job import ClipJob
 from services.clips.manager import clip_manager
+from services.chat_api import ChatApiServer, ChatApiConfig, ChatRuntimeConfig, SyntheticChatConfig
 from shared.logging.logger import get_logger
 from shared.runtime.hot_reload import HotReloadConfig, build_hot_reload_watcher
 
@@ -35,6 +36,7 @@ RUNTIME_SNAPSHOT_INTERVAL = 10
 async def main(stop_event: asyncio.Event):
     global _GLOBAL_JOB_REGISTRY
     clip_runtime_started = False
+    chat_api_server: ChatApiServer | None = None
 
     # --------------------------------------------------
     # ENV
@@ -78,6 +80,16 @@ async def main(stop_event: asyncio.Event):
                 "enabled": hot_reload_cfg.enabled,
                 "watch_path": hot_reload_cfg.watch_path,
                 "interval_seconds": hot_reload_cfg.interval_seconds,
+            },
+            "chat": {
+                "api": {
+                    "enabled": system_config.chat.api.enabled,
+                    "host": system_config.chat.api.host,
+                    "port": system_config.chat.api.port,
+                },
+                "synthetic": {
+                    "enabled": system_config.chat.synthetic.enabled,
+                },
             },
         }
     )
@@ -145,6 +157,28 @@ async def main(stop_event: asyncio.Event):
     # INITIAL SNAPSHOT EXPORT
     # --------------------------------------------------
     runtime_snapshot_exporter.publish()
+
+    # --------------------------------------------------
+    # CHAT API SERVER (LIVECHAT + SYNTHETIC INGEST)
+    # --------------------------------------------------
+    chat_api_config = ChatApiConfig(
+        enabled=system_config.chat.api.enabled,
+        host=system_config.chat.api.host,
+        port=system_config.chat.api.port,
+        allow_origins=list(system_config.chat.api.allow_origins),
+    )
+    synthetic_config = SyntheticChatConfig(
+        enabled=system_config.chat.synthetic.enabled,
+        creator_token=system_config.chat.synthetic.creator_token,
+        discord_bot_token=system_config.chat.synthetic.discord_bot_token,
+        rate_limit_per_minute=system_config.chat.synthetic.rate_limit_per_minute,
+    )
+    chat_runtime_config = ChatRuntimeConfig(
+        api=chat_api_config,
+        synthetic=synthetic_config,
+    )
+    chat_api_server = ChatApiServer(chat_runtime_config)
+    chat_api_server.start()
 
     # --------------------------------------------------
     # START CREATOR RUNTIMES
@@ -254,6 +288,12 @@ async def main(stop_event: asyncio.Event):
             await clip_manager.shutdown()
         except Exception as e:
             log.warning(f"Clip manager shutdown failed: {e}")
+
+    if chat_api_server:
+        try:
+            chat_api_server.stop()
+        except Exception as e:
+            log.warning(f"Chat API server shutdown failed: {e}")
 
     log.info("StreamSuites stopped")
 

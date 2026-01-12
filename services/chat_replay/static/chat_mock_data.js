@@ -98,6 +98,46 @@ const chatMessages = [
   },
 ];
 
+function normalizeRuntimeEvent(event) {
+  if (!event || !event.author || !event.content) return null;
+  const iso = event.ts || new Date().toISOString();
+  const unix = Math.floor(new Date(iso).getTime() / 1000);
+  return {
+    message_id: event.event_id || `runtime-${unix}`,
+    platform: event.source_platform || "streamsuites",
+    author: {
+      display_name: event.author.display_name || "Unknown",
+      avatar_url: event.author.avatar_url || null,
+      color: null,
+      badges: event.author.badges || [],
+    },
+    message: { text: event.content.text || "", emotes: [] },
+    timestamp: { unix, iso },
+    metadata: {
+      is_mod: (event.author.roles || []).includes("mod"),
+      is_member: (event.author.roles || []).includes("member"),
+      is_superchat: false,
+      is_synthetic: event.flags?.is_synthetic || false,
+      raw: event.raw || {},
+    },
+  };
+}
+
+async function fetchRuntimeChatTail({ streamId, limit = 60 } = {}) {
+  const url = new URL("/api/chat/tail", window.location.origin);
+  if (streamId) {
+    url.searchParams.set("stream_id", streamId);
+  }
+  url.searchParams.set("limit", String(limit));
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    throw new Error("Failed to fetch runtime chat");
+  }
+  const payload = await response.json();
+  const events = (payload.events || []).map(normalizeRuntimeEvent).filter(Boolean);
+  return { events, context: payload.context || {} };
+}
+
 function renderBadgeRow(entry) {
   const badgePriority = {
     platform: 0,

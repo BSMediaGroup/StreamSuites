@@ -64,9 +64,32 @@ class SystemSettings:
 
 
 @dataclass
+class ChatApiSettings:
+    enabled: bool = True
+    host: str = "0.0.0.0"
+    port: int = 8210
+    allow_origins: list[str] = field(default_factory=lambda: ["*"])
+
+
+@dataclass
+class SyntheticChatSettings:
+    enabled: bool = True
+    creator_token: str = "dev-creator-token"
+    discord_bot_token: str = "dev-discord-token"
+    rate_limit_per_minute: int = 30
+
+
+@dataclass
+class ChatSettings:
+    api: ChatApiSettings = field(default_factory=ChatApiSettings)
+    synthetic: SyntheticChatSettings = field(default_factory=SyntheticChatSettings)
+
+
+@dataclass
 class SystemConfig:
     clips: ClipSystemConfig
     system: SystemSettings
+    chat: ChatSettings = field(default_factory=ChatSettings)
 
 
 def _load_json(path: Path) -> Dict[str, Any]:
@@ -186,6 +209,48 @@ def _load_system_settings(raw: Optional[Dict[str, Any]]) -> SystemSettings:
     )
 
 
+def _load_chat_api_settings(raw: Optional[Dict[str, Any]]) -> ChatApiSettings:
+    if not isinstance(raw, dict):
+        return ChatApiSettings()
+
+    cfg = ChatApiSettings()
+    cfg.enabled = bool(raw.get("enabled", cfg.enabled))
+    cfg.host = str(raw.get("host", cfg.host))
+    try:
+        cfg.port = int(raw.get("port", cfg.port))
+    except Exception:
+        cfg.port = ChatApiSettings.port
+    allow = raw.get("allow_origins", cfg.allow_origins)
+    if isinstance(allow, list):
+        cfg.allow_origins = [str(item) for item in allow]
+    return cfg
+
+
+def _load_synthetic_chat_settings(raw: Optional[Dict[str, Any]]) -> SyntheticChatSettings:
+    if not isinstance(raw, dict):
+        return SyntheticChatSettings()
+
+    cfg = SyntheticChatSettings()
+    cfg.enabled = bool(raw.get("enabled", cfg.enabled))
+    cfg.creator_token = str(raw.get("creator_token", cfg.creator_token))
+    cfg.discord_bot_token = str(raw.get("discord_bot_token", cfg.discord_bot_token))
+    try:
+        cfg.rate_limit_per_minute = int(raw.get("rate_limit_per_minute", cfg.rate_limit_per_minute))
+    except Exception:
+        cfg.rate_limit_per_minute = SyntheticChatSettings.rate_limit_per_minute
+    return cfg
+
+
+def _load_chat_settings(raw: Optional[Dict[str, Any]]) -> ChatSettings:
+    if not isinstance(raw, dict):
+        return ChatSettings()
+
+    return ChatSettings(
+        api=_load_chat_api_settings(raw.get("api")),
+        synthetic=_load_synthetic_chat_settings(raw.get("synthetic")),
+    )
+
+
 def load_system_config(raw: Optional[Dict[str, Any]] = None) -> SystemConfig:
     raw = raw if raw is not None else _load_json(_CONFIG_PATH)
 
@@ -200,7 +265,7 @@ def load_system_config(raw: Optional[Dict[str, Any]] = None) -> SystemConfig:
         export=export_cfg,
     )
 
-    system_raw = raw.get("system", {}) if isinstance(raw, dict) else {}
-    system_cfg = _load_system_settings(system_raw)
+    system_cfg = _load_system_settings(raw.get("system") if isinstance(raw, dict) else None)
+    chat_cfg = _load_chat_settings(raw.get("chat") if isinstance(raw, dict) else None)
 
-    return SystemConfig(clips=clip_config, system=system_cfg)
+    return SystemConfig(clips=clip_config, system=system_cfg, chat=chat_cfg)

@@ -12,6 +12,8 @@ namespace StreamSuites.DesktopAdmin
         private ToolStrip toolMain;
         private ToolStripButton btnRefresh;
         private ToolStripSeparator toolStripSeparator1;
+        private ToolStripButton btnOpenLiveChat;
+        private ToolStripSeparator toolStripSeparator2;
         private ToolStripLabel lblMode;
 
         // Footer status bar
@@ -82,6 +84,8 @@ namespace StreamSuites.DesktopAdmin
             toolMain = new ToolStrip();
             btnRefresh = new ToolStripButton();
             toolStripSeparator1 = new ToolStripSeparator();
+            btnOpenLiveChat = new ToolStripButton();
+            toolStripSeparator2 = new ToolStripSeparator();
             lblMode = new ToolStripLabel();
 
             statusBar = new StatusStrip();
@@ -116,9 +120,13 @@ namespace StreamSuites.DesktopAdmin
             toolMain.Dock = DockStyle.Top;
             toolMain.GripStyle = ToolStripGripStyle.Hidden;
             btnRefresh.Text = "Refresh";
+            btnOpenLiveChat.Text = "Open LiveChat";
+            btnOpenLiveChat.Click += BtnOpenLiveChat_Click;
             lblMode.Text = "Mode: Dashboard";
             toolMain.Items.Add(btnRefresh);
             toolMain.Items.Add(toolStripSeparator1);
+            toolMain.Items.Add(btnOpenLiveChat);
+            toolMain.Items.Add(toolStripSeparator2);
             toolMain.Items.Add(lblMode);
 
             // Status bar
