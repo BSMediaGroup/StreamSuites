@@ -29,6 +29,9 @@ namespace StreamSuites.DesktopAdmin
         private readonly BridgeServer _bridgeServer;
         private readonly EventHandler _bridgeStateChangedHandler;
         private bool _bridgeUiDetached;
+        private bool _shutdownRequested;
+        private bool _shutdownInProgress;
+        private AppShutdownSource _shutdownSource = AppShutdownSource.Unknown;
 
         private readonly PathConfigService _pathConfigService;
         private PathConfiguration _pathConfiguration;
@@ -324,7 +327,7 @@ namespace StreamSuites.DesktopAdmin
             var itemOpenDashboard = new ToolStripMenuItem("Open Dashboard");
             itemOpenDashboard.Click += (_, __) => ShowDashboard();
             var itemExit = new ToolStripMenuItem("Exit");
-            itemExit.Click += (_, __) => Close();
+            itemExit.Click += (_, __) => RequestAppShutdown(AppShutdownSource.MenuExit);
             menuFile.DropDownItems.Add(itemOpenDashboard);
             menuFile.DropDownItems.Add(new ToolStripSeparator());
             menuFile.DropDownItems.Add(itemExit);
@@ -2309,6 +2312,35 @@ namespace StreamSuites.DesktopAdmin
                 await StartBridgeServerAsync();
         }
 
+        private void RequestAppShutdown(AppShutdownSource source)
+        {
+            if (source == AppShutdownSource.BridgeCommand)
+            {
+                Debug.WriteLine("[Shutdown] Bridge command attempted to trigger app shutdown.");
+                return;
+            }
+
+            if (_shutdownRequested)
+                return;
+
+            _shutdownRequested = true;
+            _shutdownSource = source;
+
+            Close();
+        }
+
+        private async Task ShutdownApplicationAsync(AppShutdownSource source)
+        {
+            if (_shutdownInProgress)
+                return;
+
+            _shutdownInProgress = true;
+            DetachBridgeUi();
+
+            await _runtimeController.StopRuntimeAsync(CancellationToken.None);
+            await StopBridgeServerAsync();
+        }
+
         private void OpenBridgeHealthCheck()
         {
             var snapshot = _bridgeState.GetSnapshot();
@@ -2338,8 +2370,10 @@ namespace StreamSuites.DesktopAdmin
 
         private async void MainForm_FormClosing(object? sender, FormClosingEventArgs e)
         {
-            DetachBridgeUi();
-            await StopBridgeServerAsync();
+            if (!_shutdownRequested)
+                _shutdownSource = AppShutdownSource.WindowClose;
+
+            await ShutdownApplicationAsync(_shutdownSource);
         }
 
         private void DetachBridgeUi()
@@ -4171,7 +4205,7 @@ namespace StreamSuites.DesktopAdmin
             itemExit.Click += (_, __) =>
             {
                 trayIcon.Visible = false;
-                Application.Exit();
+                RequestAppShutdown(AppShutdownSource.TrayExit);
             };
 
             _trayMenu.Items.Add(itemOpen);
@@ -4822,7 +4856,7 @@ namespace StreamSuites.DesktopAdmin
         {
             var runtimeSnapshot = _runtimeController.GetSnapshot();
             if (runtimeSnapshot.Status == "running" || runtimeSnapshot.Status == "stopping")
-                await _runtimeController.StopAsync(CancellationToken.None);
+                await _runtimeController.StopRuntimeAsync(CancellationToken.None);
             else
                 await _runtimeController.StartAsync(CancellationToken.None);
         }
@@ -5455,6 +5489,15 @@ namespace StreamSuites.DesktopAdmin
                     MessageBoxIcon.Warning
                 );
             }
+        }
+
+        private enum AppShutdownSource
+        {
+            Unknown,
+            MenuExit,
+            TrayExit,
+            WindowClose,
+            BridgeCommand
         }
 
         private class TelemetryRateRow
