@@ -25,6 +25,7 @@ import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from shared.config.discord import build_guild_exports
 from shared.logging.logger import get_logger
 from shared.storage.state_publisher import DashboardStatePublisher
 from services.discord.client import DiscordClient, await_ready_or_fail
@@ -92,6 +93,8 @@ class DiscordSupervisor:
         self._refresh_guild_count()
         heartbeat_state = self.heartbeat
         status_snapshot = self.status
+        bot = self._client.bot if self._client and self._client.bot else None
+        bot_guild_ids = [guild.id for guild in bot.guilds] if bot else []
 
         return {
             "running": self._running,
@@ -104,6 +107,7 @@ class DiscordSupervisor:
             "task_count": self.task_count,
             "tasks": self.task_count,  # backward-compatible alias
             "guild_count": self._guild_count if self.connected else None,
+            "guilds": build_guild_exports(bot_guild_ids=bot_guild_ids),
             "status": status_snapshot,
             "presence": {
                 "status_text": status_snapshot.get("text"),

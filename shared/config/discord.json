@@ -1,5 +1,38 @@
 {
   "discord": {
-    "guilds": {}
+    "admins": [
+      "1130875539373170688"
+    ],
+    "guilds": {
+      "123456789012345678": {
+        "logging": {
+          "enabled": false,
+          "channel_id": null
+        },
+        "notifications": {
+          "enabled": false,
+          "general": {
+            "channel_id": null
+          },
+          "clips": {
+            "rumble": {
+              "channel_id": null
+            },
+            "youtube": {
+              "channel_id": null
+            },
+            "kick": {
+              "channel_id": null
+            },
+            "pilled": {
+              "channel_id": null
+            },
+            "twitch": {
+              "channel_id": null
+            }
+          }
+        }
+      }
+    }
   }
 }
