@@ -316,11 +316,13 @@ class AdminCommandHandler:
             )
             return {"ok": False, "message": message}
 
+        overrides = self._load_platform_overrides()
         current_enabled = None
         if entry:
             current_enabled = bool(entry.get("enabled", False))
+        elif normalized in overrides:
+            current_enabled = bool(overrides.get(normalized))
 
-        overrides = self._load_platform_overrides()
         desired_enabled = not current_enabled if current_enabled is not None else True
         overrides[normalized] = desired_enabled
         self._persist_platform_overrides(overrides)

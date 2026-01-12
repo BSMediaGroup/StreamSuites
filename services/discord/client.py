@@ -100,6 +100,19 @@ class DiscordClient:
 
     # --------------------------------------------------
 
+    @staticmethod
+    def _load_guild_id() -> Optional[int]:
+        raw = os.getenv("DISCORD_GUILD_ID")
+        if not raw:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            log.warning(f"Invalid DISCORD_GUILD_ID value: {raw}")
+            return None
+
+    # --------------------------------------------------
+
     def _build_bot(self) -> commands.Bot:
         """
         Construct the discord.py Bot instance.

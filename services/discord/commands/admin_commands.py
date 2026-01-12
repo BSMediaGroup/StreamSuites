@@ -233,10 +233,149 @@ def setup(
         )
 
     # --------------------------------------------------
+    # /toggle
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="toggle",
+        description="Toggle a platform's live status on/off",
+    )
+    @app_commands.describe(
+        platform="Platform name (e.g., twitch, youtube, rumble)",
+    )
+    @require_admin()
+    async def toggle_platform(
+        interaction: discord.Interaction,
+        platform: str,
+    ):
+        await interaction.response.defer(ephemeral=False)
+
+        result = await handler.cmd_toggle_platform(
+            user_id=interaction.user.id,
+            guild_id=interaction.guild.id,
+            platform=platform,
+        )
+
+        content = f"✅ {result['message']}" if result.get("ok") else f"❌ {result['message']}"
+        await interaction.followup.send(
+            content=content,
+            ephemeral=False,
+        )
+
+    # --------------------------------------------------
+    # /trigger
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="trigger",
+        description="Manually fire a named trigger or pipeline event",
+    )
+    @app_commands.describe(
+        name="Trigger name or command (e.g., clip)",
+    )
+    @require_admin()
+    async def trigger(
+        interaction: discord.Interaction,
+        name: str,
+    ):
+        await interaction.response.defer(ephemeral=False)
+
+        result = await handler.cmd_trigger(
+            user_id=interaction.user.id,
+            guild_id=interaction.guild.id,
+            name=name,
+        )
+
+        content = f"✅ {result['message']}" if result.get("ok") else f"❌ {result['message']}"
+        await interaction.followup.send(
+            content=content,
+            ephemeral=False,
+        )
+
+    # --------------------------------------------------
+    # /jobs
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="jobs",
+        description="List active and recent jobs in the runtime",
+    )
+    @require_admin()
+    async def jobs(
+        interaction: discord.Interaction,
+    ):
+        await interaction.response.defer(ephemeral=True)
+
+        result = await handler.cmd_jobs(
+            user_id=interaction.user.id,
+            guild_id=interaction.guild.id,
+        )
+
+        active_jobs = result.get("active_jobs", [])
+        if not active_jobs:
+            message = "No active jobs at the moment."
+        else:
+            lines = []
+            for job in active_jobs[:10]:
+                job_id = str(job.get("id", ""))[:8]
+                job_type = job.get("type", "unknown")
+                status = job.get("status", "unknown")
+                creator = job.get("creator_id", "unknown")
+                lines.append(f"- {job_type} ({job_id}) [{status}] creator={creator}")
+            message = (
+                f"Active Jobs ({len(active_jobs)}):\n" + "\n".join(lines)
+            )
+
+        recent_count = result.get("recent_completed_count", 0)
+        message += f"\nRecent completions (last hour): {recent_count}"
+
+        await interaction.followup.send(
+            content=message,
+            ephemeral=True,
+        )
+
+    # --------------------------------------------------
+    # /status
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="status",
+        description="Show a high-level StreamSuites system status summary",
+    )
+    @require_admin()
+    async def status(
+        interaction: discord.Interaction,
+    ):
+        await interaction.response.defer(ephemeral=True)
+
+        result = await handler.cmd_status(
+            user_id=interaction.user.id,
+            guild_id=interaction.guild.id,
+        )
+
+        platform_lines = result.get("platform_lines") or []
+        platform_block = "\n".join(platform_lines) if platform_lines else "No platform data available."
+        active_jobs = result.get("active_jobs", 0)
+        generated_at = result.get("generated_at") or "unknown"
+
+        message = (
+            f"System Status (snapshot: {generated_at})\n"
+            f"{platform_block}\n"
+            f"Active jobs: {active_jobs}"
+        )
+
+        await interaction.followup.send(
+            content=message,
+            ephemeral=True,
+        )
+
+    # --------------------------------------------------
     # Register Commands
     # --------------------------------------------------
 
     bot.tree.add_command(admin_runtime_status)
+    bot.tree.add_command(admin_set_status)
+    bot.tree.add_command(admin_clear_status)
     bot.tree.add_command(toggle_platform)
     bot.tree.add_command(trigger)
     bot.tree.add_command(jobs)
