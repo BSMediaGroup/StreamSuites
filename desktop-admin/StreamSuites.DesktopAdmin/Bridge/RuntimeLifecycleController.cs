@@ -61,22 +61,12 @@ namespace StreamSuites.DesktopAdmin.Bridge
         public async Task<RuntimeLifecycleSnapshot> StartAsync(
             CancellationToken cancellationToken = default)
         {
-            RuntimeLifecycleSnapshot snapshot;
+            var canDispatch = TryBeginTransition(RuntimeTransition.Starting, out var snapshot);
+            if (!canDispatch)
+                return snapshot;
 
-            lock (_lock)
-            {
-                snapshot = BuildSnapshot(null);
-                if (snapshot.Status == "running" || snapshot.Status == "starting")
-                    return snapshot;
-
-                _pendingTransition = RuntimeTransition.Starting;
-                snapshot = BuildSnapshot(null);
-                PublishSnapshot(snapshot);
-            }
-
-            await _commandDispatcher.QueueCommandAsync(
+            await DispatchCommandAsync(
                 "runtime.launch",
-                new Dictionary<string, string>(),
                 cancellationToken).ConfigureAwait(false);
 
             lock (_lock)
@@ -87,25 +77,37 @@ namespace StreamSuites.DesktopAdmin.Bridge
             }
         }
 
+        public RuntimeLifecycleSnapshot StartInBackground()
+        {
+            var canDispatch = TryBeginTransition(RuntimeTransition.Starting, out var snapshot);
+            if (!canDispatch)
+                return snapshot;
+
+            _ = Task.Run(async () =>
+            {
+                await DispatchCommandAsync(
+                    "runtime.launch",
+                    CancellationToken.None).ConfigureAwait(false);
+
+                lock (_lock)
+                {
+                    var updated = BuildSnapshot(null);
+                    PublishSnapshot(updated);
+                }
+            });
+
+            return snapshot;
+        }
+
         public async Task<RuntimeLifecycleSnapshot> StopAsync(
             CancellationToken cancellationToken = default)
         {
-            RuntimeLifecycleSnapshot snapshot;
+            var canDispatch = TryBeginTransition(RuntimeTransition.Stopping, out var snapshot);
+            if (!canDispatch)
+                return snapshot;
 
-            lock (_lock)
-            {
-                snapshot = BuildSnapshot(null);
-                if (snapshot.Status == "stopped" || snapshot.Status == "stopping")
-                    return snapshot;
-
-                _pendingTransition = RuntimeTransition.Stopping;
-                snapshot = BuildSnapshot(null);
-                PublishSnapshot(snapshot);
-            }
-
-            await _commandDispatcher.QueueCommandAsync(
+            await DispatchCommandAsync(
                 "runtime.terminate",
-                new Dictionary<string, string>(),
                 cancellationToken).ConfigureAwait(false);
 
             lock (_lock)
@@ -114,6 +116,57 @@ namespace StreamSuites.DesktopAdmin.Bridge
                 PublishSnapshot(snapshot);
                 return snapshot;
             }
+        }
+
+        public RuntimeLifecycleSnapshot StopInBackground()
+        {
+            var canDispatch = TryBeginTransition(RuntimeTransition.Stopping, out var snapshot);
+            if (!canDispatch)
+                return snapshot;
+
+            _ = Task.Run(async () =>
+            {
+                await DispatchCommandAsync(
+                    "runtime.terminate",
+                    CancellationToken.None).ConfigureAwait(false);
+
+                lock (_lock)
+                {
+                    var updated = BuildSnapshot(null);
+                    PublishSnapshot(updated);
+                }
+            });
+
+            return snapshot;
+        }
+
+        private bool TryBeginTransition(RuntimeTransition transition, out RuntimeLifecycleSnapshot snapshot)
+        {
+            lock (_lock)
+            {
+                snapshot = BuildSnapshot(null);
+
+                if (transition == RuntimeTransition.Starting &&
+                    (snapshot.Status == "running" || snapshot.Status == "starting"))
+                    return false;
+
+                if (transition == RuntimeTransition.Stopping &&
+                    (snapshot.Status == "stopped" || snapshot.Status == "stopping"))
+                    return false;
+
+                _pendingTransition = transition;
+                snapshot = BuildSnapshot(null);
+                PublishSnapshot(snapshot);
+                return true;
+            }
+        }
+
+        private Task DispatchCommandAsync(string command, CancellationToken cancellationToken)
+        {
+            return _commandDispatcher.QueueCommandAsync(
+                command,
+                new Dictionary<string, string>(),
+                cancellationToken);
         }
 
         private RuntimeLifecycleSnapshot BuildSnapshot(bool? runtimeRunningOverride)
