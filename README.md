@@ -43,23 +43,55 @@ Tallies are tracked as a **first-class runtime concept** alongside polls and cli
 - All control-plane and data-plane sources originate here.
 - Dashboards, overlays, and extensions are **downstream consumers only**.
 
-## WinForms Desktop Admin Dashboard
+## Discord Integration Overview
+
+- The Discord bot supports **per-guild** configuration.
+- All Discord configuration is scoped by `guild_id`.
+- The runtime is the **authoritative** executor of Discord behavior.
+
+Discord logging and notifications are configured per guild:
+- **Logging** is **disabled by default** and must be explicitly enabled with a
+  designated logging channel.
+- **Notification channels** are optional and can be set for general events or
+  per-platform clip notifications.
+
+## Per-Guild Discord Configuration
+
+- Each Discord guild has isolated configuration keyed by `guild_id`.
+- Logging is **off by default** and must be explicitly enabled with a target
+  channel.
+- Notification channels are optional and platform-specific.
+
+Supported notification categories:
+- General
+- Rumble clips
+- YouTube clips
+- Kick clips
+- Pilled clips
+- Twitch clips
+
+## WinForms Desktop Admin (Authoritative)
 
 - **Location:** `desktop-admin/`
+- Lives in **this repository**.
 - Runs locally on the same machine as the runtime.
+- Local, privileged, and **authoritative**.
+- Does **not** use Discord OAuth.
+- Can configure **all connected guilds** without restriction.
 - Retains **direct filesystem access** to runtime exports and snapshots.
 - Reads runtime state directly from disk without additional services.
 - Can launch and terminate runtime processes as part of a privileged local control plane.
 - Manages local paths and configuration to align exports with operator expectations.
-- Intended to become the **primary administrative interface**, ahead of any web-based controls.
+- Intended for operators with direct runtime access; this authority model is by design,
+  not a missing security feature.
 
-## Relationship to Web Dashboard
+## Web Dashboard Relationship
 
-- The web dashboard exists in a **separate repository**.
-- It consumes runtime-exported JSON artifacts only.
+- The web dashboard is **not** in this repository.
+- It consumes runtime-exported state only.
+- It is gated by Discord OAuth (documented elsewhere).
 - It has **no process control**, **no filesystem authority**, and **no write paths**.
-- It never depends on the WinForms Desktop Admin.
-- Reduced capability is **intentional** to preserve runtime integrity.
+- Runtime remains the **authoritative** executor for all behavior.
 
 ## Versioning Policy
 
