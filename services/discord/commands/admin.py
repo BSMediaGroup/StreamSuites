@@ -26,10 +26,15 @@ import time
 from pathlib import Path
 from typing import Optional, Dict, Any, TYPE_CHECKING, Iterable
 
+from core.config_loader import ConfigLoader
+from core.jobs import JobRegistry
+from core.registry import CreatorRegistry
+from media.jobs.clip_job import ClipJob
+from services.clips.manager import clip_manager
+from services.triggers.actions import ActionExecutor
 from shared.logging.logger import get_logger
 from shared.runtime.admin_contract import read_state
 from shared.storage.state_store import get_all_jobs, record_trigger_fire
-from core.config_loader import ConfigLoader
 from services.discord.permissions import DiscordPermissionResolver
 from services.discord.logging import DiscordLogAdapter
 from services.discord.status import DiscordStatusManager
@@ -62,6 +67,9 @@ class AdminCommandHandler:
         self._supervisor = supervisor
 
         self._platform_overrides_path = Path("shared/config/platform_overrides.json")
+        self._job_registry: Optional[JobRegistry] = None
+        self._creator_contexts: Dict[str, Any] = {}
+        self._clip_manager_started = False
 
     # --------------------------------------------------
     # Internal helpers
@@ -144,6 +152,41 @@ class AdminCommandHandler:
             if isinstance(name, str) and self._normalize_name(name) == normalized:
                 return entry
         return None
+
+    def _load_creator_contexts(self) -> Dict[str, Any]:
+        if self._creator_contexts:
+            return self._creator_contexts
+
+        config_loader = ConfigLoader()
+        platform_config = config_loader.load_platforms_config()
+        creators_config = config_loader.load_creators_config()
+
+        registry = CreatorRegistry(config_loader=config_loader)
+        self._creator_contexts = registry.load(
+            creators_data=creators_config,
+            platform_defaults=platform_config,
+        )
+        return self._creator_contexts
+
+    async def _ensure_clip_runtime(self, ctx: Any) -> None:
+        if self._job_registry is None:
+            system_config = ConfigLoader().load_system_config()
+            job_flags = system_config.system.jobs
+            self._job_registry = JobRegistry(job_enable_flags=job_flags)
+
+        clips_feature = (
+            getattr(ctx, "features", {}).get("clips", {})
+            if isinstance(getattr(ctx, "features", {}), dict)
+            else {}
+        )
+        clips_enabled = bool(clips_feature.get("enabled", False))
+
+        if clips_enabled and "clip" not in self._job_registry._job_types:
+            self._job_registry.register("clip", ClipJob)
+
+        if clips_enabled and not self._clip_manager_started:
+            await clip_manager.start()
+            self._clip_manager_started = True
 
     # --------------------------------------------------
     # STATUS COMMANDS
@@ -346,6 +389,41 @@ class AdminCommandHandler:
         trigger_id = match.get("trigger_id") or normalized
         actions = match.get("actions") if isinstance(match.get("actions"), list) else []
 
+        ctx = None
+        if creator_id:
+            ctx = self._load_creator_contexts().get(str(creator_id))
+            if not ctx:
+                return {
+                    "ok": False,
+                    "message": f"Creator '{creator_id}' is not available in runtime config.",
+                }
+
+        execution_results = []
+        if actions and ctx:
+            normalized_actions = []
+            for action in actions:
+                if not isinstance(action, dict):
+                    continue
+                action_type = action.get("action_type") or action.get("type")
+                if action_type == "enqueue_clip_job":
+                    await self._ensure_clip_runtime(ctx)
+                    payload = dict(action.get("payload") or {})
+                    payload.setdefault("ctx", ctx)
+                    normalized_actions.append({**action, "payload": payload})
+                else:
+                    normalized_actions.append(action)
+
+            executor = ActionExecutor(
+                creator_id=str(ctx.creator_id),
+                job_registry=self._job_registry,
+            )
+
+            try:
+                execution_results = await executor.execute(normalized_actions)
+            except Exception as e:
+                log.warning(f"Trigger execution failed: {e}")
+                return {"ok": False, "message": f"Trigger execution failed: {e}"}
+
         if creator_id:
             record_trigger_fire(str(creator_id), str(trigger_id))
 
@@ -358,15 +436,19 @@ class AdminCommandHandler:
         )
 
         creator_label = str(creator_id) if creator_id else "unknown"
+        success_count = len([r for r in execution_results if r.get("status") == "success"])
+        failure_count = len([r for r in execution_results if r.get("status") == "failed"])
         return {
             "ok": True,
             "message": (
-                f"Trigger '{trigger_id}' recorded for creator '{creator_label}'. "
-                f"Actions attached: {len(actions)}."
+                f"Trigger '{trigger_id}' executed for creator '{creator_label}'. "
+                f"Actions: {len(actions)} "
+                f"(success={success_count}, failed={failure_count})."
             ),
             "trigger_id": trigger_id,
             "creator_id": creator_id,
             "actions": actions,
+            "results": execution_results,
         }
 
     async def cmd_jobs(
