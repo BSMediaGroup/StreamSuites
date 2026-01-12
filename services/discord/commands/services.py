@@ -22,7 +22,12 @@ from discord import app_commands
 from discord.ext import commands
 
 from shared.logging.logger import get_logger
-from shared.config.discord import get_guild_config, update_guild_config
+from shared.config.discord import (
+    get_guild_config,
+    notification_channel_keys,
+    notification_label,
+    update_guild_config,
+)
 from services.discord.status import DiscordStatusManager
 from services.discord.permissions import require_admin
 from services.discord.embeds import success_embed, error_embed, info_embed
@@ -138,7 +143,7 @@ async def logging_set_channel(
 
     update_guild_config(
         interaction.guild.id,
-        {"logging_channel_id": channel.id},
+        {"logging": {"channel_id": channel.id}},
     )
 
     await interaction.response.send_message(
@@ -170,7 +175,8 @@ async def logging_enable(
         return
 
     current = get_guild_config(interaction.guild.id)
-    if not current.get("logging_channel_id"):
+    logging = current.get("logging", {})
+    if not logging.get("channel_id"):
         await interaction.response.send_message(
             embed=error_embed(
                 "Logging channel missing",
@@ -180,7 +186,7 @@ async def logging_enable(
         )
         return
 
-    update_guild_config(interaction.guild.id, {"logging_enabled": True})
+    update_guild_config(interaction.guild.id, {"logging": {"enabled": True}})
     await interaction.response.send_message(
         embed=success_embed("Logging Enabled", "Discord bot logging is now enabled."),
         ephemeral=False,
@@ -206,7 +212,7 @@ async def logging_disable(
         )
         return
 
-    update_guild_config(interaction.guild.id, {"logging_enabled": False})
+    update_guild_config(interaction.guild.id, {"logging": {"enabled": False}})
     await interaction.response.send_message(
         embed=success_embed("Logging Disabled", "Discord bot logging is now disabled."),
         ephemeral=False,
@@ -227,12 +233,8 @@ async def logging_disable(
 )
 @app_commands.choices(
     type=[
-        app_commands.Choice(name="general", value="general"),
-        app_commands.Choice(name="rumble", value="rumble"),
-        app_commands.Choice(name="youtube", value="youtube"),
-        app_commands.Choice(name="kick", value="kick"),
-        app_commands.Choice(name="pilled", value="pilled"),
-        app_commands.Choice(name="twitch", value="twitch"),
+        app_commands.Choice(name=notification_label(key), value=key)
+        for key in notification_channel_keys()
     ]
 )
 @require_admin()
@@ -248,21 +250,15 @@ async def notifications_set(
         )
         return
 
-    mapping = {
-        "general": "notifications_general",
-        "rumble": "notifications_rumble_clips",
-        "youtube": "notifications_youtube_clips",
-        "kick": "notifications_kick_clips",
-        "pilled": "notifications_pilled_clips",
-        "twitch": "notifications_twitch_clips",
-    }
-    key = mapping[type.value]
-    update_guild_config(interaction.guild.id, {key: channel.id})
+    update_guild_config(
+        interaction.guild.id,
+        {"notifications": {type.value: channel.id}},
+    )
 
     await interaction.response.send_message(
         embed=success_embed(
             "Notification Channel Set",
-            f"{type.name.title()} notifications will post to {channel.mention}.",
+            f"{type.name} notifications will post to {channel.mention}.",
         ),
         ephemeral=False,
     )

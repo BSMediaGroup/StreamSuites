@@ -3271,6 +3271,7 @@ namespace StreamSuites.DesktopAdmin
                 .ConfigureAwait(true);
 
             _discordConfigCache = config ?? new DiscordConfigExport();
+            _discordConfigCache.Normalize();
             UpdateDiscordConfigStatus(configPath);
             UpdateDiscordGuildList();
             ApplyDiscordGuildSelection();
@@ -3326,14 +3327,14 @@ namespace StreamSuites.DesktopAdmin
 
             if (_discordConfigCache.Guilds.TryGetValue(guildId, out var config))
             {
-                _discordLoggingEnabledToggle.Checked = config.Logging_Enabled;
-                _discordLoggingChannelId.Text = FormatChannelId(config.Logging_Channel_Id);
-                _discordNotificationsGeneral.Text = FormatChannelId(config.Notifications_General);
-                _discordNotificationsRumble.Text = FormatChannelId(config.Notifications_Rumble_Clips);
-                _discordNotificationsYoutube.Text = FormatChannelId(config.Notifications_Youtube_Clips);
-                _discordNotificationsKick.Text = FormatChannelId(config.Notifications_Kick_Clips);
-                _discordNotificationsPilled.Text = FormatChannelId(config.Notifications_Pilled_Clips);
-                _discordNotificationsTwitch.Text = FormatChannelId(config.Notifications_Twitch_Clips);
+                _discordLoggingEnabledToggle.Checked = config.Logging.Enabled;
+                _discordLoggingChannelId.Text = FormatChannelId(config.Logging.Channel_Id);
+                _discordNotificationsGeneral.Text = FormatChannelId(config.Notifications.General);
+                _discordNotificationsRumble.Text = FormatChannelId(config.Notifications.Rumble_Clips);
+                _discordNotificationsYoutube.Text = FormatChannelId(config.Notifications.Youtube_Clips);
+                _discordNotificationsKick.Text = FormatChannelId(config.Notifications.Kick_Clips);
+                _discordNotificationsPilled.Text = FormatChannelId(config.Notifications.Pilled_Clips);
+                _discordNotificationsTwitch.Text = FormatChannelId(config.Notifications.Twitch_Clips);
                 return;
             }
 
@@ -3374,20 +3375,21 @@ namespace StreamSuites.DesktopAdmin
                 _discordConfigStatus.Text = "Discord config not loaded.";
         }
 
-        private static string FormatChannelId(long? value)
+        private static string FormatChannelId(string? value)
         {
-            return value.HasValue ? value.Value.ToString() : string.Empty;
+            return string.IsNullOrWhiteSpace(value) ? string.Empty : value;
         }
 
-        private static bool TryParseChannelId(string? raw, out long? value)
+        private static bool TryNormalizeChannelId(string? raw, out string? value)
         {
             value = null;
             if (string.IsNullOrWhiteSpace(raw))
                 return true;
 
-            if (long.TryParse(raw.Trim(), out var parsed))
+            var trimmed = raw.Trim();
+            if (trimmed.All(char.IsDigit))
             {
-                value = parsed;
+                value = trimmed;
                 return true;
             }
 
@@ -3407,19 +3409,19 @@ namespace StreamSuites.DesktopAdmin
                 return;
             }
 
-            if (!TryParseChannelId(_discordLoggingChannelId.Text, out var loggingChannelId))
+            if (!TryNormalizeChannelId(_discordLoggingChannelId.Text, out var loggingChannelId))
             {
                 _discordConfigStatus.Text = "Logging channel ID must be numeric.";
                 _discordConfigStatus.ForeColor = Color.DarkRed;
                 return;
             }
 
-            if (!TryParseChannelId(_discordNotificationsGeneral.Text, out var generalId) ||
-                !TryParseChannelId(_discordNotificationsRumble.Text, out var rumbleId) ||
-                !TryParseChannelId(_discordNotificationsYoutube.Text, out var youtubeId) ||
-                !TryParseChannelId(_discordNotificationsKick.Text, out var kickId) ||
-                !TryParseChannelId(_discordNotificationsPilled.Text, out var pilledId) ||
-                !TryParseChannelId(_discordNotificationsTwitch.Text, out var twitchId))
+            if (!TryNormalizeChannelId(_discordNotificationsGeneral.Text, out var generalId) ||
+                !TryNormalizeChannelId(_discordNotificationsRumble.Text, out var rumbleId) ||
+                !TryNormalizeChannelId(_discordNotificationsYoutube.Text, out var youtubeId) ||
+                !TryNormalizeChannelId(_discordNotificationsKick.Text, out var kickId) ||
+                !TryNormalizeChannelId(_discordNotificationsPilled.Text, out var pilledId) ||
+                !TryNormalizeChannelId(_discordNotificationsTwitch.Text, out var twitchId))
             {
                 _discordConfigStatus.Text = "Notification channel IDs must be numeric.";
                 _discordConfigStatus.ForeColor = Color.DarkRed;
@@ -3428,17 +3430,24 @@ namespace StreamSuites.DesktopAdmin
 
             var entry = new DiscordGuildConfig
             {
-                Logging_Enabled = _discordLoggingEnabledToggle.Checked,
-                Logging_Channel_Id = loggingChannelId,
-                Notifications_General = generalId,
-                Notifications_Rumble_Clips = rumbleId,
-                Notifications_Youtube_Clips = youtubeId,
-                Notifications_Kick_Clips = kickId,
-                Notifications_Pilled_Clips = pilledId,
-                Notifications_Twitch_Clips = twitchId
+                Logging = new DiscordLoggingConfig
+                {
+                    Enabled = _discordLoggingEnabledToggle.Checked,
+                    Channel_Id = loggingChannelId
+                },
+                Notifications = new DiscordNotificationsConfig
+                {
+                    General = generalId,
+                    Rumble_Clips = rumbleId,
+                    Youtube_Clips = youtubeId,
+                    Kick_Clips = kickId,
+                    Pilled_Clips = pilledId,
+                    Twitch_Clips = twitchId
+                }
             };
 
             _discordConfigCache.Guilds[guildId] = entry;
+            _discordConfigCache.Normalize();
 
             var writePath = ResolveConfigWritePath("shared", "config", "discord.json");
             if (string.IsNullOrWhiteSpace(writePath))

@@ -1,3 +1,5 @@
 {
-  "guilds": {}
+  "discord": {
+    "guilds": {}
+  }
 }

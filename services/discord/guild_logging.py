@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 import discord
 
-from shared.config.discord import get_guild_config
+from shared.config.discord import get_guild_config, parse_channel_id
 from shared.logging.logger import get_logger
 from services.discord.embeds import info_embed, error_embed
 
@@ -98,11 +98,13 @@ class DiscordGuildLogDispatcher:
 
     async def _send_guild_log(self, guild: discord.Guild, embed: discord.Embed) -> None:
         config = get_guild_config(guild.id)
-        if not config.get("logging_enabled"):
+        logging = config.get("logging", {})
+        if not logging.get("enabled"):
             return
 
-        channel_id = config.get("logging_channel_id")
-        if not channel_id:
+        channel_id_raw = logging.get("channel_id")
+        channel_id = parse_channel_id(channel_id_raw)
+        if channel_id is None:
             return
 
         channel = guild.get_channel(channel_id)

@@ -282,6 +282,7 @@ StreamSuites/
 │   └── version.py
 ├── schemas/
 │   ├── creators.schema.json
+│   ├── discord.schema.json
 │   ├── platforms.schema.json
 │   ├── system.schema.json
 │   └── triggers.schema.json
@@ -855,6 +856,31 @@ snapshots under `shared/state/discord/runtime.json` (and optional
 - Configuration: feature-gated per creator via `shared/config/creators.json`
   platform flags and runtime settings under `shared/config/`.
 
+#### Authoritative Discord guild configuration schema
+
+The single source of truth for per-guild Discord configuration is
+`shared/config/discord.json` and is formally defined in
+`schemas/discord.schema.json`. All Discord guild-scoped values are nested
+under `discord.guilds`, and missing keys default safely (logging disabled,
+no channels). Malformed entries are ignored at runtime, and new notification
+types can be added without breaking existing configs.
+
+```yaml
+discord:
+  guilds:
+    "123456789012345678":
+      logging:
+        enabled: false
+        channel_id: null
+      notifications:
+        general: null
+        rumble_clips: null
+        youtube_clips: null
+        kick_clips: null
+        pilled_clips: null
+        twitch_clips: null
+```
+
 ### High-level flow
 
 1. Application bootstraps environment and creator contexts
@@ -1186,6 +1212,7 @@ StreamSuites/
 │       └── time.py
 ├── schemas/
 │   ├── creators.schema.json
+│   ├── discord.schema.json
 │   ├── platforms.schema.json
 │   ├── system.schema.json
 │   └── triggers.schema.json
