@@ -1,5 +1,6 @@
 import asyncio
-from typing import Optional
+import time
+from typing import Awaitable, Callable, Optional
 
 from services.twitch.api.chat import TwitchChatClient
 from services.twitch.models.message import TwitchChatMessage
@@ -8,6 +9,7 @@ from services.triggers.validation import NonEmptyChatValidationTrigger
 from services.triggers.actions import ActionExecutor
 from shared.logging.logger import get_logger
 from core.state_exporter import runtime_state, runtime_snapshot_exporter
+from shared.storage.state_store import get_last_trigger_time, record_trigger_fire
 
 log = get_logger("twitch.chat_worker", runtime="streamsuites")
 
@@ -21,6 +23,8 @@ class TwitchChatWorker:
     - Emit normalized chat events for future trigger routing
     - Remain cancellation-safe and free of side effects on import
     """
+
+    COMMAND_PREFIX = "!"
 
     def __init__(
         self,
@@ -54,6 +58,18 @@ class TwitchChatWorker:
         self._triggers = TriggerRegistry(creator_id=ctx.creator_id)
         self._triggers.register(NonEmptyChatValidationTrigger())
         self._actions = action_executor
+
+        # --------------------------------------------------
+        # Audience-facing command registry (Twitch only)
+        # NOTE: Discord is for admin/control commands.
+        # --------------------------------------------------
+        self._command_handlers: dict[str, Callable[[TwitchChatMessage, list[str]], Awaitable[None]]] = {
+            "ping": self._handle_ping_command,
+            "clip": self._handle_clip_command,
+        }
+
+        self._clip_cooldown_seconds = self._resolve_clip_cooldown()
+        self._default_clip_length = self._resolve_default_clip_length()
 
     # ------------------------------------------------------------------ #
 
@@ -152,18 +168,151 @@ class TwitchChatWorker:
                 log.debug("Runtime snapshot publish skipped for Twitch trigger")
 
         # --------------------------------------------------
-        # Built-in safety triggers (temporary)
+        # Audience-facing chat commands (public triggers only)
         # --------------------------------------------------
-        await self._handle_builtin_triggers(event, message)
+        await self._handle_command(message)
 
-    async def _handle_builtin_triggers(
-        self,
-        event: dict,
-        message: TwitchChatMessage,
-    ) -> None:
-        """
-        Minimal safety trigger for smoke testing.
-        """
-        text = (event.get("text") or "").strip().lower()
-        if text == "!ping":
-            await self.send_message("pong")
+    def _resolve_clip_cooldown(self) -> float:
+        limits = getattr(self.ctx, "limits", {}) or {}
+        feature_cfg = (
+            getattr(self.ctx, "features", {}).get("clips", {})
+            if isinstance(getattr(self.ctx, "features", {}), dict)
+            else {}
+        )
+        cooldown = limits.get(
+            "clip_min_cooldown_seconds",
+            feature_cfg.get("min_cooldown_seconds", 120),
+        )
+        try:
+            return max(0.0, float(cooldown))
+        except (TypeError, ValueError):
+            return 120.0
+
+    def _resolve_default_clip_length(self) -> int:
+        limits = getattr(self.ctx, "limits", {}) or {}
+        feature_cfg = (
+            getattr(self.ctx, "features", {}).get("clips", {})
+            if isinstance(getattr(self.ctx, "features", {}), dict)
+            else {}
+        )
+        default_len = feature_cfg.get("default_length", 30)
+        max_len = limits.get("clip_max_duration_seconds", feature_cfg.get("max_duration_seconds"))
+        try:
+            default_len = int(default_len)
+        except (TypeError, ValueError):
+            default_len = 30
+        try:
+            max_len = int(max_len) if max_len is not None else None
+        except (TypeError, ValueError):
+            max_len = None
+        if max_len and default_len > max_len:
+            return max_len
+        return max(1, default_len)
+
+    def _parse_command(self, text: str) -> tuple[str, list[str]] | None:
+        content = text.strip()
+        if not content.startswith(self.COMMAND_PREFIX):
+            return None
+        content = content[len(self.COMMAND_PREFIX):].strip()
+        if not content:
+            return None
+        parts = content.split()
+        return parts[0].lower(), parts[1:]
+
+    def _is_self_message(self, message: TwitchChatMessage) -> bool:
+        return message.username.lower() == self.nickname.lower()
+
+    async def _handle_command(self, message: TwitchChatMessage) -> None:
+        if self._is_self_message(message):
+            return
+
+        parsed = self._parse_command(message.text or "")
+        if not parsed:
+            return
+
+        command, args = parsed
+        handler = self._command_handlers.get(command)
+        if not handler:
+            return
+
+        await handler(message, args)
+
+    async def _handle_ping_command(self, message: TwitchChatMessage, args: list[str]) -> None:
+        _ = args
+        response = f"📢 StreamSuites Bot: @{message.username} Pong!"
+        await self.send_message(response)
+
+    async def _handle_clip_command(self, message: TwitchChatMessage, args: list[str]) -> None:
+        _ = args
+        clip_feature = (
+            getattr(self.ctx, "features", {}).get("clips", {})
+            if isinstance(getattr(self.ctx, "features", {}), dict)
+            else {}
+        )
+        if not bool(clip_feature.get("enabled", False)):
+            await self.send_message(
+                "📢 StreamSuites Bot: Clips are not enabled for this channel."
+            )
+            return
+
+        if not self._actions:
+            await self.send_message(
+                "📢 StreamSuites Bot: Clip requests are unavailable right now."
+            )
+            return
+
+        active = self._actions.get_active_job_count("clip")
+        if active is not None and active > 0:
+            await self.send_message(
+                "📢 StreamSuites Bot: A clip is already being processed. Please wait a moment."
+            )
+            return
+
+        trigger_key = "twitch:clip"
+        now = time.time()
+        last = get_last_trigger_time(self.ctx.creator_id, trigger_key)
+        if last is not None and (now - last) < self._clip_cooldown_seconds:
+            remaining = int(self._clip_cooldown_seconds - (now - last))
+            await self.send_message(
+                f"📢 StreamSuites Bot: Clip command is on cooldown. Try again in {remaining}s."
+            )
+            return
+
+        source_path = (getattr(self.ctx, "limits", {}) or {}).get("clip_source_path")
+        if not source_path:
+            await self.send_message(
+                "📢 StreamSuites Bot: Clip source is not configured. Please ask the streamer."
+            )
+            return
+
+        record_trigger_fire(self.ctx.creator_id, trigger_key, now)
+        runtime_state.record_event(
+            source="twitch",
+            severity="info",
+            message=f"Clip requested by {message.username} via chat command",
+        )
+
+        ack = (
+            f"📢 StreamSuites Bot: @{message.username} clipping the last "
+            f"{self._default_clip_length}s..."
+        )
+        await self.send_message(ack)
+
+        payload = {
+            "action_type": "enqueue_clip_job",
+            "trigger_id": "twitch.command.clip",
+            "platform": "twitch",
+            "payload": {
+                "ctx": self.ctx,
+                "job_payload": {
+                    "length": self._default_clip_length,
+                    "source_path": source_path,
+                    "start_seconds": 0.0,
+                    "clipper_username": message.username,
+                    "source_title": f"{self.ctx.display_name} Livestream",
+                    "requested_by": f"twitch:{message.username}",
+                },
+            },
+        }
+
+        await self._actions.execute([payload], default_platform="twitch")
