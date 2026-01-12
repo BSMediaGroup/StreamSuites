@@ -4987,11 +4987,24 @@ namespace StreamSuites.DesktopAdmin
             var runtimeStatus = FormatRuntimeStatus(snapshot.RuntimeStatus);
             var bridgeStatus = FormatBridgeStatus(snapshot.Status);
             var address = BuildBridgeAddress(snapshot.BoundPort);
-            return $"{dot} StreamSuites {_runtimeVersionInfo.ToDisplayVersion()} • " +
-                   $"{_runtimeVersionInfo.ToDisplayBuild()} - {label}\n" +
-                   $"StreamSuites Runtime: {runtimeStatus}\n" +
-                   $"Snapshot State: {label}\n" +
-                   $"Bridge Server: {bridgeStatus} ({address})";
+            var text = $"{dot} StreamSuites {_runtimeVersionInfo.ToDisplayVersion()} • " +
+                       $"{_runtimeVersionInfo.ToDisplayBuild()} - {label} | " +
+                       $"Runtime: {runtimeStatus} | " +
+                       $"Snapshot: {label} | " +
+                       $"Bridge: {bridgeStatus} ({address})";
+            return TrimNotifyIconText(text);
+        }
+
+        private static string TrimNotifyIconText(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return string.Empty;
+
+            const int maxLength = 127;
+            if (text.Length <= maxLength)
+                return text;
+
+            return text.Substring(0, maxLength);
         }
 
         private string BuildSnapshotTooltipText(string details)
