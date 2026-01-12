@@ -57,15 +57,20 @@ class DiscordClient:
     def __init__(self, supervisor=None):
         load_dotenv()
 
-        token = os.getenv("DISCORD_BOT_TOKEN_DANIEL")
+        token = (
+            os.getenv("DISCORD_BOT_TOKEN")
+            or os.getenv("DISCORD_CONTROL_BOT_TOKEN")
+            or os.getenv("DISCORD_BOT_TOKEN_DANIEL")
+        )
         if not token:
             raise RuntimeError(
-                "DISCORD_BOT_TOKEN_DANIEL not found in environment"
+                "Discord bot token not found in environment"
             )
 
         log.info(f"Discord bot token present: {bool(token)}")
 
         self._token: str = token
+        self._guild_id: Optional[int] = self._load_guild_id()
         self._bot: Optional[commands.Bot] = None
         self._ready_event = asyncio.Event()
         self._supervisor = supervisor
@@ -77,6 +82,19 @@ class DiscordClient:
         self.logger = DiscordLogAdapter()
         self.permissions = DiscordPermissionResolver()
         self.heartbeat = DiscordHeartbeat()
+
+    # --------------------------------------------------
+
+    @staticmethod
+    def _load_guild_id() -> Optional[int]:
+        raw = os.getenv("DISCORD_GUILD_ID")
+        if not raw:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            log.warning(f"Invalid DISCORD_GUILD_ID value: {raw}")
+            return None
 
     # --------------------------------------------------
 
@@ -142,8 +160,14 @@ class DiscordClient:
 
             # Sync slash commands
             try:
-                await bot.tree.sync()
-                log.info("Discord command tree synced")
+                if self._guild_id:
+                    guild = discord.Object(id=self._guild_id)
+                    bot.tree.copy_global_to(guild=guild)
+                    await bot.tree.sync(guild=guild)
+                    log.info(f"Discord command tree synced to guild {self._guild_id}")
+                else:
+                    await bot.tree.sync()
+                    log.info("Discord command tree synced globally")
             except Exception as e:
                 log.error(f"Failed to sync Discord commands: {e}")
 
