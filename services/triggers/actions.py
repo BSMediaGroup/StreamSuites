@@ -93,6 +93,23 @@ class ActionExecutor:
         return results
 
     # ------------------------------------------------------------
+    # Job visibility helpers
+    # ------------------------------------------------------------
+
+    def get_active_job_count(self, job_type: str, *, creator_id: Optional[str] = None) -> Optional[int]:
+        if not self._job_registry:
+            return None
+
+        resolved_creator = creator_id or self.creator_id
+        try:
+            return self._job_registry.count_active_jobs(resolved_creator, job_type)
+        except Exception as e:
+            log.debug(
+                f"[{self.creator_id}] Active job count unavailable for {job_type}: {e}"
+            )
+            return None
+
+    # ------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------
 
