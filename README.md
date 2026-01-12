@@ -191,7 +191,8 @@ StreamSuites/
 │   │   ├── AboutDialog.cs
 │   │   ├── Bridge/
 │   │   │   ├── BridgeServer.cs
-│   │   │   └── BridgeState.cs
+│   │   │   ├── BridgeState.cs
+│   │   │   └── RuntimeLifecycleController.cs
 │   │   ├── MainForm.Designer.cs
 │   │   ├── MainForm.cs
 │   │   ├── MainForm.resx

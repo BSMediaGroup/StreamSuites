@@ -25,6 +25,7 @@ namespace StreamSuites.DesktopAdmin
         private readonly AdminCommandDispatcher _commandDispatcher;
         private readonly JsonExportReader _exportReader;
         private readonly BridgeState _bridgeState;
+        private readonly RuntimeLifecycleController _runtimeController;
         private readonly BridgeServer _bridgeServer;
         private readonly EventHandler _bridgeStateChangedHandler;
         private bool _bridgeUiDetached;
@@ -68,6 +69,7 @@ namespace StreamSuites.DesktopAdmin
         private Label _bridgePortLabel;
         private Label _bridgeErrorLabel;
         private Button _bridgeToggleButton;
+        private Button _bridgeHealthButton;
         private Label _bridgeHeaderStatus;
         private TabPage _tabBridge;
 
@@ -218,7 +220,11 @@ namespace StreamSuites.DesktopAdmin
             _commandDispatcher = new AdminCommandDispatcher(_appState);
             _exportReader = new JsonExportReader(fileAccessor);
             _bridgeState = new BridgeState();
-            _bridgeServer = new BridgeServer(_bridgeState, 8787, LogBridge);
+            _runtimeController = new RuntimeLifecycleController(
+                _bridgeState,
+                _appState,
+                _commandDispatcher);
+            _bridgeServer = new BridgeServer(_bridgeState, _runtimeController, 8787, LogBridge);
             _bridgeStateChangedHandler = (_, __) => UpdateBridgeUi();
             _bridgeState.StateChanged += _bridgeStateChangedHandler;
 
@@ -570,6 +576,7 @@ namespace StreamSuites.DesktopAdmin
             bridgeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             bridgeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             bridgeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            bridgeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
             var bridgeStatusTitle = new Label
             {
@@ -625,6 +632,15 @@ namespace StreamSuites.DesktopAdmin
                 Margin = new Padding(0, 6, 0, 0)
             };
 
+            _bridgeHealthButton = new Button
+            {
+                Text = "Open Bridge Health Check",
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0, 6, 0, 0),
+                Enabled = false
+            };
+
             bridgeLayout.Controls.Add(bridgeStatusTitle, 0, 0);
             bridgeLayout.Controls.Add(_bridgeStatusLabel, 1, 0);
             bridgeLayout.Controls.Add(bridgePortTitle, 0, 1);
@@ -633,6 +649,8 @@ namespace StreamSuites.DesktopAdmin
             bridgeLayout.Controls.Add(_bridgeErrorLabel, 1, 2);
             bridgeLayout.Controls.Add(_bridgeToggleButton, 0, 3);
             bridgeLayout.SetColumnSpan(_bridgeToggleButton, 2);
+            bridgeLayout.Controls.Add(_bridgeHealthButton, 0, 4);
+            bridgeLayout.SetColumnSpan(_bridgeHealthButton, 2);
 
             bridgeGroup.Controls.Add(bridgeLayout);
 
@@ -641,6 +659,7 @@ namespace StreamSuites.DesktopAdmin
             _tabBridge.Controls.Add(panel);
 
             _bridgeToggleButton.Click += async (_, __) => await ToggleBridgeServerAsync();
+            _bridgeHealthButton.Click += (_, __) => OpenBridgeHealthCheck();
             UpdateBridgeUi();
         }
 
@@ -2290,6 +2309,33 @@ namespace StreamSuites.DesktopAdmin
                 await StartBridgeServerAsync();
         }
 
+        private void OpenBridgeHealthCheck()
+        {
+            var snapshot = _bridgeState.GetSnapshot();
+            var port = snapshot.BoundPort > 0 ? snapshot.BoundPort : _bridgeServer.Port;
+            var url = $"http://127.0.0.1:{port}/health";
+
+            try
+            {
+                LogBridge($"[Bridge] Open health check: {url}");
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    this,
+                    $"Unable to open Bridge health check. {ex.Message}",
+                    "Bridge Health Check",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning
+                );
+            }
+        }
+
         private async void MainForm_FormClosing(object? sender, FormClosingEventArgs e)
         {
             DetachBridgeUi();
@@ -2313,7 +2359,8 @@ namespace StreamSuites.DesktopAdmin
             if (_bridgeStatusLabel == null ||
                 _bridgeToggleButton == null ||
                 _bridgePortLabel == null ||
-                _bridgeErrorLabel == null)
+                _bridgeErrorLabel == null ||
+                _bridgeHealthButton == null)
                 return;
 
             var snapshot = _bridgeState.GetSnapshot();
@@ -2352,6 +2399,8 @@ namespace StreamSuites.DesktopAdmin
                     ? "Stop Bridge"
                     : "Start Bridge";
 
+                _bridgeHealthButton.Enabled = snapshot.Status == "running";
+
                 if (_bridgeHeaderStatus != null)
                 {
                     _bridgeHeaderStatus.Text = $"Bridge: {statusText} ({address})";
@@ -2368,6 +2417,8 @@ namespace StreamSuites.DesktopAdmin
                     var (snapshotDot, snapshotLabel) = GetHealthLabel(_lastTrayHealth);
                     trayIcon.Text = BuildTrayTooltipText(snapshotDot, snapshotLabel);
                 }
+
+                UpdatePlatformActionButtons(GetSelectedPlatform());
             }
 
             if (InvokeRequired)
@@ -2381,7 +2432,10 @@ namespace StreamSuites.DesktopAdmin
             return status switch
             {
                 "running" => "Running",
+                "starting" => "Starting",
+                "stopping" => "Stopping",
                 "stopped" => "Stopped",
+                "error" => "Error",
                 _ => "Unknown"
             };
         }
@@ -2422,7 +2476,7 @@ namespace StreamSuites.DesktopAdmin
             if (!pathStatus.IsValid)
             {
                 HandleInvalidSnapshotPath(pathStatus);
-                _bridgeState.SetRuntimeStatus("stopped");
+                _runtimeController.UpdateFromSnapshot(null);
                 return;
             }
 
@@ -2430,7 +2484,7 @@ namespace StreamSuites.DesktopAdmin
             if (string.IsNullOrWhiteSpace(snapshotPath))
             {
                 HandleInvalidSnapshotPath(pathStatus);
-                _bridgeState.SetRuntimeStatus("stopped");
+                _runtimeController.UpdateFromSnapshot(null);
                 return;
             }
 
@@ -2451,7 +2505,7 @@ namespace StreamSuites.DesktopAdmin
                     SetSnapshotTooltip(null, "Snapshot missing runtime block.");
                     UpdatePlatformCount("Platforms: invalid");
                     UpdateStatusRuntime("Runtime: invalid snapshot");
-                    _bridgeState.SetRuntimeStatus("stopped");
+                    _runtimeController.UpdateFromSnapshot(null);
                     _platformBindingSource.DataSource = null;
                     ClearJobData();
                     ClearTelemetryData();
@@ -2478,7 +2532,7 @@ namespace StreamSuites.DesktopAdmin
                 UpdateSnapshotHealthIndicators(health);
                 SetSnapshotTooltip(snapshot, null);
                 UpdateStatusRuntime("Runtime: snapshot bound");
-                _bridgeState.SetRuntimeStatus("running");
+                _runtimeController.UpdateFromSnapshot(snapshot);
 
                 UpdatePlatformCount(
                     $"Platforms: {snapshot.Platforms?.Count ?? 0}"
@@ -2523,7 +2577,7 @@ namespace StreamSuites.DesktopAdmin
                 SetSnapshotTooltip(null, "Exception reading snapshot.");
                 UpdatePlatformCount("Platforms: error");
                 UpdateStatusRuntime("Runtime: disconnected");
-                _bridgeState.SetRuntimeStatus("stopped");
+                _runtimeController.UpdateFromSnapshot(null);
                 ClearJobData();
                 ClearTelemetryData();
                 ClearCreatorsData();
@@ -2554,7 +2608,7 @@ namespace StreamSuites.DesktopAdmin
             UpdatePlatformCount("Platforms: unknown");
             _platformBindingSource.DataSource = null;
             UpdateStatusRuntime("Runtime: disconnected");
-            _bridgeState.SetRuntimeStatus("stopped");
+            _runtimeController.UpdateFromSnapshot(null);
             _lastSuccessfulRefreshUtc = null;
             lblLastRefresh.Text = "Last refresh: —";
             ClearJobData();
@@ -4682,7 +4736,9 @@ namespace StreamSuites.DesktopAdmin
 
         private void UpdatePlatformActionButtons(PlatformStatus? platform)
         {
-            var runtimeRunning = _appState.LastSnapshot?.IsTimestampValid == true;
+            var runtimeSnapshot = _runtimeController.GetSnapshot();
+            var runtimeRunning = runtimeSnapshot.Status == "running" ||
+                                 runtimeSnapshot.Status == "starting";
             _btnLaunchMain.Text = runtimeRunning ? "Terminate Runtime" : "Launch Runtime";
             _btnLaunchMain.Enabled = _currentPathStatus?.IsValid == true;
 
@@ -4764,13 +4820,11 @@ namespace StreamSuites.DesktopAdmin
 
         private async Task ToggleRuntimeAsync()
         {
-            var runtimeRunning = _appState.LastSnapshot?.IsTimestampValid == true;
-            var command = runtimeRunning ? "runtime.terminate" : "runtime.launch";
-
-            await _commandDispatcher.QueueCommandAsync(
-                command,
-                new Dictionary<string, string>(),
-                CancellationToken.None);
+            var runtimeSnapshot = _runtimeController.GetSnapshot();
+            if (runtimeSnapshot.Status == "running" || runtimeSnapshot.Status == "stopping")
+                await _runtimeController.StopAsync(CancellationToken.None);
+            else
+                await _runtimeController.StartAsync(CancellationToken.None);
         }
 
         private async Task TogglePlatformClientAsync()
@@ -4963,7 +5017,7 @@ namespace StreamSuites.DesktopAdmin
         {
             _runtimeVersionInfo =
                 RuntimeVersionProvider.Load(_currentPathStatus?.SnapshotRoot);
-            _bridgeState.SetRuntimeVersion(_runtimeVersionInfo.ToDisplayVersion());
+            _runtimeController.SetRuntimeVersion(_runtimeVersionInfo.ToDisplayVersion());
             UpdateRuntimeVersionDisplay();
             UpdateUpdatesSummary();
             UpdateAboutSummary();
