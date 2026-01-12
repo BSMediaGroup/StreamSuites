@@ -202,6 +202,66 @@ def setup(
     # --------------------------------------------------
 
     @app_commands.command(
+        name="admin-set-status",
+        description="Set the bot's custom Discord status",
+    )
+    @app_commands.describe(
+        text="Status text to display",
+        emoji="Optional emoji (e.g., 🌎)",
+    )
+    @require_admin()
+    async def admin_set_status(
+        interaction: discord.Interaction,
+        text: str,
+        emoji: str | None = None,
+    ):
+        await interaction.response.defer(ephemeral=False)
+
+        result = await handler.cmd_set_status(
+            user_id=interaction.user.id,
+            guild_id=interaction.guild.id,
+            text=text,
+            emoji=emoji,
+        )
+
+        embed = (
+            success_embed("Status Updated", result["message"])
+            if result.get("ok")
+            else error_embed("Status Update Failed", result["message"])
+        )
+        await interaction.followup.send(embed=embed, ephemeral=False)
+
+    # --------------------------------------------------
+    # /status-clear
+    # --------------------------------------------------
+
+    @app_commands.command(
+        name="admin-clear-status",
+        description="Clear the bot's custom Discord status",
+    )
+    @require_admin()
+    async def admin_clear_status(
+        interaction: discord.Interaction,
+    ):
+        await interaction.response.defer(ephemeral=False)
+
+        result = await handler.cmd_clear_status(
+            user_id=interaction.user.id,
+            guild_id=interaction.guild.id,
+        )
+
+        embed = (
+            success_embed("Status Cleared", result["message"])
+            if result.get("ok")
+            else error_embed("Status Clear Failed", result["message"])
+        )
+        await interaction.followup.send(embed=embed, ephemeral=False)
+
+    # --------------------------------------------------
+    # /status
+    # --------------------------------------------------
+
+    @app_commands.command(
         name="status",
         description="Show a high-level StreamSuites system status summary",
     )

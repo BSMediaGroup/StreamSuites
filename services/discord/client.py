@@ -43,6 +43,17 @@ from services.discord.commands import admin_commands
 # NOTE: routed to Discord runtime log file
 log = get_logger("discord.client", runtime="discord")
 
+async def await_ready_or_fail(client: discord.Client, timeout: int = 30) -> None:
+    try:
+        await asyncio.wait_for(client.wait_until_ready(), timeout=timeout)
+    except asyncio.TimeoutError:
+        log.critical(
+            "DISCORD FATAL — READY event not received within %ss. "
+            "Bot did not complete IDENTIFY.",
+            timeout,
+        )
+        raise SystemExit(1)
+
 
 class DiscordClient:
     """
@@ -73,8 +84,8 @@ class DiscordClient:
         self._token: str = token
         self._guild_id: Optional[int] = self._load_guild_id()
         self._bot: Optional[commands.Bot] = None
-        self._ready_event = asyncio.Event()
         self._supervisor = supervisor
+        self._running = False
 
         # --------------------------------------------------
         # Shared Discord services (singletons)
@@ -124,9 +135,8 @@ class DiscordClient:
 
         intents = discord.Intents.default()
         intents.guilds = True
-        intents.members = False
-        intents.messages = True
-        intents.message_content = False  # slash-command focused
+        intents.members = True
+        intents.presences = True
 
         bot = commands.Bot(
             command_prefix="!",
@@ -134,31 +144,20 @@ class DiscordClient:
         )
 
         # --------------------------------------------------
-        # Command Registration
-        # --------------------------------------------------
-
-        # Service-level commands
-        service_commands.setup(bot)
-
-        # Admin-level commands
-        admin_commands.setup(
-            bot,
-            permissions=self.permissions,
-            logger=self.logger,
-            status=self.status,
-            supervisor=self._supervisor,
-        )
-
-        # --------------------------------------------------
         # Lifecycle Events
         # --------------------------------------------------
 
         @bot.event
+        async def on_connect():
+            log.info("Discord gateway connection opened")
+
+        @bot.event
         async def on_ready():
             log.info(
-                f"Discord connected as {bot.user} "
-                f"(id={bot.user.id}) "
-                f"guilds={len(bot.guilds)}"
+                "DISCORD READY — logged in as %s (%s) | guilds=%d",
+                bot.user,
+                bot.user.id,
+                len(bot.guilds),
             )
 
             self.heartbeat.start()
@@ -187,8 +186,6 @@ class DiscordClient:
                     log.info("Discord command tree synced globally")
             except Exception as e:
                 log.error(f"Failed to sync Discord commands: {e}")
-
-            self._ready_event.set()
 
         @bot.event
         async def on_resumed():
@@ -242,7 +239,30 @@ class DiscordClient:
                 f"(id={guild.id})"
             )
 
+        # --------------------------------------------------
+        # Command Registration
+        # --------------------------------------------------
+
+        # Service-level commands
+        service_commands.setup(bot)
+
+        # Admin-level commands
+        admin_commands.setup(
+            bot,
+            permissions=self.permissions,
+            logger=self.logger,
+            status=self.status,
+            supervisor=self._supervisor,
+        )
+
         return bot
+
+    # --------------------------------------------------
+
+    def _ensure_bot(self) -> commands.Bot:
+        if self._bot is None:
+            self._bot = self._build_bot()
+        return self._bot
 
     # --------------------------------------------------
 
@@ -250,14 +270,15 @@ class DiscordClient:
         """
         Start the Discord client and block until shutdown.
         """
-        if self._bot is not None:
+        if self._running:
             raise RuntimeError("Discord client already running")
 
-        log.info("Initializing Discord client")
+        log.info("Discord client initializing")
 
-        self._bot = self._build_bot()
+        self._ensure_bot()
 
         try:
+            self._running = True
             await self._bot.start(self._token)
         except asyncio.CancelledError:
             log.info("Discord client task cancelled")
@@ -266,6 +287,7 @@ class DiscordClient:
             log.error(f"Discord client crashed: {e}")
             raise
         finally:
+            self._running = False
             log.info("Discord client stopped")
 
     # --------------------------------------------------
@@ -287,7 +309,6 @@ class DiscordClient:
         self.heartbeat.stop()
 
         self._bot = None
-        self._ready_event.clear()
 
     # --------------------------------------------------
 
