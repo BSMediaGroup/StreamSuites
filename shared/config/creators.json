@@ -3,6 +3,8 @@
     {
       "creator_id": "As5TyU",
       "display_name": "Daniel Clancy",
+      "discord_user_id": "1130875539373170688",
+      "is_admin": true,
       "enabled": true,
       "platforms": {
         "rumble": true,
@@ -21,5 +23,8 @@
       "rumble_chat_channel_id": "424574510",
       "rumble_dom_chat_enabled": true
     }
+  ],
+  "discord_admins": [
+    "1130875539373170688"
   ]
 }

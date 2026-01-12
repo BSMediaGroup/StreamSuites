@@ -24,6 +24,7 @@ from typing import Optional, Iterable, Dict, Any, Callable, Awaitable
 import discord
 from discord import app_commands
 
+from shared.config.discord import is_discord_admin
 from shared.logging.logger import get_logger
 
 log = get_logger("discord.permissions", runtime="discord")
@@ -206,9 +207,11 @@ def require_admin() -> Callable[[Callable[..., Awaitable[Any]]], Any]:
         is_admin = (
             guild.owner_id == member.id
             or member.guild_permissions.administrator
+            or member.guild_permissions.manage_guild
         )
+        admin_override = is_discord_admin(str(member.id))
 
-        if not is_admin:
+        if not is_admin and not admin_override:
             log.warning(
                 f"Admin permission denied: "
                 f"user={member.id} guild={guild.id}"
@@ -218,6 +221,13 @@ def require_admin() -> Callable[[Callable[..., Awaitable[Any]]], Any]:
                 ephemeral=True,
             )
             return False
+
+        if admin_override and not is_admin:
+            log.info(
+                "Admin override granted for Discord user=%s guild=%s",
+                member.id,
+                guild.id,
+            )
 
         return True
 

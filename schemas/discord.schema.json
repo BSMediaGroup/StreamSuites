@@ -6,6 +6,13 @@
     "discord": {
       "type": "object",
       "properties": {
+        "admins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
         "guilds": {
           "type": "object",
           "additionalProperties": {
@@ -22,12 +29,55 @@
               "notifications": {
                 "type": "object",
                 "properties": {
-                  "general": { "type": ["string", "null"] },
-                  "rumble_clips": { "type": ["string", "null"] },
-                  "youtube_clips": { "type": ["string", "null"] },
-                  "kick_clips": { "type": ["string", "null"] },
-                  "pilled_clips": { "type": ["string", "null"] },
-                  "twitch_clips": { "type": ["string", "null"] }
+                  "enabled": { "type": "boolean", "default": false },
+                  "general": {
+                    "type": "object",
+                    "properties": {
+                      "channel_id": { "type": ["string", "null"] }
+                    },
+                    "additionalProperties": true
+                  },
+                  "clips": {
+                    "type": "object",
+                    "properties": {
+                      "rumble": {
+                        "type": "object",
+                        "properties": {
+                          "channel_id": { "type": ["string", "null"] }
+                        },
+                        "additionalProperties": true
+                      },
+                      "youtube": {
+                        "type": "object",
+                        "properties": {
+                          "channel_id": { "type": ["string", "null"] }
+                        },
+                        "additionalProperties": true
+                      },
+                      "kick": {
+                        "type": "object",
+                        "properties": {
+                          "channel_id": { "type": ["string", "null"] }
+                        },
+                        "additionalProperties": true
+                      },
+                      "pilled": {
+                        "type": "object",
+                        "properties": {
+                          "channel_id": { "type": ["string", "null"] }
+                        },
+                        "additionalProperties": true
+                      },
+                      "twitch": {
+                        "type": "object",
+                        "properties": {
+                          "channel_id": { "type": ["string", "null"] }
+                        },
+                        "additionalProperties": true
+                      }
+                    },
+                    "additionalProperties": true
+                  }
                 },
                 "additionalProperties": true
               }

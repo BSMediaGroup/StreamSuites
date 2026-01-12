@@ -24,8 +24,8 @@ from discord.ext import commands
 from shared.logging.logger import get_logger
 from shared.config.discord import (
     get_guild_config,
-    notification_channel_keys,
-    notification_label,
+    clip_notification_keys,
+    clip_notification_label,
     update_guild_config,
 )
 from services.discord.status import DiscordStatusManager
@@ -46,10 +46,13 @@ def setup(bot: commands.Bot):
     Called by Discord client during command loading.
     """
     bot.tree.add_command(bot_status)
-    bot.tree.add_command(logging_set_channel)
-    bot.tree.add_command(logging_enable)
-    bot.tree.add_command(logging_disable)
-    bot.tree.add_command(notifications_set)
+    bot.tree.add_command(guild_logging_set_channel)
+    bot.tree.add_command(guild_logging_enable)
+    bot.tree.add_command(guild_logging_disable)
+    bot.tree.add_command(guild_notify_set_general)
+    bot.tree.add_command(guild_notify_set_clips)
+    bot.tree.add_command(guild_notify_enable)
+    bot.tree.add_command(guild_notify_disable)
     bot.tree.add_command(dashboard)
     bot.tree.add_command(help)
     bot.tree.add_command(list_commands)
@@ -123,14 +126,14 @@ async def bot_status(
 # --------------------------------------------------
 
 @app_commands.command(
-    name="logging-set-channel",
+    name="guild-logging-set-channel",
     description="Set the logging channel for this guild",
 )
 @app_commands.describe(
     channel="Channel to receive bot logs",
 )
 @require_admin()
-async def logging_set_channel(
+async def guild_logging_set_channel(
     interaction: discord.Interaction,
     channel: discord.TextChannel,
 ):
@@ -160,11 +163,11 @@ async def logging_set_channel(
 # --------------------------------------------------
 
 @app_commands.command(
-    name="logging-enable",
+    name="guild-logging-enable",
     description="Enable Discord bot logging for this guild",
 )
 @require_admin()
-async def logging_enable(
+async def guild_logging_enable(
     interaction: discord.Interaction,
 ):
     if not interaction.guild:
@@ -180,7 +183,7 @@ async def logging_enable(
         await interaction.response.send_message(
             embed=error_embed(
                 "Logging channel missing",
-                "Set a logging channel first with /logging-set-channel.",
+                "Set a logging channel first with /guild-logging-set-channel.",
             ),
             ephemeral=False,
         )
@@ -198,11 +201,11 @@ async def logging_enable(
 # --------------------------------------------------
 
 @app_commands.command(
-    name="logging-disable",
+    name="guild-logging-disable",
     description="Disable Discord bot logging for this guild",
 )
 @require_admin()
-async def logging_disable(
+async def guild_logging_disable(
     interaction: discord.Interaction,
 ):
     if not interaction.guild:
@@ -220,27 +223,19 @@ async def logging_disable(
 
 
 # --------------------------------------------------
-# /notifications-set
+# /guild-notify-set-general
 # --------------------------------------------------
 
 @app_commands.command(
-    name="notifications-set",
-    description="Set a notification channel for this guild",
+    name="guild-notify-set-general",
+    description="Set the general notification channel for this guild",
 )
 @app_commands.describe(
-    type="Notification category",
-    channel="Channel to receive notifications",
-)
-@app_commands.choices(
-    type=[
-        app_commands.Choice(name=notification_label(key), value=key)
-        for key in notification_channel_keys()
-    ]
+    channel="Channel to receive general notifications",
 )
 @require_admin()
-async def notifications_set(
+async def guild_notify_set_general(
     interaction: discord.Interaction,
-    type: app_commands.Choice[str],
     channel: discord.TextChannel,
 ):
     if not interaction.guild:
@@ -252,13 +247,116 @@ async def notifications_set(
 
     update_guild_config(
         interaction.guild.id,
-        {"notifications": {type.value: channel.id}},
+        {"notifications": {"general": {"channel_id": channel.id}}},
     )
 
     await interaction.response.send_message(
         embed=success_embed(
-            "Notification Channel Set",
-            f"{type.name} notifications will post to {channel.mention}.",
+            "General Notifications Set",
+            f"General notifications will post to {channel.mention}.",
+        ),
+        ephemeral=False,
+    )
+
+
+# --------------------------------------------------
+# /guild-notify-set-clips
+# --------------------------------------------------
+
+@app_commands.command(
+    name="guild-notify-set-clips",
+    description="Set a clips notification channel for this guild",
+)
+@app_commands.describe(
+    platform="Clip platform",
+    channel="Channel to receive clip notifications",
+)
+@app_commands.choices(
+    platform=[
+        app_commands.Choice(name=clip_notification_label(key), value=key)
+        for key in clip_notification_keys()
+    ]
+)
+@require_admin()
+async def guild_notify_set_clips(
+    interaction: discord.Interaction,
+    platform: app_commands.Choice[str],
+    channel: discord.TextChannel,
+):
+    if not interaction.guild:
+        await interaction.response.send_message(
+            embed=error_embed("Guild required", "This command must be used in a guild."),
+            ephemeral=False,
+        )
+        return
+
+    update_guild_config(
+        interaction.guild.id,
+        {"notifications": {"clips": {platform.value: {"channel_id": channel.id}}}},
+    )
+
+    await interaction.response.send_message(
+        embed=success_embed(
+            "Clips Notifications Set",
+            f"{platform.name} clip notifications will post to {channel.mention}.",
+        ),
+        ephemeral=False,
+    )
+
+
+# --------------------------------------------------
+# /guild-notify-enable
+# --------------------------------------------------
+
+@app_commands.command(
+    name="guild-notify-enable",
+    description="Enable notifications for this guild",
+)
+@require_admin()
+async def guild_notify_enable(
+    interaction: discord.Interaction,
+):
+    if not interaction.guild:
+        await interaction.response.send_message(
+            embed=error_embed("Guild required", "This command must be used in a guild."),
+            ephemeral=False,
+        )
+        return
+
+    update_guild_config(interaction.guild.id, {"notifications": {"enabled": True}})
+    await interaction.response.send_message(
+        embed=success_embed(
+            "Notifications Enabled",
+            "Discord notifications are now enabled for this guild.",
+        ),
+        ephemeral=False,
+    )
+
+
+# --------------------------------------------------
+# /guild-notify-disable
+# --------------------------------------------------
+
+@app_commands.command(
+    name="guild-notify-disable",
+    description="Disable notifications for this guild",
+)
+@require_admin()
+async def guild_notify_disable(
+    interaction: discord.Interaction,
+):
+    if not interaction.guild:
+        await interaction.response.send_message(
+            embed=error_embed("Guild required", "This command must be used in a guild."),
+            ephemeral=False,
+        )
+        return
+
+    update_guild_config(interaction.guild.id, {"notifications": {"enabled": False}})
+    await interaction.response.send_message(
+        embed=success_embed(
+            "Notifications Disabled",
+            "Discord notifications are now disabled for this guild.",
         ),
         ephemeral=False,
     )
