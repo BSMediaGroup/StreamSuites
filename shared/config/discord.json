@@ -32,6 +32,35 @@
             }
           }
         }
+      },
+      "1449303974086967306": {
+        "logging": {
+          "enabled": true,
+          "channel_id": "1449303976058028139"
+        },
+        "notifications": {
+          "enabled": true,
+          "general": {
+            "channel_id": "1459493308563853415"
+          },
+          "clips": {
+            "rumble": {
+              "channel_id": "1449303975672283278"
+            },
+            "youtube": {
+              "channel_id": "1449303975672283282"
+            },
+            "kick": {
+              "channel_id": "1456817505011105792"
+            },
+            "pilled": {
+              "channel_id": "1456817666710049086"
+            },
+            "twitch": {
+              "channel_id": "1449303975672283281"
+            }
+          }
+        }
       }
     }
   }
