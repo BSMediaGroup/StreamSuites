@@ -202,12 +202,13 @@ namespace StreamSuites.DesktopAdmin.Bridge
                     string.Equals(request.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase))
                 {
                     _log("[Bridge] POST /commands/runtime/start");
-                    var runtimeSnapshot = await _runtimeController
-                        .StartAsync(token)
-                        .ConfigureAwait(false);
+                    var runtimeSnapshot = _runtimeController.StartInBackground();
                     LogRuntimeStatusChange(runtimeSnapshot.Status);
                     await WriteJsonAsync(response, new
                     {
+                        command = "runtime.start",
+                        accepted = true,
+                        runtimeState = runtimeSnapshot.Status,
                         bridge = snapshot.Status,
                         runtime = runtimeSnapshot.Status,
                         runtimePid = runtimeSnapshot.RuntimePid,
@@ -221,12 +222,13 @@ namespace StreamSuites.DesktopAdmin.Bridge
                     string.Equals(request.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase))
                 {
                     _log("[Bridge] POST /commands/runtime/stop");
-                    var runtimeSnapshot = await _runtimeController
-                        .StopAsync(token)
-                        .ConfigureAwait(false);
+                    var runtimeSnapshot = _runtimeController.StopInBackground();
                     LogRuntimeStatusChange(runtimeSnapshot.Status);
                     await WriteJsonAsync(response, new
                     {
+                        command = "runtime.stop",
+                        accepted = true,
+                        runtimeState = runtimeSnapshot.Status,
                         bridge = snapshot.Status,
                         runtime = runtimeSnapshot.Status,
                         runtimePid = runtimeSnapshot.RuntimePid,
