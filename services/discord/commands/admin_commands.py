@@ -197,10 +197,6 @@ def setup(
         embed = info_embed("Runtime Jobs", message)
         await interaction.followup.send(embed=embed, ephemeral=False)
 
-    # --------------------------------------------------
-    # /status
-    # --------------------------------------------------
-
     @app_commands.command(
         name="status",
         description="Show a high-level StreamSuites system status summary",
@@ -374,8 +370,6 @@ def setup(
     # --------------------------------------------------
 
     bot.tree.add_command(admin_runtime_status)
-    bot.tree.add_command(admin_set_status)
-    bot.tree.add_command(admin_clear_status)
     bot.tree.add_command(toggle_platform)
     bot.tree.add_command(trigger)
     bot.tree.add_command(jobs)
