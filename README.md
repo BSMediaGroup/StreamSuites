@@ -189,6 +189,9 @@ StreamSuites/
 │   ├── StreamSuites.DesktopAdmin/
 │   │   ├── App.config
 │   │   ├── AboutDialog.cs
+│   │   ├── Bridge/
+│   │   │   ├── BridgeServer.cs
+│   │   │   └── BridgeState.cs
 │   │   ├── MainForm.Designer.cs
 │   │   ├── MainForm.cs
 │   │   ├── MainForm.resx
