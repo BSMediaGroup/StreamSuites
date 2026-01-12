@@ -3301,8 +3301,20 @@ namespace StreamSuites.DesktopAdmin
             var current = _discordGuildSelector.Text;
             _discordGuildSelector.Items.Clear();
 
-            foreach (var guildId in _discordConfigCache.Guilds.Keys
-                         .OrderBy(id => id, StringComparer.OrdinalIgnoreCase))
+            var guildIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var guildId in _discordConfigCache.Guilds.Keys)
+            {
+                if (!string.IsNullOrWhiteSpace(guildId))
+                    guildIds.Add(guildId.Trim());
+            }
+
+            foreach (var runtimeGuildId in LoadRuntimeDiscordGuildIds())
+            {
+                guildIds.Add(runtimeGuildId);
+            }
+
+            foreach (var guildId in guildIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase))
             {
                 _discordGuildSelector.Items.Add(guildId);
             }
@@ -3373,6 +3385,35 @@ namespace StreamSuites.DesktopAdmin
 
             if (_discordConfigStatus != null)
                 _discordConfigStatus.Text = "Discord config not loaded.";
+        }
+
+        private IReadOnlyCollection<string> LoadRuntimeDiscordGuildIds()
+        {
+            var guildIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var roots = GetSnapshotRoots();
+
+            foreach (var root in roots)
+            {
+                var guildsPath = Path.Combine(root, "shared", "state", "discord", "guilds");
+                if (!Directory.Exists(guildsPath))
+                    continue;
+
+                foreach (var entry in Directory.EnumerateFileSystemEntries(guildsPath))
+                {
+                    var name = Path.GetFileName(entry);
+                    if (string.IsNullOrWhiteSpace(name))
+                        continue;
+
+                    if (string.Equals(Path.GetExtension(name), ".json", StringComparison.OrdinalIgnoreCase))
+                        name = Path.GetFileNameWithoutExtension(name);
+
+                    var trimmed = name.Trim();
+                    if (trimmed.All(char.IsDigit))
+                        guildIds.Add(trimmed);
+                }
+            }
+
+            return guildIds;
         }
 
         private static string FormatChannelId(string? value)
