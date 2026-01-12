@@ -1,3 +1,4 @@
+using StreamSuites.DesktopAdmin.Bridge;
 using StreamSuites.DesktopAdmin.Core;
 using StreamSuites.DesktopAdmin.RuntimeBridge;
 using StreamSuites.DesktopAdmin.Models;
@@ -23,6 +24,8 @@ namespace StreamSuites.DesktopAdmin
         private readonly RuntimeConnector _runtimeConnector;
         private readonly AdminCommandDispatcher _commandDispatcher;
         private readonly JsonExportReader _exportReader;
+        private readonly BridgeState _bridgeState;
+        private readonly BridgeServer _bridgeServer;
 
         private readonly PathConfigService _pathConfigService;
         private PathConfiguration _pathConfiguration;
@@ -59,6 +62,10 @@ namespace StreamSuites.DesktopAdmin
         private Panel _inspectorPanel;
         private Label _inspectorTitle;
         private Label _inspectorBody;
+        private Label _bridgeStatusLabel;
+        private Label _bridgePortLabel;
+        private Label _bridgeErrorLabel;
+        private Button _bridgeToggleButton;
 
         private const int SnapshotStaleThresholdSeconds = 20;
         private const string LiveChatUrl = "http://localhost:8210/livechat/index.html";
@@ -204,6 +211,9 @@ namespace StreamSuites.DesktopAdmin
             _runtimeConnector = new RuntimeConnector(snapshotReader, _appState);
             _commandDispatcher = new AdminCommandDispatcher(_appState);
             _exportReader = new JsonExportReader(fileAccessor);
+            _bridgeState = new BridgeState();
+            _bridgeServer = new BridgeServer(_bridgeState, 8787, LogBridge);
+            _bridgeState.StateChanged += (_, __) => UpdateBridgeUi();
 
             _pathConfigService = new PathConfigService();
             _pathConfiguration = _pathConfigService.Load();
@@ -280,10 +290,14 @@ namespace StreamSuites.DesktopAdmin
 
             Shown += async (_, __) =>
             {
+                await StartBridgeServerAsync();
                 await RefreshSnapshotAsync();
                 _refreshTimer.Start();
                 _sinceRefreshTimer.Start();
             };
+
+            FormClosing += async (_, __) =>
+                await StopBridgeServerAsync();
         }
 
         private void InitializeMenu()
@@ -2129,6 +2143,85 @@ namespace StreamSuites.DesktopAdmin
         // Snapshot refresh
         // -----------------------------------------------------------------
 
+        // -----------------------------------------------------------------
+        // Bridge server
+        // -----------------------------------------------------------------
+
+        private void LogBridge(string message)
+        {
+            Debug.WriteLine(message);
+        }
+
+        private async Task StartBridgeServerAsync()
+        {
+            await _bridgeServer.StartAsync();
+            UpdateBridgeUi();
+        }
+
+        private async Task StopBridgeServerAsync()
+        {
+            await _bridgeServer.StopAsync();
+            UpdateBridgeUi();
+        }
+
+        private async Task ToggleBridgeServerAsync()
+        {
+            var snapshot = _bridgeState.GetSnapshot();
+            if (string.Equals(snapshot.Status, "running", StringComparison.OrdinalIgnoreCase))
+                await StopBridgeServerAsync();
+            else
+                await StartBridgeServerAsync();
+        }
+
+        private void UpdateBridgeUi()
+        {
+            if (_bridgeStatusLabel == null ||
+                _bridgeToggleButton == null ||
+                _bridgePortLabel == null ||
+                _bridgeErrorLabel == null)
+                return;
+
+            var snapshot = _bridgeState.GetSnapshot();
+
+            void Apply()
+            {
+                var statusText = snapshot.Status switch
+                {
+                    "running" => "Running",
+                    "error" => "Error",
+                    _ => "Stopped"
+                };
+
+                _bridgeStatusLabel.Text = statusText;
+                _bridgeStatusLabel.ForeColor = snapshot.Status switch
+                {
+                    "running" => Color.DarkGreen,
+                    "error" => Color.DarkRed,
+                    _ => SystemColors.ControlText
+                };
+
+                _bridgePortLabel.Text = snapshot.BoundPort > 0
+                    ? snapshot.BoundPort.ToString(CultureInfo.InvariantCulture)
+                    : "—";
+
+                _bridgeErrorLabel.Text = string.IsNullOrWhiteSpace(snapshot.LastError)
+                    ? "—"
+                    : snapshot.LastError;
+                _bridgeErrorLabel.ForeColor = string.IsNullOrWhiteSpace(snapshot.LastError)
+                    ? SystemColors.GrayText
+                    : Color.DarkRed;
+
+                _bridgeToggleButton.Text = snapshot.Status == "running"
+                    ? "Stop Bridge"
+                    : "Start Bridge";
+            }
+
+            if (InvokeRequired)
+                Invoke(new Action(Apply));
+            else
+                Apply();
+        }
+
         private async Task RefreshSnapshotAsync()
         {
             if (_refreshInProgress)
@@ -2140,6 +2233,7 @@ namespace StreamSuites.DesktopAdmin
             if (!pathStatus.IsValid)
             {
                 HandleInvalidSnapshotPath(pathStatus);
+                _bridgeState.SetRuntimeStatus("stopped");
                 return;
             }
 
@@ -2147,6 +2241,7 @@ namespace StreamSuites.DesktopAdmin
             if (string.IsNullOrWhiteSpace(snapshotPath))
             {
                 HandleInvalidSnapshotPath(pathStatus);
+                _bridgeState.SetRuntimeStatus("stopped");
                 return;
             }
 
@@ -2167,6 +2262,7 @@ namespace StreamSuites.DesktopAdmin
                     SetSnapshotTooltip(null, "Snapshot missing runtime block.");
                     UpdatePlatformCount("Platforms: invalid");
                     UpdateStatusRuntime("Runtime: invalid snapshot");
+                    _bridgeState.SetRuntimeStatus("stopped");
                     _platformBindingSource.DataSource = null;
                     ClearJobData();
                     ClearTelemetryData();
@@ -2193,6 +2289,7 @@ namespace StreamSuites.DesktopAdmin
                 UpdateSnapshotHealthIndicators(health);
                 SetSnapshotTooltip(snapshot, null);
                 UpdateStatusRuntime("Runtime: snapshot bound");
+                _bridgeState.SetRuntimeStatus("running");
 
                 UpdatePlatformCount(
                     $"Platforms: {snapshot.Platforms?.Count ?? 0}"
@@ -2237,6 +2334,7 @@ namespace StreamSuites.DesktopAdmin
                 SetSnapshotTooltip(null, "Exception reading snapshot.");
                 UpdatePlatformCount("Platforms: error");
                 UpdateStatusRuntime("Runtime: disconnected");
+                _bridgeState.SetRuntimeStatus("stopped");
                 ClearJobData();
                 ClearTelemetryData();
                 ClearCreatorsData();
@@ -2267,6 +2365,7 @@ namespace StreamSuites.DesktopAdmin
             UpdatePlatformCount("Platforms: unknown");
             _platformBindingSource.DataSource = null;
             UpdateStatusRuntime("Runtime: disconnected");
+            _bridgeState.SetRuntimeStatus("stopped");
             _lastSuccessfulRefreshUtc = null;
             lblLastRefresh.Text = "Last refresh: —";
             ClearJobData();
@@ -4075,6 +4174,98 @@ namespace StreamSuites.DesktopAdmin
             headerPanel.Controls.Add(_inspectorIcon);
 
             // -------------------------------------------------------------
+            // Bridge status (top section)
+            // -------------------------------------------------------------
+
+            var bridgeGroup = new GroupBox
+            {
+                Text = "Bridge Server",
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+
+            var bridgeLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                ColumnCount = 2,
+                AutoSize = true
+            };
+
+            bridgeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            bridgeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+
+            bridgeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            bridgeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            bridgeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            bridgeLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var bridgeStatusTitle = new Label
+            {
+                Text = "Status:",
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Padding = new Padding(0, 4, 6, 4)
+            };
+
+            _bridgeStatusLabel = new Label
+            {
+                AutoSize = true,
+                Padding = new Padding(0, 4, 0, 4),
+                Text = "Stopped"
+            };
+
+            var bridgePortTitle = new Label
+            {
+                Text = "Port:",
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Padding = new Padding(0, 4, 6, 4)
+            };
+
+            _bridgePortLabel = new Label
+            {
+                AutoSize = true,
+                Padding = new Padding(0, 4, 0, 4),
+                Text = "—"
+            };
+
+            var bridgeErrorTitle = new Label
+            {
+                Text = "Last error:",
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Padding = new Padding(0, 4, 6, 4)
+            };
+
+            _bridgeErrorLabel = new Label
+            {
+                AutoSize = true,
+                Padding = new Padding(0, 4, 0, 4),
+                Text = "—",
+                ForeColor = SystemColors.GrayText
+            };
+
+            _bridgeToggleButton = new Button
+            {
+                Text = "Start Bridge",
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0, 6, 0, 0)
+            };
+
+            bridgeLayout.Controls.Add(bridgeStatusTitle, 0, 0);
+            bridgeLayout.Controls.Add(_bridgeStatusLabel, 1, 0);
+            bridgeLayout.Controls.Add(bridgePortTitle, 0, 1);
+            bridgeLayout.Controls.Add(_bridgePortLabel, 1, 1);
+            bridgeLayout.Controls.Add(bridgeErrorTitle, 0, 2);
+            bridgeLayout.Controls.Add(_bridgeErrorLabel, 1, 2);
+            bridgeLayout.Controls.Add(_bridgeToggleButton, 0, 3);
+            bridgeLayout.SetColumnSpan(_bridgeToggleButton, 2);
+
+            bridgeGroup.Controls.Add(bridgeLayout);
+
+            // -------------------------------------------------------------
             // Action buttons (bottom)
             // -------------------------------------------------------------
 
@@ -4169,6 +4360,7 @@ namespace StreamSuites.DesktopAdmin
 
             panelRuntimeRight.Controls.Add(_inspectorBody);
             panelRuntimeRight.Controls.Add(actionsPanel);
+            panelRuntimeRight.Controls.Add(bridgeGroup);
             panelRuntimeRight.Controls.Add(headerPanel);
 
             panelRuntimeRight.ResumeLayout(true);
@@ -4178,6 +4370,8 @@ namespace StreamSuites.DesktopAdmin
             _btnConfigureClient.Click += async (_, __) => await ConfigureClientAsync();
             _btnLaunchMain.Click += async (_, __) => await ToggleRuntimeAsync();
             _btnLaunchClient.Click += async (_, __) => await TogglePlatformClientAsync();
+            _bridgeToggleButton.Click += async (_, __) => await ToggleBridgeServerAsync();
+            UpdateBridgeUi();
 
             // -------------------------------------------------------------
             // SAFE splitter setup AFTER layout is real
@@ -4669,6 +4863,7 @@ namespace StreamSuites.DesktopAdmin
         {
             _runtimeVersionInfo =
                 RuntimeVersionProvider.Load(_currentPathStatus?.SnapshotRoot);
+            _bridgeState.SetRuntimeVersion(_runtimeVersionInfo.ToDisplayVersion());
             UpdateRuntimeVersionDisplay();
             UpdateUpdatesSummary();
             UpdateAboutSummary();
