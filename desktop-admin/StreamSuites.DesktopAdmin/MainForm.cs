@@ -44,6 +44,7 @@ namespace StreamSuites.DesktopAdmin
         private readonly BindingSource _pollVotesBindingSource;
         private readonly BindingSource _tallyEventsBindingSource;
         private readonly BindingSource _scoreEventsBindingSource;
+        private readonly BindingSource _chatTriggersBindingSource;
         private readonly ToolTip _snapshotToolTip;
         private RuntimeVersionInfo _runtimeVersionInfo;
         private SnapshotHealthState _lastTrayHealth = SnapshotHealthState.Invalid;
@@ -83,6 +84,16 @@ namespace StreamSuites.DesktopAdmin
         private SplitContainer _creatorsSplit;
 
         private Label _dataSignalsSummary;
+        private Label _clipsSummary;
+        private Label _pollsSummary;
+        private Label _talliesSummary;
+        private Label _scoreboardsSummary;
+        private Label _chatTriggersSummary;
+        private Label _rateLimitsSummary;
+        private Label _chatReplaySummary;
+        private Label _supportSummary;
+        private Label _updatesSummary;
+        private Label _aboutSummary;
         private DataGridView _clipsGrid;
         private DataGridView _pollsGrid;
         private DataGridView _talliesGrid;
@@ -91,12 +102,30 @@ namespace StreamSuites.DesktopAdmin
         private DataGridView _pollVotesGrid;
         private DataGridView _tallyEventsGrid;
         private DataGridView _scoreEventsGrid;
+        private DataGridView _clipsManagementGrid;
+        private DataGridView _pollsManagementGrid;
+        private DataGridView _talliesManagementGrid;
+        private DataGridView _scoreboardsManagementGrid;
+        private DataGridView _chatTriggersGrid;
+        private DataGridView _rateLimitsGrid;
+        private DataGridView _chatReplayGrid;
 
         private Label _settingsRestartSummary;
         private Label _settingsSystemSummary;
         private Label _settingsPollingSummary;
         private Label _settingsImportExportSummary;
         private DataGridView _settingsPlatformGrid;
+
+        private TabPage _tabChatTriggers;
+        private TabPage _tabClips;
+        private TabPage _tabPolls;
+        private TabPage _tabTallies;
+        private TabPage _tabScoreboards;
+        private TabPage _tabRateLimits;
+        private TabPage _tabChatReplay;
+        private TabPage _tabSupport;
+        private TabPage _tabUpdates;
+        private TabPage _tabAbout;
 
         private readonly Dictionary<string, PlatformTabControls> _platformTabControls
             = new(StringComparer.OrdinalIgnoreCase);
@@ -180,16 +209,28 @@ namespace StreamSuites.DesktopAdmin
             _pollVotesBindingSource = new BindingSource();
             _tallyEventsBindingSource = new BindingSource();
             _scoreEventsBindingSource = new BindingSource();
+            _chatTriggersBindingSource = new BindingSource();
             gridPlatforms.DataSource = _platformBindingSource;
 
+            InitializeNavigationTabs();
             InitializePlatformGrid();
             InitializeInspectorPanel();
             InitializeMenu();
             InitializeJobsTab();
             InitializeTelemetryTab();
             InitializeCreatorsTab();
+            InitializeChatTriggersTab();
+            InitializeClipsTab();
+            InitializePollsTab();
+            InitializeTalliesTab();
+            InitializeScoreboardsTab();
             InitializeDataSignalsTab();
+            InitializeRateLimitsTab();
             InitializeSettingsTab();
+            InitializeChatReplayTab();
+            InitializeSupportTab();
+            InitializeUpdatesTab();
+            InitializeAboutTab();
             InitializePlatformTabs();
             UpdatePlatformActionButtons(null);
 
@@ -265,6 +306,44 @@ namespace StreamSuites.DesktopAdmin
             menuOptions.DropDownItems.Add(itemPlatforms);
             menuOptions.DropDownItems.Add(itemSettings);
 
+            var menuNavigate = new ToolStripMenuItem("Navigate");
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Overview", tabRuntime));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Creators", tabCreators));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Chat Triggers", _tabChatTriggers));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Jobs", tabJobs));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Clips", _tabClips));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Polls", _tabPolls));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Tallies", _tabTallies));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Scoreboards", _tabScoreboards));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Data & Signals", tabDataSignals));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Rate Limits", _tabRateLimits));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Telemetry", tabTelemetry));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Settings", tabSettings));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Chat Replay", _tabChatReplay));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Support", _tabSupport));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Updates", _tabUpdates));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("About", _tabAbout));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Paths", tabPaths));
+
+            var menuNavigatePlatforms = new ToolStripMenuItem("Platforms");
+            foreach (var platform in GetPlatformNames())
+            {
+                var menuItem = new ToolStripMenuItem(platform);
+                menuItem.Click += (_, __) =>
+                {
+                    var tab = tabMain.TabPages.Cast<TabPage>()
+                        .FirstOrDefault(existing =>
+                            string.Equals(existing.Text, platform, StringComparison.OrdinalIgnoreCase));
+                    if (tab != null)
+                        tabMain.SelectedTab = tab;
+                };
+
+                menuNavigatePlatforms.DropDownItems.Add(menuItem);
+            }
+
+            menuNavigate.DropDownItems.Add(new ToolStripSeparator());
+            menuNavigate.DropDownItems.Add(menuNavigatePlatforms);
+
             var menuHelp = new ToolStripMenuItem("Help");
             var itemAbout = new ToolStripMenuItem("About");
             itemAbout.Click += async (_, __) => await ShowAboutDialogAsync();
@@ -272,11 +351,24 @@ namespace StreamSuites.DesktopAdmin
 
             _menuMain.Items.Add(menuFile);
             _menuMain.Items.Add(menuOptions);
+            _menuMain.Items.Add(menuNavigate);
             _menuMain.Items.Add(menuHelp);
 
             Controls.Add(_menuMain);
             MainMenuStrip = _menuMain;
             EnsureDockOrder();
+        }
+
+        private ToolStripMenuItem BuildNavigationMenuItem(string label, TabPage? tab)
+        {
+            var menuItem = new ToolStripMenuItem(label);
+            menuItem.Click += (_, __) =>
+            {
+                if (tab != null)
+                    tabMain.SelectedTab = tab;
+            };
+
+            return menuItem;
         }
 
         private void EnsureDockOrder()
@@ -288,6 +380,47 @@ namespace StreamSuites.DesktopAdmin
             Controls.SetChildIndex(statusBar, 1);
             Controls.SetChildIndex(toolMain, 2);
             Controls.SetChildIndex(_menuMain, 3);
+        }
+
+        private void InitializeNavigationTabs()
+        {
+            tabRuntime.Text = "Overview";
+            tabCreators.Text = "Creators";
+            tabJobs.Text = "Jobs";
+            tabDataSignals.Text = "Data & Signals";
+            tabTelemetry.Text = "Telemetry";
+            tabSettings.Text = "Settings";
+            tabPaths.Text = "Paths";
+
+            _tabChatTriggers = new TabPage("Chat Triggers") { Padding = new Padding(8) };
+            _tabClips = new TabPage("Clips") { Padding = new Padding(8) };
+            _tabPolls = new TabPage("Polls") { Padding = new Padding(8) };
+            _tabTallies = new TabPage("Tallies") { Padding = new Padding(8) };
+            _tabScoreboards = new TabPage("Scoreboards") { Padding = new Padding(8) };
+            _tabRateLimits = new TabPage("Rate Limits") { Padding = new Padding(8) };
+            _tabChatReplay = new TabPage("Chat Replay") { Padding = new Padding(8) };
+            _tabSupport = new TabPage("Support") { Padding = new Padding(8) };
+            _tabUpdates = new TabPage("Updates") { Padding = new Padding(8) };
+            _tabAbout = new TabPage("About") { Padding = new Padding(8) };
+
+            tabMain.TabPages.Clear();
+            tabMain.TabPages.Add(tabRuntime);
+            tabMain.TabPages.Add(tabCreators);
+            tabMain.TabPages.Add(_tabChatTriggers);
+            tabMain.TabPages.Add(tabJobs);
+            tabMain.TabPages.Add(_tabClips);
+            tabMain.TabPages.Add(_tabPolls);
+            tabMain.TabPages.Add(_tabTallies);
+            tabMain.TabPages.Add(_tabScoreboards);
+            tabMain.TabPages.Add(tabDataSignals);
+            tabMain.TabPages.Add(_tabRateLimits);
+            tabMain.TabPages.Add(tabTelemetry);
+            tabMain.TabPages.Add(tabSettings);
+            tabMain.TabPages.Add(_tabChatReplay);
+            tabMain.TabPages.Add(_tabSupport);
+            tabMain.TabPages.Add(_tabUpdates);
+            tabMain.TabPages.Add(_tabAbout);
+            tabMain.TabPages.Add(tabPaths);
         }
 
         private void InitializeJobsTab()
@@ -362,6 +495,578 @@ namespace StreamSuites.DesktopAdmin
 
             tabJobs.Controls.Clear();
             tabJobs.Controls.Add(layout);
+        }
+
+        private void InitializeChatTriggersTab()
+        {
+            if (_tabChatTriggers == null)
+                return;
+
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                Padding = new Padding(8)
+            };
+
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            _chatTriggersSummary = new Label
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                Text = "Chat triggers: —"
+            };
+
+            var actions = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false
+            };
+
+            var btnEnable = new Button
+            {
+                Text = "Enable (placeholder)",
+                AutoSize = true,
+                Enabled = false
+            };
+
+            var btnDisable = new Button
+            {
+                Text = "Disable (placeholder)",
+                AutoSize = true,
+                Enabled = false
+            };
+
+            actions.Controls.Add(btnEnable);
+            actions.Controls.Add(btnDisable);
+
+            _chatTriggersGrid = BuildDataSignalsGrid();
+            _chatTriggersGrid.Columns.Add(BuildTextColumn(nameof(ChatTriggerRow.TriggerId), "Trigger ID", 140));
+            _chatTriggersGrid.Columns.Add(BuildTextColumn(nameof(ChatTriggerRow.Creator), "Creator", 140));
+            _chatTriggersGrid.Columns.Add(BuildTextColumn(nameof(ChatTriggerRow.Type), "Type", 100));
+            _chatTriggersGrid.Columns.Add(BuildTextColumn(nameof(ChatTriggerRow.Command), "Command", 120));
+            _chatTriggersGrid.Columns.Add(BuildTextColumn(nameof(ChatTriggerRow.CooldownSeconds), "Cooldown", 90));
+            _chatTriggersGrid.Columns.Add(BuildTextColumn(nameof(ChatTriggerRow.Description), "Description", 260));
+            _chatTriggersGrid.Columns.Add(BuildTextColumn(nameof(ChatTriggerRow.UpdatedAt), "Updated", 160));
+            _chatTriggersGrid.DataSource = _chatTriggersBindingSource;
+            EnableDoubleBuffering(_chatTriggersGrid);
+
+            layout.Controls.Add(_chatTriggersSummary, 0, 0);
+            layout.Controls.Add(actions, 0, 1);
+            layout.Controls.Add(_chatTriggersGrid, 0, 2);
+
+            panel.Controls.Add(layout);
+            _tabChatTriggers.Controls.Clear();
+            _tabChatTriggers.Controls.Add(panel);
+        }
+
+        private void InitializeClipsTab()
+        {
+            if (_tabClips == null)
+                return;
+
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                Padding = new Padding(8)
+            };
+
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            _clipsSummary = new Label
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                Text = "Clips: —"
+            };
+
+            var actions = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false
+            };
+
+            actions.Controls.Add(new Button
+            {
+                Text = "Create Clip (placeholder)",
+                AutoSize = true,
+                Enabled = false
+            });
+
+            _clipsManagementGrid = BuildDataSignalsGrid();
+            _clipsManagementGrid.Columns.Add(BuildTextColumn(nameof(ClipRow.ClipId), "Clip ID", 120));
+            _clipsManagementGrid.Columns.Add(BuildTextColumn(nameof(ClipRow.Title), "Title", 200));
+            _clipsManagementGrid.Columns.Add(BuildTextColumn(nameof(ClipRow.Creator), "Creator", 120));
+            _clipsManagementGrid.Columns.Add(BuildTextColumn(nameof(ClipRow.State), "State", 100));
+            _clipsManagementGrid.Columns.Add(BuildTextColumn(nameof(ClipRow.PublishedAt), "Published", 150));
+            _clipsManagementGrid.Columns.Add(BuildTextColumn(nameof(ClipRow.Duration), "Duration", 90));
+            _clipsManagementGrid.DataSource = _clipsBindingSource;
+            EnableDoubleBuffering(_clipsManagementGrid);
+
+            layout.Controls.Add(_clipsSummary, 0, 0);
+            layout.Controls.Add(actions, 0, 1);
+            layout.Controls.Add(_clipsManagementGrid, 0, 2);
+
+            panel.Controls.Add(layout);
+            _tabClips.Controls.Clear();
+            _tabClips.Controls.Add(panel);
+        }
+
+        private void InitializePollsTab()
+        {
+            if (_tabPolls == null)
+                return;
+
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                Padding = new Padding(8)
+            };
+
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            _pollsSummary = new Label
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                Text = "Polls: —"
+            };
+
+            var actions = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false
+            };
+
+            actions.Controls.Add(new Button
+            {
+                Text = "Create Poll (placeholder)",
+                AutoSize = true,
+                Enabled = false
+            });
+
+            actions.Controls.Add(new Button
+            {
+                Text = "End Poll (placeholder)",
+                AutoSize = true,
+                Enabled = false
+            });
+
+            _pollsManagementGrid = BuildDataSignalsGrid();
+            _pollsManagementGrid.Columns.Add(BuildTextColumn(nameof(PollRow.PollId), "Poll ID", 130));
+            _pollsManagementGrid.Columns.Add(BuildTextColumn(nameof(PollRow.Question), "Question", 220));
+            _pollsManagementGrid.Columns.Add(BuildTextColumn(nameof(PollRow.Creator), "Creator", 120));
+            _pollsManagementGrid.Columns.Add(BuildTextColumn(nameof(PollRow.State), "State", 90));
+            _pollsManagementGrid.Columns.Add(BuildTextColumn(nameof(PollRow.OpenedAt), "Opened", 150));
+            _pollsManagementGrid.Columns.Add(BuildTextColumn(nameof(PollRow.ClosedAt), "Closed", 150));
+            _pollsManagementGrid.Columns.Add(BuildTextColumn(nameof(PollRow.OptionsSummary), "Options", 220));
+            _pollsManagementGrid.DataSource = _pollsBindingSource;
+            EnableDoubleBuffering(_pollsManagementGrid);
+
+            layout.Controls.Add(_pollsSummary, 0, 0);
+            layout.Controls.Add(actions, 0, 1);
+            layout.Controls.Add(_pollsManagementGrid, 0, 2);
+
+            panel.Controls.Add(layout);
+            _tabPolls.Controls.Clear();
+            _tabPolls.Controls.Add(panel);
+        }
+
+        private void InitializeTalliesTab()
+        {
+            if (_tabTallies == null)
+                return;
+
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                Padding = new Padding(8)
+            };
+
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            _talliesSummary = new Label
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                Text = "Tallies: —"
+            };
+
+            var actions = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false
+            };
+
+            actions.Controls.Add(new Button
+            {
+                Text = "Increment (placeholder)",
+                AutoSize = true,
+                Enabled = false
+            });
+
+            actions.Controls.Add(new Button
+            {
+                Text = "Decrement (placeholder)",
+                AutoSize = true,
+                Enabled = false
+            });
+
+            actions.Controls.Add(new Button
+            {
+                Text = "Reset (placeholder)",
+                AutoSize = true,
+                Enabled = false
+            });
+
+            _talliesManagementGrid = BuildDataSignalsGrid();
+            _talliesManagementGrid.Columns.Add(BuildTextColumn(nameof(TallyRow.TallyId), "Tally ID", 130));
+            _talliesManagementGrid.Columns.Add(BuildTextColumn(nameof(TallyRow.Label), "Label", 200));
+            _talliesManagementGrid.Columns.Add(BuildTextColumn(nameof(TallyRow.Creator), "Creator", 120));
+            _talliesManagementGrid.Columns.Add(BuildTextColumn(nameof(TallyRow.Count), "Count", 90));
+            _talliesManagementGrid.Columns.Add(BuildTextColumn(nameof(TallyRow.UpdatedAt), "Updated", 150));
+            _talliesManagementGrid.DataSource = _talliesBindingSource;
+            EnableDoubleBuffering(_talliesManagementGrid);
+
+            layout.Controls.Add(_talliesSummary, 0, 0);
+            layout.Controls.Add(actions, 0, 1);
+            layout.Controls.Add(_talliesManagementGrid, 0, 2);
+
+            panel.Controls.Add(layout);
+            _tabTallies.Controls.Clear();
+            _tabTallies.Controls.Add(panel);
+        }
+
+        private void InitializeScoreboardsTab()
+        {
+            if (_tabScoreboards == null)
+                return;
+
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                Padding = new Padding(8)
+            };
+
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            _scoreboardsSummary = new Label
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                Text = "Scoreboards: —"
+            };
+
+            var actions = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false
+            };
+
+            actions.Controls.Add(new Button
+            {
+                Text = "Update Score (placeholder)",
+                AutoSize = true,
+                Enabled = false
+            });
+
+            actions.Controls.Add(new Button
+            {
+                Text = "Reset (placeholder)",
+                AutoSize = true,
+                Enabled = false
+            });
+
+            _scoreboardsManagementGrid = BuildDataSignalsGrid();
+            _scoreboardsManagementGrid.Columns.Add(BuildTextColumn(nameof(ScoreboardRow.ScoreboardId), "Scoreboard ID", 150));
+            _scoreboardsManagementGrid.Columns.Add(BuildTextColumn(nameof(ScoreboardRow.Title), "Title", 200));
+            _scoreboardsManagementGrid.Columns.Add(BuildTextColumn(nameof(ScoreboardRow.Creator), "Creator", 120));
+            _scoreboardsManagementGrid.Columns.Add(BuildTextColumn(nameof(ScoreboardRow.Entries), "Entries", 90));
+            _scoreboardsManagementGrid.Columns.Add(BuildTextColumn(nameof(ScoreboardRow.FinalizedAt), "Finalized", 150));
+            _scoreboardsManagementGrid.DataSource = _scoreboardsBindingSource;
+            EnableDoubleBuffering(_scoreboardsManagementGrid);
+
+            layout.Controls.Add(_scoreboardsSummary, 0, 0);
+            layout.Controls.Add(actions, 0, 1);
+            layout.Controls.Add(_scoreboardsManagementGrid, 0, 2);
+
+            panel.Controls.Add(layout);
+            _tabScoreboards.Controls.Clear();
+            _tabScoreboards.Controls.Add(panel);
+        }
+
+        private void InitializeRateLimitsTab()
+        {
+            if (_tabRateLimits == null)
+                return;
+
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                Padding = new Padding(8)
+            };
+
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            _rateLimitsSummary = new Label
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                Text = "Rate limits: —"
+            };
+
+            _rateLimitsGrid = BuildTelemetryGrid();
+            _rateLimitsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryRateRow.Window),
+                HeaderText = "Window",
+                MinimumWidth = 120
+            });
+            _rateLimitsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryRateRow.Metric),
+                HeaderText = "Metric",
+                MinimumWidth = 140
+            });
+            _rateLimitsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryRateRow.Platform),
+                HeaderText = "Platform",
+                MinimumWidth = 120
+            });
+            _rateLimitsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = nameof(TelemetryRateRow.Value),
+                HeaderText = "Value",
+                MinimumWidth = 80
+            });
+            _rateLimitsGrid.DataSource = _telemetryRatesBindingSource;
+            EnableDoubleBuffering(_rateLimitsGrid);
+
+            layout.Controls.Add(_rateLimitsSummary, 0, 0);
+            layout.Controls.Add(_rateLimitsGrid, 0, 1);
+
+            panel.Controls.Add(layout);
+            _tabRateLimits.Controls.Clear();
+            _tabRateLimits.Controls.Add(panel);
+        }
+
+        private void InitializeChatReplayTab()
+        {
+            if (_tabChatReplay == null)
+                return;
+
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                Padding = new Padding(8)
+            };
+
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            _chatReplaySummary = new Label
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                Text = "Chat replay: —"
+            };
+
+            _chatReplayGrid = BuildDataSignalsGrid();
+            _chatReplayGrid.Columns.Add(BuildTextColumn(nameof(ChatEventRow.Timestamp), "Timestamp", 160));
+            _chatReplayGrid.Columns.Add(BuildTextColumn(nameof(ChatEventRow.Creator), "Creator", 120));
+            _chatReplayGrid.Columns.Add(BuildTextColumn(nameof(ChatEventRow.Platform), "Platform", 110));
+            _chatReplayGrid.Columns.Add(BuildTextColumn(nameof(ChatEventRow.Username), "User", 120));
+            _chatReplayGrid.Columns.Add(BuildTextColumn(nameof(ChatEventRow.Message), "Message", 280));
+            _chatReplayGrid.DataSource = _chatEventsBindingSource;
+            EnableDoubleBuffering(_chatReplayGrid);
+
+            layout.Controls.Add(_chatReplaySummary, 0, 0);
+            layout.Controls.Add(_chatReplayGrid, 0, 1);
+
+            panel.Controls.Add(layout);
+            _tabChatReplay.Controls.Clear();
+            _tabChatReplay.Controls.Add(panel);
+        }
+
+        private void InitializeSupportTab()
+        {
+            if (_tabSupport == null)
+                return;
+
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                Padding = new Padding(12)
+            };
+
+            _supportSummary = new Label
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Text = "Support resources are available via the StreamSuites documentation and community channels."
+            };
+
+            var supportNote = new Label
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Padding = new Padding(0, 8, 0, 0),
+                Text = "Use the web dashboard to access live support links, FAQs, and account tooling."
+            };
+
+            panel.Controls.Add(supportNote);
+            panel.Controls.Add(_supportSummary);
+
+            _tabSupport.Controls.Clear();
+            _tabSupport.Controls.Add(panel);
+        }
+
+        private void InitializeUpdatesTab()
+        {
+            if (_tabUpdates == null)
+                return;
+
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                Padding = new Padding(12)
+            };
+
+            _updatesSummary = new Label
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Text = "Updates: —"
+            };
+
+            var note = new Label
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Padding = new Padding(0, 8, 0, 0),
+                Text = "Release notes are published in runtime exports and the web dashboard."
+            };
+
+            panel.Controls.Add(note);
+            panel.Controls.Add(_updatesSummary);
+
+            _tabUpdates.Controls.Clear();
+            _tabUpdates.Controls.Add(panel);
+        }
+
+        private void InitializeAboutTab()
+        {
+            if (_tabAbout == null)
+                return;
+
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                Padding = new Padding(12)
+            };
+
+            _aboutSummary = new Label
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Text = "About: —"
+            };
+
+            var btnAbout = new Button
+            {
+                Text = "Open About Dialog",
+                AutoSize = true
+            };
+            btnAbout.Click += async (_, __) => await ShowAboutDialogAsync();
+
+            panel.Controls.Add(btnAbout);
+            panel.Controls.Add(_aboutSummary);
+
+            _tabAbout.Controls.Clear();
+            _tabAbout.Controls.Add(panel);
         }
 
         private void InitializeTelemetryTab()
@@ -1331,6 +2036,7 @@ namespace StreamSuites.DesktopAdmin
                     ClearTelemetryData();
                     ClearCreatorsData();
                     ClearDataSignals();
+                    ClearChatTriggers();
                     ClearSettingsData();
                     ClearPlatformTabs();
                     UpdatePlatformActionButtons(null);
@@ -1370,8 +2076,12 @@ namespace StreamSuites.DesktopAdmin
                 UpdateCreatorsData(snapshot, creatorConfig, adminCreators);
                 await RefreshDataSignalsAsync(_currentPathStatus.SnapshotRoot)
                     .ConfigureAwait(true);
+                await RefreshChatTriggersAsync(_currentPathStatus.SnapshotRoot)
+                    .ConfigureAwait(true);
                 UpdateSettingsData(snapshot);
                 UpdatePlatformTabs(snapshot, creatorConfig, platformExport);
+                UpdateUpdatesSummary();
+                UpdateAboutSummary();
 
                 if (!string.IsNullOrWhiteSpace(_currentSortProperty))
                     ApplyGridSort(_currentSortProperty, _currentSortDirection);
@@ -1393,6 +2103,7 @@ namespace StreamSuites.DesktopAdmin
                 ClearTelemetryData();
                 ClearCreatorsData();
                 ClearDataSignals();
+                ClearChatTriggers();
                 ClearSettingsData();
                 ClearPlatformTabs();
                 UpdatePlatformActionButtons(null);
@@ -1424,6 +2135,7 @@ namespace StreamSuites.DesktopAdmin
             ClearTelemetryData();
             ClearCreatorsData();
             ClearDataSignals();
+            ClearChatTriggers();
             ClearSettingsData();
             ClearPlatformTabs();
             UpdatePlatformActionButtons(null);
@@ -1626,6 +2338,7 @@ namespace StreamSuites.DesktopAdmin
                 BuildRateRows(ratesExport);
 
             UpdateTelemetrySummary(eventsExport, errorsExport, ratesExport);
+            UpdateRateLimitsSummary(ratesExport);
             ForceControlRefresh(tabTelemetry);
         }
 
@@ -1640,7 +2353,14 @@ namespace StreamSuites.DesktopAdmin
                 _telemetrySummary.Text = "Telemetry: —";
             }
 
+            if (_rateLimitsSummary != null)
+            {
+                _rateLimitsSummary.Text = "Rate limits: —";
+            }
+
             ForceControlRefresh(tabTelemetry);
+            if (_tabRateLimits != null)
+                ForceControlRefresh(_tabRateLimits);
         }
 
         private void UpdateTelemetrySummary(
@@ -1660,6 +2380,18 @@ namespace StreamSuites.DesktopAdmin
                 _telemetrySummary.Text =
                     $"Telemetry: {eventsCount} events • {errorsCount} errors • Updated {generated}";
             }
+        }
+
+        private void UpdateRateLimitsSummary(TelemetryRatesExport? ratesExport)
+        {
+            if (_rateLimitsSummary == null)
+                return;
+
+            var windowCount = ratesExport?.Windows?.Count ?? 0;
+            var generated = ratesExport?.Generated_At ?? "—";
+
+            _rateLimitsSummary.Text =
+                $"Rate limits: {windowCount} windows • Updated {generated}";
         }
 
         private static List<TelemetryRateRow> BuildRateRows(
@@ -2117,6 +2849,49 @@ namespace StreamSuites.DesktopAdmin
             ForceControlRefresh(tabDataSignals);
         }
 
+        private async Task RefreshChatTriggersAsync(string? snapshotRoot)
+        {
+            if (string.IsNullOrWhiteSpace(snapshotRoot) || !Directory.Exists(snapshotRoot))
+            {
+                ClearChatTriggers();
+                return;
+            }
+
+            var triggersPath = ResolveAdminExportPath("chat_triggers.json");
+            if (string.IsNullOrWhiteSpace(triggersPath))
+            {
+                ClearChatTriggers();
+                return;
+            }
+
+            var triggersExport = await _exportReader
+                .TryReadAsync<ChatTriggersExport>(triggersPath)
+                .ConfigureAwait(true);
+
+            if (triggersExport == null)
+            {
+                ClearChatTriggers();
+                return;
+            }
+
+            _chatTriggersBindingSource.DataSource =
+                triggersExport.Triggers.Select(trigger => new ChatTriggerRow
+                {
+                    TriggerId = trigger.Trigger_Id,
+                    Creator = trigger.Creator,
+                    Type = trigger.Type,
+                    Command = trigger.Command,
+                    CooldownSeconds = trigger.Cooldown_Seconds,
+                    Description = trigger.Description,
+                    UpdatedAt = trigger.Updated_At ?? "—"
+                }).OrderBy(row => row.Command).ToList();
+
+            UpdateChatTriggersSummary(triggersExport);
+
+            if (_tabChatTriggers != null)
+                ForceControlRefresh(_tabChatTriggers);
+        }
+
         private void ClearDataSignals()
         {
             _clipsBindingSource.DataSource = null;
@@ -2134,7 +2909,31 @@ namespace StreamSuites.DesktopAdmin
                     "Runtime exports provide read-only observability for entities and signals.";
             }
 
+            if (_clipsSummary != null)
+                _clipsSummary.Text = "Clips: —";
+            if (_pollsSummary != null)
+                _pollsSummary.Text = "Polls: —";
+            if (_talliesSummary != null)
+                _talliesSummary.Text = "Tallies: —";
+            if (_scoreboardsSummary != null)
+                _scoreboardsSummary.Text = "Scoreboards: —";
+            if (_chatReplaySummary != null)
+                _chatReplaySummary.Text = "Chat replay: —";
+
             ForceControlRefresh(tabDataSignals);
+        }
+
+        private void ClearChatTriggers()
+        {
+            _chatTriggersBindingSource.DataSource = null;
+
+            if (_chatTriggersSummary != null)
+            {
+                _chatTriggersSummary.Text = "Chat triggers: —";
+            }
+
+            if (_tabChatTriggers != null)
+                ForceControlRefresh(_tabChatTriggers);
         }
 
         private void UpdateDataSignalsSummary(
@@ -2175,6 +2974,57 @@ namespace StreamSuites.DesktopAdmin
 
             _dataSignalsSummary.Text =
                 $"Runtime exports: {entityCount} entities • {signalCount} signals • Updated {updatedAt}";
+
+            UpdateEntitySummaries(clipsExport, pollsExport, talliesExport, scoreboardsExport, chatExport);
+        }
+
+        private void UpdateEntitySummaries(
+            ClipsExport? clipsExport,
+            PollsExport? pollsExport,
+            TalliesExport? talliesExport,
+            ScoreboardsExport? scoreboardsExport,
+            ChatEventsExport? chatExport)
+        {
+            if (_clipsSummary != null)
+            {
+                _clipsSummary.Text =
+                    $"Clips: {clipsExport?.Clips?.Count ?? 0}";
+            }
+
+            if (_pollsSummary != null)
+            {
+                _pollsSummary.Text =
+                    $"Polls: {pollsExport?.Polls?.Count ?? 0}";
+            }
+
+            if (_talliesSummary != null)
+            {
+                _talliesSummary.Text =
+                    $"Tallies: {talliesExport?.Tallies?.Count ?? 0}";
+            }
+
+            if (_scoreboardsSummary != null)
+            {
+                _scoreboardsSummary.Text =
+                    $"Scoreboards: {scoreboardsExport?.Scoreboards?.Count ?? 0}";
+            }
+
+            if (_chatReplaySummary != null)
+            {
+                _chatReplaySummary.Text =
+                    $"Chat replay events: {chatExport?.Events?.Count ?? 0}";
+            }
+        }
+
+        private void UpdateChatTriggersSummary(ChatTriggersExport? triggersExport)
+        {
+            if (_chatTriggersSummary == null)
+                return;
+
+            var updatedAt = GetMetaTimestamp(triggersExport?.Meta) ?? "—";
+
+            _chatTriggersSummary.Text =
+                $"Chat triggers: {triggersExport?.Triggers?.Count ?? 0} • Updated {updatedAt}";
         }
 
         private static string BuildPollOptionsSummary(List<PollOptionExport>? options)
@@ -2433,6 +3283,12 @@ namespace StreamSuites.DesktopAdmin
             }
 
             return null;
+        }
+
+        private string? ResolveAdminExportPath(string fileName)
+        {
+            return ResolveSnapshotPath("admin", fileName) ??
+                ResolveSnapshotPath(fileName);
         }
 
         private List<string> GetSnapshotRoots()
@@ -3405,6 +4261,8 @@ namespace StreamSuites.DesktopAdmin
             _runtimeVersionInfo =
                 RuntimeVersionProvider.Load(_currentPathStatus?.SnapshotRoot);
             UpdateRuntimeVersionDisplay();
+            UpdateUpdatesSummary();
+            UpdateAboutSummary();
         }
 
         private void UpdateRuntimeVersionDisplay()
@@ -3430,6 +4288,25 @@ namespace StreamSuites.DesktopAdmin
             return $"Runtime {_runtimeVersionInfo.ToDisplayVersion()} • " +
                    $"{_runtimeVersionInfo.ToDisplayBuild()}\n" +
                    details;
+        }
+
+        private void UpdateUpdatesSummary()
+        {
+            if (_updatesSummary == null)
+                return;
+
+            _updatesSummary.Text =
+                $"Updates: Runtime {_runtimeVersionInfo.ToDisplayVersion()} • " +
+                $"{_runtimeVersionInfo.ToDisplayBuild()}";
+        }
+
+        private void UpdateAboutSummary()
+        {
+            if (_aboutSummary == null)
+                return;
+
+            _aboutSummary.Text =
+                $"StreamSuites Administrator Dashboard • Runtime {_runtimeVersionInfo.ToDisplayVersion()}";
         }
 
         private sealed class CreatorRow
@@ -3495,6 +4372,17 @@ namespace StreamSuites.DesktopAdmin
             public string Platform { get; set; } = string.Empty;
             public string Username { get; set; } = string.Empty;
             public string Message { get; set; } = string.Empty;
+        }
+
+        private sealed class ChatTriggerRow
+        {
+            public string TriggerId { get; set; } = string.Empty;
+            public string Creator { get; set; } = string.Empty;
+            public string Type { get; set; } = string.Empty;
+            public string Command { get; set; } = string.Empty;
+            public int CooldownSeconds { get; set; }
+            public string Description { get; set; } = string.Empty;
+            public string UpdatedAt { get; set; } = string.Empty;
         }
 
         private sealed class PollVoteRow

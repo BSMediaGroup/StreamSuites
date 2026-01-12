@@ -269,4 +269,37 @@ namespace StreamSuites.DesktopAdmin.Models
         [JsonPropertyName("scored_at")]
         public string? Scored_At { get; set; }
     }
+
+    public class ChatTriggersExport
+    {
+        [JsonPropertyName("meta")]
+        public AdminExportMeta Meta { get; set; } = new();
+
+        [JsonPropertyName("triggers")]
+        public List<ChatTriggerExportItem> Triggers { get; set; } = new();
+    }
+
+    public class ChatTriggerExportItem
+    {
+        [JsonPropertyName("trigger_id")]
+        public string Trigger_Id { get; set; } = string.Empty;
+
+        [JsonPropertyName("creator")]
+        public string Creator { get; set; } = string.Empty;
+
+        [JsonPropertyName("type")]
+        public string Type { get; set; } = string.Empty;
+
+        [JsonPropertyName("command")]
+        public string Command { get; set; } = string.Empty;
+
+        [JsonPropertyName("cooldown_seconds")]
+        public int Cooldown_Seconds { get; set; }
+
+        [JsonPropertyName("description")]
+        public string Description { get; set; } = string.Empty;
+
+        [JsonPropertyName("updated_at")]
+        public string? Updated_At { get; set; }
+    }
 }
