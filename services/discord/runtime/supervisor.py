@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional
 
 from shared.logging.logger import get_logger
 from shared.storage.state_publisher import DashboardStatePublisher
-from services.discord.client import DiscordClient
+from services.discord.client import DiscordClient, await_ready_or_fail
 from services.discord.status import DiscordStatusManager
 from services.discord.heartbeat import DiscordHeartbeat, DiscordHeartbeatState
 
@@ -140,14 +140,10 @@ class DiscordSupervisor:
             log.warning("Discord supervisor already running")
             return
 
-        log.info("Starting Discord supervisor")
+        log.info("Initializing Discord supervisor")
 
         self._client = DiscordClient(supervisor=self)
-
-        # --------------------------------------------------
-        # Heartbeat lifecycle start
-        # --------------------------------------------------
-        self._heartbeat.start()
+        bot = self._client._ensure_bot()
 
         # --------------------------------------------------
         # Discord client main loop
@@ -155,24 +151,8 @@ class DiscordSupervisor:
         client_task = asyncio.create_task(self._client.run())
         self._tasks.append(client_task)
 
-        # --------------------------------------------------
-        # Post-ready initialization (status + heartbeat)
-        # --------------------------------------------------
-        async def _post_ready_init():
-            try:
-                await self._client._ready_event.wait()
-                bot = self._client.bot
-                if bot:
-                    self.notify_connected()
-                    await self._status.apply(bot)
-                    log.info("Discord status applied by supervisor")
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                log.warning(f"Post-ready Discord init failed: {e}")
-
-        init_task = asyncio.create_task(_post_ready_init())
-        self._tasks.append(init_task)
+        log.info("Awaiting READY event")
+        await await_ready_or_fail(bot, timeout=30)
 
         # --------------------------------------------------
         # Heartbeat tick loop (supervisor-owned)
@@ -186,10 +166,21 @@ class DiscordSupervisor:
             except asyncio.CancelledError:
                 raise
 
-        self._tasks.append(asyncio.create_task(_heartbeat_loop()))
-
         self._running = True
         log.info("Discord supervisor started")
+
+        self._heartbeat.start()
+        self.notify_connected()
+
+        try:
+            await self._status.apply(bot)
+            log.info("Discord status applied by supervisor")
+        except Exception as e:
+            log.warning(f"Discord status apply failed: {e}")
+
+        self._tasks.append(asyncio.create_task(_heartbeat_loop()))
+
+        log.info("Background tasks scheduled")
         self._write_snapshot()
 
     # --------------------------------------------------
