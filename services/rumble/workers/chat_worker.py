@@ -9,6 +9,8 @@ from core.jobs import JobRegistry
 from core.state_exporter import runtime_state
 from services.rumble.browser.browser_client import RumbleBrowserClient
 from shared.logging.logger import get_logger
+from shared.chat.events import create_chat_event
+from shared.storage.chat_events.writer import write_event
 
 # ------------------------------------------------------------
 # B3: Persistent trigger cooldowns via state_store (preferred)
@@ -443,6 +445,24 @@ class RumbleChatWorker:
         is_self = user.lower() in self_identities
 
         log.info(f"💬 {user}: {text} (created_on={created_raw_str})")
+
+        # --------------------------------------------------
+        # Unified chat storage (authoritative)
+        # --------------------------------------------------
+        chat_id = self._chat_id or msg.get("chat_id") or msg.get("chatId") or self.ctx.rumble_chat_channel_id
+        stream_id = f"rumble:{chat_id}" if chat_id else f"rumble:{self.ctx.creator_id}"
+        chat_event = create_chat_event(
+            stream_id=stream_id,
+            source_platform="rumble",
+            author_id=str(msg.get("user_id") or msg.get("username") or user),
+            display_name=user,
+            text=text,
+            badges=msg.get("badges") if isinstance(msg.get("badges"), list) else [],
+            roles=[],
+            ts=created_ts.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+            raw=msg,
+        )
+        write_event(chat_event)
 
         if not is_self:
             # Trigger evaluation

@@ -18,6 +18,20 @@
       "interval_seconds": 5
     }
   },
+  "chat": {
+    "api": {
+      "enabled": true,
+      "host": "0.0.0.0",
+      "port": 8210,
+      "allow_origins": ["*"]
+    },
+    "synthetic": {
+      "enabled": true,
+      "creator_token": "dev-creator-token",
+      "discord_bot_token": "dev-discord-token",
+      "rate_limit_per_minute": 30
+    }
+  },
   "clips": {
     "default_destination": {
       "platform": "rumble",
@@ -25,7 +39,7 @@
     },
     "encoding": {
       "concurrency": 2,
-      "ffmpeg_path": "X:\\\\ffmpeg\\\\bin\\\\ffmpeg.exe"
+      "ffmpeg_path": "X:\\ffmpeg\\bin\\ffmpeg.exe"
     },
     "export": {
       "state_path": "clips.json",

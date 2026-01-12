@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System;
 using System.ComponentModel;
 using System.Configuration;
+using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
@@ -60,6 +61,7 @@ namespace StreamSuites.DesktopAdmin
         private Label _inspectorBody;
 
         private const int SnapshotStaleThresholdSeconds = 20;
+        private const string LiveChatUrl = "http://localhost:8210/livechat/index.html";
 
         // Tray menu (STEP L)
         private ContextMenuStrip _trayMenu;
@@ -5062,6 +5064,28 @@ namespace StreamSuites.DesktopAdmin
                 nameof(PlatformStatus.Capabilities) => platform.Capabilities,
                 _ => null
             };
+        }
+
+        private void BtnOpenLiveChat_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = LiveChatUrl,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    this,
+                    $"Unable to open LiveChat URL. {ex.Message}",
+                    "LiveChat",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning
+                );
+            }
         }
 
         private class TelemetryRateRow

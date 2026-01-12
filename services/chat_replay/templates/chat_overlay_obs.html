@@ -50,6 +50,20 @@
     }
 
     renderOverlay(chatMessages);
+
+    async function pollRuntimeOverlay() {
+      try {
+        const result = await fetchRuntimeChatTail({ limit: 12 });
+        if (result && result.events && result.events.length) {
+          renderOverlay(result.events);
+        }
+      } catch (err) {
+        // Runtime API unavailable; keep mock data
+      }
+    }
+
+    pollRuntimeOverlay();
+    setInterval(pollRuntimeOverlay, 2500);
   </script>
 </body>
 </html>

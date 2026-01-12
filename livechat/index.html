@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StreamSuites | LiveChat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" />
+  <link rel="stylesheet" href="livechat.css" />
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>StreamSuites LiveChat</h1>
+      <div class="mode-pill" id="mode-pill">none</div>
+    </header>
+
+    <div class="content">
+      <aside class="sidebar">
+        <h2>Streams with Chat</h2>
+        <input id="stream-search" type="text" placeholder="Search stream_id or title" />
+        <div class="stream-list" id="stream-list"></div>
+        <button id="refresh-streams" class="primary">Refresh Streams</button>
+        <button id="clear-replay">Return to Live / None</button>
+      </aside>
+
+      <section class="main">
+        <div class="status-bar">
+          <span id="status-label">Ready</span>
+          <span class="status-pill" id="stream-pill">Unified Chat</span>
+        </div>
+
+        <div class="chat-log" id="chat-log"></div>
+
+        <div class="pagination">
+          <button id="load-more">Load more (replay)</button>
+          <button id="reset-replay">Reset replay</button>
+        </div>
+
+        <form class="synthetic" id="synthetic-form">
+          <select name="author_source" required>
+            <option value="creator">Creator</option>
+            <option value="discord">Discord Bot</option>
+          </select>
+          <input name="stream_id" placeholder="stream_id" required />
+          <input name="author_id" placeholder="author_id" required />
+          <input name="display_name" placeholder="display_name" required />
+          <input name="avatar_url" placeholder="avatar_url (optional)" />
+          <input name="token" type="password" placeholder="auth token" required />
+          <textarea name="text" placeholder="Type a synthetic message" required></textarea>
+          <div class="actions">
+            <button type="submit">Send Synthetic Message</button>
+            <span class="hint">Synthetic messages are stored only and never posted to platform chats.</span>
+            <span class="status-pill" id="synthetic-status"></span>
+          </div>
+        </form>
+      </section>
+    </div>
+  </div>
+
+  <script src="livechat.js"></script>
+</body>
+</html>

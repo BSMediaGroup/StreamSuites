@@ -8,6 +8,8 @@ from services.triggers.validation import NonEmptyChatValidationTrigger
 from services.triggers.actions import ActionExecutor
 from shared.logging.logger import get_logger
 from core.state_exporter import runtime_state, runtime_snapshot_exporter
+from shared.chat.events import create_chat_event
+from shared.storage.chat_events.writer import write_event
 
 from shared.runtime.quotas import (
     quota_registry,
@@ -175,6 +177,30 @@ class YouTubeChatWorker:
             f"[{self.ctx.creator_id}] [YouTube liveChat={message.live_chat_id}] "
             f"{message.author_name}: {message.text}"
         )
+
+        # --------------------------------------------------
+        # Unified chat storage (authoritative)
+        # --------------------------------------------------
+        roles = []
+        if message.is_owner:
+            roles.append("owner")
+        if message.is_moderator:
+            roles.append("moderator")
+        if message.is_member:
+            roles.append("member")
+
+        chat_event = create_chat_event(
+            stream_id=f"youtube:{message.live_chat_id}",
+            source_platform="youtube",
+            author_id=message.author_channel_id or message.author_name,
+            display_name=message.author_name,
+            text=message.text,
+            badges=message.badges,
+            roles=roles,
+            ts=event.get("timestamp"),
+            raw=event,
+        )
+        write_event(chat_event)
 
         # --------------------------------------------------
         # Trigger evaluation (execution happens elsewhere)
