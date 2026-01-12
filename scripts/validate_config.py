@@ -98,6 +98,95 @@ def validate_services_config() -> bool:
     return True
 
 
+def validate_discord_config() -> bool:
+    """
+    Validate shared/config/discord.json.
+
+    Expected (authoritative) shape:
+    {
+        "discord": {
+            "guilds": {
+                "<guild_id>": {
+                    "logging": { "enabled": bool, "channel_id": string | null },
+                    "notifications": { "<type>": string | null }
+                }
+            }
+        }
+    }
+
+    Legacy root-level "guilds" entries are tolerated for compatibility.
+    """
+
+    path = CONFIG_DIR / "discord.json"
+    data = _load_json(path)
+
+    discord_root = data.get("discord")
+    guilds = None
+
+    if discord_root is not None:
+        if not isinstance(discord_root, dict):
+            _error("discord.json: 'discord' must be an object")
+            return False
+        guilds = discord_root.get("guilds")
+    else:
+        guilds = data.get("guilds")
+
+    if guilds is None:
+        return True
+
+    if not isinstance(guilds, dict):
+        _error("discord.json: 'guilds' must be an object")
+        return False
+
+    for guild_id, entry in guilds.items():
+        if not isinstance(entry, dict):
+            continue
+
+        logging = entry.get("logging")
+        if logging is not None:
+            if not isinstance(logging, dict):
+                _error(f"discord.json: 'logging' for guild {guild_id} must be an object")
+                return False
+            enabled = logging.get("enabled")
+            if enabled is not None and not isinstance(enabled, bool):
+                _error(f"discord.json: 'logging.enabled' for guild {guild_id} must be a boolean")
+                return False
+            channel_id = logging.get("channel_id")
+            if channel_id is not None and not isinstance(channel_id, (str, int)):
+                _error(
+                    f"discord.json: 'logging.channel_id' for guild {guild_id} must be a string"
+                )
+                return False
+
+        notifications = entry.get("notifications")
+        if notifications is not None:
+            if not isinstance(notifications, dict):
+                _error(
+                    f"discord.json: 'notifications' for guild {guild_id} must be an object"
+                )
+                return False
+            for value in notifications.values():
+                if value is not None and not isinstance(value, (str, int)):
+                    _error(
+                        f"discord.json: notification values for guild {guild_id} must be strings"
+                    )
+                    return False
+
+        logging_enabled = entry.get("logging_enabled")
+        if logging_enabled is not None and not isinstance(logging_enabled, bool):
+            _error(f"discord.json: 'logging_enabled' for guild {guild_id} must be a boolean")
+            return False
+
+        logging_channel_id = entry.get("logging_channel_id")
+        if logging_channel_id is not None and not isinstance(logging_channel_id, (str, int)):
+            _error(
+                f"discord.json: 'logging_channel_id' for guild {guild_id} must be a string"
+            )
+            return False
+
+    return True
+
+
 # ------------------------------------------------------------
 # Entry point
 # ------------------------------------------------------------
@@ -106,6 +195,9 @@ def main() -> int:
     ok = True
 
     if not validate_services_config():
+        ok = False
+
+    if not validate_discord_config():
         ok = False
 
     if not ok:

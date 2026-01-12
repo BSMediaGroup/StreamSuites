@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Discord guild configuration",
+  "type": "object",
+  "properties": {
+    "discord": {
+      "type": "object",
+      "properties": {
+        "guilds": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "logging": {
+                "type": "object",
+                "properties": {
+                  "enabled": { "type": "boolean", "default": false },
+                  "channel_id": { "type": ["string", "null"] }
+                },
+                "additionalProperties": true
+              },
+              "notifications": {
+                "type": "object",
+                "properties": {
+                  "general": { "type": ["string", "null"] },
+                  "rumble_clips": { "type": ["string", "null"] },
+                  "youtube_clips": { "type": ["string", "null"] },
+                  "kick_clips": { "type": ["string", "null"] },
+                  "pilled_clips": { "type": ["string", "null"] },
+                  "twitch_clips": { "type": ["string", "null"] }
+                },
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
