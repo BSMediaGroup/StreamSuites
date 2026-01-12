@@ -22,6 +22,7 @@ IMPORTANT:
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -94,7 +95,8 @@ class DiscordSupervisor:
         heartbeat_state = self.heartbeat
         status_snapshot = self.status
         bot = self._client.bot if self._client and self._client.bot else None
-        bot_guild_ids = [guild.id for guild in bot.guilds] if bot else []
+        bot_guilds = {guild.id: guild.name for guild in bot.guilds} if bot else {}
+        user_id, oauth_guilds, oauth_permissions = self._load_oauth_context()
 
         return {
             "running": self._running,
@@ -107,7 +109,12 @@ class DiscordSupervisor:
             "task_count": self.task_count,
             "tasks": self.task_count,  # backward-compatible alias
             "guild_count": self._guild_count if self.connected else None,
-            "guilds": build_guild_exports(bot_guild_ids=bot_guild_ids),
+            "guilds": build_guild_exports(
+                bot_guilds=bot_guilds,
+                user_id=user_id,
+                oauth_guilds=oauth_guilds,
+                oauth_guild_permissions=oauth_permissions,
+            ),
             "status": status_snapshot,
             "presence": {
                 "status_text": status_snapshot.get("text"),
@@ -115,6 +122,36 @@ class DiscordSupervisor:
             },
             "heartbeat": heartbeat_state.snapshot(),
         }
+
+    @staticmethod
+    def _load_oauth_context() -> tuple[Optional[str], Optional[List[Dict[str, Any]]], Optional[Dict[str, Any]]]:
+        context_path = Path("shared/state/discord/oauth_context.json")
+        if not context_path.exists():
+            return None, None, None
+
+        try:
+            payload = json.loads(context_path.read_text(encoding="utf-8"))
+        except Exception:
+            return None, None, None
+
+        if not isinstance(payload, dict):
+            return None, None, None
+
+        user_id = payload.get("user_id") or payload.get("discord_user_id")
+        if isinstance(user_id, int):
+            user_id = str(user_id)
+        elif not isinstance(user_id, str):
+            user_id = None
+
+        oauth_guilds = payload.get("guilds") or payload.get("oauth_guilds")
+        oauth_guild_permissions = payload.get("guild_permissions") or payload.get("oauth_guild_permissions")
+
+        if not isinstance(oauth_guilds, list):
+            oauth_guilds = None
+        if not isinstance(oauth_guild_permissions, dict):
+            oauth_guild_permissions = None
+
+        return user_id, oauth_guilds, oauth_guild_permissions
 
     def _write_snapshot(self):
         self._snapshot_writer.write(self._build_snapshot_payload())

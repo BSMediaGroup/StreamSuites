@@ -35,7 +35,10 @@
             "channel_id": null
           }
         }
-      }
+      },
+      "guild_name": null,
+      "authorized_for_user": false,
+      "authorization_reason": "none"
     },
     {
       "guild_id": 1114717958573396008,
@@ -66,7 +69,10 @@
             "channel_id": null
           }
         }
-      }
+      },
+      "guild_name": null,
+      "authorized_for_user": false,
+      "authorization_reason": "none"
     },
     {
       "guild_id": 1240911014732763217,
@@ -97,7 +103,10 @@
             "channel_id": null
           }
         }
-      }
+      },
+      "guild_name": null,
+      "authorized_for_user": false,
+      "authorization_reason": "none"
     },
     {
       "guild_id": 1449303974086967306,
@@ -128,7 +137,10 @@
             "channel_id": "1449303975672283281"
           }
         }
-      }
+      },
+      "guild_name": null,
+      "authorized_for_user": false,
+      "authorization_reason": "none"
     }
   ],
   "status": {
