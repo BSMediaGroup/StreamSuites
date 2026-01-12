@@ -24,11 +24,13 @@ IMPORTANT:
 """
 
 import asyncio
+import os
 import signal
 import sys
 
 from dotenv import load_dotenv
 
+from core.config_loader import ConfigLoader
 from shared.logging.logger import get_logger
 from services.discord.runtime.supervisor import DiscordSupervisor
 
@@ -43,6 +45,16 @@ async def main(stop_event: asyncio.Event):
     load_dotenv()
 
     log.info("Discord control-plane runtime booting")
+
+    control_enabled = os.getenv("DISCORD_CONTROL_ENABLED", "true").strip().lower()
+    if control_enabled in {"0", "false", "no", "off"}:
+        log.info("Discord control-plane disabled via DISCORD_CONTROL_ENABLED")
+        return
+
+    system_config = ConfigLoader().load_system_config()
+    if not system_config.system.platforms.get("discord", True):
+        log.info("Discord control-plane disabled via system config")
+        return
 
     supervisor = DiscordSupervisor()
 
