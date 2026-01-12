@@ -399,6 +399,7 @@ class AdminCommandHandler:
                 }
 
         execution_results = []
+        skipped_actions = []
         if actions and ctx:
             normalized_actions = []
             for action in actions:
@@ -410,8 +411,20 @@ class AdminCommandHandler:
                     payload = dict(action.get("payload") or {})
                     payload.setdefault("ctx", ctx)
                     normalized_actions.append({**action, "payload": payload})
-                else:
-                    normalized_actions.append(action)
+                elif action_type == "send_chat_message":
+                    skipped_actions.append(
+                        {
+                            "action": action,
+                            "reason": "send_chat_message requires platform senders",
+                        }
+                    )
+                elif action_type:
+                    skipped_actions.append(
+                        {
+                            "action": action,
+                            "reason": f"unsupported action_type: {action_type}",
+                        }
+                    )
 
             executor = ActionExecutor(
                 creator_id=str(ctx.creator_id),
@@ -438,17 +451,19 @@ class AdminCommandHandler:
         creator_label = str(creator_id) if creator_id else "unknown"
         success_count = len([r for r in execution_results if r.get("status") == "success"])
         failure_count = len([r for r in execution_results if r.get("status") == "failed"])
+        skipped_count = len(skipped_actions)
         return {
             "ok": True,
             "message": (
                 f"Trigger '{trigger_id}' executed for creator '{creator_label}'. "
                 f"Actions: {len(actions)} "
-                f"(success={success_count}, failed={failure_count})."
+                f"(success={success_count}, failed={failure_count}, skipped={skipped_count})."
             ),
             "trigger_id": trigger_id,
             "creator_id": creator_id,
             "actions": actions,
             "results": execution_results,
+            "skipped": skipped_actions,
         }
 
     async def cmd_jobs(
