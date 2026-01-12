@@ -35,6 +35,7 @@ namespace StreamSuites.DesktopAdmin
         private Label lblSnapshotStatus;
         private Label lblPlatformCount;
         private Label lblLastRefresh;
+        private Label lblBridgeStatus;
         private DataGridView gridPlatforms;
 
         // Placeholder tabs
@@ -60,6 +61,8 @@ namespace StreamSuites.DesktopAdmin
         {
             if (disposing)
             {
+                DetachBridgeUi();
+
                 if (components != null)
                     components.Dispose();
 
@@ -110,6 +113,7 @@ namespace StreamSuites.DesktopAdmin
             lblSnapshotStatus = new Label();
             lblPlatformCount = new Label();
             lblLastRefresh = new Label();
+            lblBridgeStatus = new Label();
             gridPlatforms = new DataGridView();
 
             trayIcon = new NotifyIcon(components);
@@ -184,6 +188,10 @@ namespace StreamSuites.DesktopAdmin
             lblLastRefresh.AutoSize = true;
             lblLastRefresh.Location = new Point(8, 48);
 
+            lblBridgeStatus.AutoSize = true;
+            lblBridgeStatus.Location = new Point(8, 68);
+            lblBridgeStatus.Text = "Bridge: —";
+
             // GRID — FIXED FOR RESIZE / SORT / REORDER
             gridPlatforms.Dock = DockStyle.Fill;
             gridPlatforms.ReadOnly = true;
@@ -199,6 +207,7 @@ namespace StreamSuites.DesktopAdmin
             gridPlatforms.CellFormatting += GridPlatforms_CellFormatting;
 
             panelRuntimeTable.Controls.Add(gridPlatforms);
+            panelRuntimeTable.Controls.Add(lblBridgeStatus);
             panelRuntimeTable.Controls.Add(lblLastRefresh);
             panelRuntimeTable.Controls.Add(lblPlatformCount);
             panelRuntimeTable.Controls.Add(lblSnapshotStatus);
