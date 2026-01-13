@@ -1,76 +1,17 @@
 {
-  "running": true,
-  "connected": true,
-  "last_heartbeat_ts": "2026-01-12T17:28:49.826839+00:00",
-  "task_count": 2,
-  "tasks": 2,
-  "guild_count": 3,
+  "running": false,
+  "connected": false,
+  "last_heartbeat_ts": "2026-01-13T00:25:04.453500+00:00",
+  "task_count": 0,
+  "tasks": 0,
+  "guild_count": null,
   "guilds": [
     {
       "guild_id": 123456789012345678,
+      "guild_name": null,
       "bot_present": false,
-      "logging": {
-        "enabled": false,
-        "channel_id": null
-      },
-      "notifications": {
-        "enabled": false,
-        "general": {
-          "channel_id": null
-        },
-        "clips": {
-          "rumble": {
-            "channel_id": null
-          },
-          "youtube": {
-            "channel_id": null
-          },
-          "kick": {
-            "channel_id": null
-          },
-          "pilled": {
-            "channel_id": null
-          },
-          "twitch": {
-            "channel_id": null
-          }
-        }
-      }
-    },
-    {
-      "guild_id": 1114717958573396008,
-      "bot_present": true,
-      "logging": {
-        "enabled": false,
-        "channel_id": null
-      },
-      "notifications": {
-        "enabled": false,
-        "general": {
-          "channel_id": null
-        },
-        "clips": {
-          "rumble": {
-            "channel_id": null
-          },
-          "youtube": {
-            "channel_id": null
-          },
-          "kick": {
-            "channel_id": null
-          },
-          "pilled": {
-            "channel_id": null
-          },
-          "twitch": {
-            "channel_id": null
-          }
-        }
-      }
-    },
-    {
-      "guild_id": 1240911014732763217,
-      "bot_present": true,
+      "authorized_for_user": false,
+      "authorization_reason": "none",
       "logging": {
         "enabled": false,
         "channel_id": null
@@ -101,7 +42,10 @@
     },
     {
       "guild_id": 1449303974086967306,
-      "bot_present": true,
+      "guild_name": null,
+      "bot_present": false,
+      "authorized_for_user": false,
+      "authorization_reason": "none",
       "logging": {
         "enabled": true,
         "channel_id": "1449303976058028139"
@@ -140,9 +84,9 @@
     "status_emoji": null
   },
   "heartbeat": {
-    "started_at": "2026-01-12T12:44:21.971122+00:00",
-    "last_tick_at": "2026-01-12T17:28:49.826839+00:00",
-    "connected": true,
+    "started_at": "2026-01-12T17:32:55.080466+00:00",
+    "last_tick_at": "2026-01-13T00:25:04.453500+00:00",
+    "connected": false,
     "metadata": {}
   }
 }

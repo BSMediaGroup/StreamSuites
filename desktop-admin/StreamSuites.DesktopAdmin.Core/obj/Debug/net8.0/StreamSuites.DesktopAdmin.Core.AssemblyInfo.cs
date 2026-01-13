@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("StreamSuites.DesktopAdmin.Core")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+1441791e393c1ca900aa4fc0e253a25214b2f19d")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+778927c2549d65c6599af0fe82b1162f7e1b1b74")]
 [assembly: System.Reflection.AssemblyProductAttribute("StreamSuites.DesktopAdmin.Core")]
 [assembly: System.Reflection.AssemblyTitleAttribute("StreamSuites.DesktopAdmin.Core")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
