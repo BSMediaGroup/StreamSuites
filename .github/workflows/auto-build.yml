@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
 jobs:
   bump-build:
     runs-on: ubuntu-latest
@@ -66,11 +69,7 @@ jobs:
 
           next_build = f"{today}+{next_counter:03d}"
 
-          output_path = os.environ.get("GITHUB_OUTPUT")
-          if not output_path:
-              raise RuntimeError("GITHUB_OUTPUT not set")
-
-          with open(output_path, "a", encoding="utf-8") as output:
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"next_build={next_build}\n")
           PYCODE
 
@@ -85,31 +84,16 @@ jobs:
             --dashboard-root StreamSuites-Dashboard/docs
 
       # -----------------------------
-      # Commit changes (both repos)
+      # Commit runtime changes
       # -----------------------------
-      - name: Commit version updates
+      - name: Commit runtime version update
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # -----------------------------
-          # Runtime repo commit
-          # -----------------------------
           git add runtime/version.py changelog runtime/exports || true
           git diff --cached --quiet || \
             git commit -m "chore(runtime): bump build to ${{ steps.build.outputs.next_build }}"
-
-          # -----------------------------
-          # Dashboard repo commit
-          # -----------------------------
-          cd StreamSuites-Dashboard
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add docs/version.json docs/about docs/data || true
-          git diff --cached --quiet || \
-            git commit -m "chore(dashboard): sync version ${{ steps.build.outputs.next_build }}"
 
       # -----------------------------
       # Push runtime changes
@@ -119,6 +103,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git push https://x-access-token:${GITHUB_TOKEN}@github.com/BSMediaGroup/StreamSuites.git
+
+      # -----------------------------
+      # Commit dashboard changes (SKIP STATE PIPELINE)
+      # -----------------------------
+      - name: Commit dashboard version sync
+        run: |
+          cd StreamSuites-Dashboard
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add docs/version.json docs/about docs/data || true
+          git diff --cached --quiet || \
+            git commit -m "chore(dashboard): sync version ${{ steps.build.outputs.next_build }} [skip dashboard-state]"
 
       # -----------------------------
       # Push dashboard changes
