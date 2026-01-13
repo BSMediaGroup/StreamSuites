@@ -17,8 +17,8 @@ concurrency:
 
 jobs:
   publish-dashboard-state:
-    # Do NOT run on auto-build bump commits (auto-build now publishes snapshots itself)
-    if: "!contains(github.event.head_commit.message, 'chore(runtime): bump build to')"
+    # Do NOT run if auto-build already handled snapshot publishing
+    if: "!contains(github.event.head_commit.message, '[auto-build]')"
     runs-on: ubuntu-latest
 
     steps:
