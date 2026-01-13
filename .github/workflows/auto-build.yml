@@ -9,8 +9,6 @@ on:
       - "runtime/version.py"
       - "runtime/exports/**"
       - "changelog/**"
-
-      # Prevent running the bump just because you edited workflows
       - ".github/workflows/**"
 
 permissions:
@@ -22,8 +20,8 @@ concurrency:
 
 jobs:
   bump-build:
-    # Hard guard: do not run on the bump commit itself
-    if: "!contains(github.event.head_commit.message, 'chore(runtime): bump build to')"
+    # Hard guard: do not run on auto-build commits
+    if: "!contains(github.event.head_commit.message, '[auto-build]')"
     runs-on: ubuntu-latest
 
     steps:
@@ -107,7 +105,7 @@ jobs:
 
           git add runtime/version.py changelog runtime/exports || true
           git diff --cached --quiet || \
-            git commit -m "chore(runtime): bump build to ${{ steps.build.outputs.next_build }}"
+            git commit -m "chore(runtime): bump build to ${{ steps.build.outputs.next_build }} [auto-build]"
 
       # -----------------------------
       # Push runtime changes
@@ -119,7 +117,7 @@ jobs:
           git push https://x-access-token:${GITHUB_TOKEN}@github.com/BSMediaGroup/StreamSuites.git
 
       # -----------------------------
-      # Sync runtime snapshots into dashboard (ONE PUSH TOTAL)
+      # Sync runtime snapshots into dashboard
       # -----------------------------
       - name: Sync runtime snapshots into dashboard
         run: |
@@ -129,9 +127,9 @@ jobs:
             StreamSuites-Dashboard/docs/shared/state/
 
       # -----------------------------
-      # Commit dashboard changes (version + about/data + state) in ONE commit
+      # Commit dashboard changes (single commit)
       # -----------------------------
-      - name: Commit dashboard sync (single commit)
+      - name: Commit dashboard sync
         run: |
           cd StreamSuites-Dashboard
 
@@ -140,10 +138,10 @@ jobs:
 
           git add docs/version.json docs/about docs/data docs/shared/state || true
           git diff --cached --quiet || \
-            git commit -m "chore(dashboard): sync build ${{ steps.build.outputs.next_build }}"
+            git commit -m "chore(dashboard): sync build ${{ steps.build.outputs.next_build }} [auto-build]"
 
       # -----------------------------
-      # Push dashboard changes (ONE push per runtime commit)
+      # Push dashboard changes
       # -----------------------------
       - name: Push dashboard changes
         env:
