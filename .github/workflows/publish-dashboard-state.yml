@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   publish-dashboard-state:
+    if: "!contains(github.event.head_commit.message, 'skip dashboard-state')"
     runs-on: ubuntu-latest
 
     steps:
@@ -39,5 +40,6 @@ jobs:
           git config user.name "StreamSuites Runtime Bot"
           git config user.email "actions@github.com"
           git add docs/shared/state
-          git commit -m "chore: sync runtime snapshots" || echo "No changes to commit"
+          git diff --cached --quiet || \
+            git commit -m "chore: sync runtime snapshots"
           git push
