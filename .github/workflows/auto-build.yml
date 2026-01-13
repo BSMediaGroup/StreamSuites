@@ -4,12 +4,22 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "runtime/**"
+      - "scripts/update_version.py"
+      - "shared/**"
 
 permissions:
   contents: write
 
+concurrency:
+  group: runtime-build-bump
+  cancel-in-progress: false
+
 jobs:
   bump-build:
+    # Prevent self-trigger from bot commits
+    if: "!contains(github.event.head_commit.message, 'chore(runtime): bump build')"
     runs-on: ubuntu-latest
 
     steps:
@@ -20,6 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       # -----------------------------
       # Checkout dashboard repo
@@ -30,6 +41,7 @@ jobs:
           repository: BSMediaGroup/StreamSuites-Dashboard
           token: ${{ secrets.DASHBOARD_PUSH_TOKEN }}
           path: StreamSuites-Dashboard
+          persist-credentials: false
 
       # -----------------------------
       # Set up Python
@@ -105,7 +117,7 @@ jobs:
           git push https://x-access-token:${GITHUB_TOKEN}@github.com/BSMediaGroup/StreamSuites.git
 
       # -----------------------------
-      # Commit dashboard changes (SKIP STATE PIPELINE)
+      # Commit dashboard changes (version only)
       # -----------------------------
       - name: Commit dashboard version sync
         run: |
