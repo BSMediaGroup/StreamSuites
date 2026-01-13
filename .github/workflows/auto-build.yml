@@ -4,22 +4,26 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "runtime/**"
-      - "scripts/update_version.py"
-      - "shared/**"
+    paths-ignore:
+      # Prevent self-trigger loop on files this workflow writes
+      - "runtime/version.py"
+      - "runtime/exports/**"
+      - "changelog/**"
+
+      # Prevent running the bump just because you edited workflows
+      - ".github/workflows/**"
 
 permissions:
   contents: write
 
 concurrency:
-  group: runtime-build-bump
+  group: runtime-auto-build-bump
   cancel-in-progress: false
 
 jobs:
   bump-build:
-    # Prevent self-trigger from bot commits
-    if: "!contains(github.event.head_commit.message, 'chore(runtime): bump build')"
+    # Hard guard: do not run on the bump commit itself
+    if: "!contains(github.event.head_commit.message, 'chore(runtime): bump build to')"
     runs-on: ubuntu-latest
 
     steps:
@@ -30,7 +34,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: false
 
       # -----------------------------
       # Checkout dashboard repo
@@ -41,7 +44,6 @@ jobs:
           repository: BSMediaGroup/StreamSuites-Dashboard
           token: ${{ secrets.DASHBOARD_PUSH_TOKEN }}
           path: StreamSuites-Dashboard
-          persist-credentials: false
 
       # -----------------------------
       # Set up Python
@@ -86,7 +88,7 @@ jobs:
           PYCODE
 
       # -----------------------------
-      # Update runtime + dashboard versions
+      # Update runtime + dashboard versions (runtime authoritative)
       # -----------------------------
       - name: Update version metadata (runtime authoritative)
         run: |
@@ -117,21 +119,31 @@ jobs:
           git push https://x-access-token:${GITHUB_TOKEN}@github.com/BSMediaGroup/StreamSuites.git
 
       # -----------------------------
-      # Commit dashboard changes (version only)
+      # Sync runtime snapshots into dashboard (ONE PUSH TOTAL)
       # -----------------------------
-      - name: Commit dashboard version sync
+      - name: Sync runtime snapshots into dashboard
+        run: |
+          mkdir -p StreamSuites-Dashboard/docs/shared/state
+          rsync -av --delete \
+            runtime/exports/ \
+            StreamSuites-Dashboard/docs/shared/state/
+
+      # -----------------------------
+      # Commit dashboard changes (version + about/data + state) in ONE commit
+      # -----------------------------
+      - name: Commit dashboard sync (single commit)
         run: |
           cd StreamSuites-Dashboard
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add docs/version.json docs/about docs/data || true
+          git add docs/version.json docs/about docs/data docs/shared/state || true
           git diff --cached --quiet || \
-            git commit -m "chore(dashboard): sync version ${{ steps.build.outputs.next_build }} [skip dashboard-state]"
+            git commit -m "chore(dashboard): sync build ${{ steps.build.outputs.next_build }}"
 
       # -----------------------------
-      # Push dashboard changes
+      # Push dashboard changes (ONE push per runtime commit)
       # -----------------------------
       - name: Push dashboard changes
         env:
