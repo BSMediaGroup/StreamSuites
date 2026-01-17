@@ -1,10 +1,50 @@
 [
   {
+    "id": "2026-01-capability-tier-0-3-0",
+    "date": "2026-01-17",
+    "title": "Capability tier promoted to 0.3.0-alpha",
+    "description": "Documented the separation of web surfaces into distinct repositories, domain-based OAuth boundaries, central authentication services, tier scaffolding, and the reaffirmed runtime authority model without changing runtime execution behavior.",
+    "summary": "Promoted runtime metadata to 0.3.0-alpha to reflect the new capability tier and clarified architecture, authentication, and admin surfaces.",
+    "changes": {
+      "architecture": [
+        "Separated web surfaces into distinct repositories.",
+        "Established domain-based OAuth security boundaries."
+      ],
+      "authentication_and_accounts": [
+        "Central Auth API with OAuth providers (Google, GitHub, Discord).",
+        "Email magic-link login.",
+        "Account model with roles and session-based auth."
+      ],
+      "authorization_and_tiers": [
+        "Creator vs Admin role enforcement.",
+        "Tier scaffolding for OPEN, GOLD, and PRO."
+      ],
+      "tooling_and_admin": [
+        "Dedicated Chat Replay Launcher repository.",
+        "WinForms Desktop Admin runtime service control.",
+        "Local orchestration for Auth API and tunnels."
+      ],
+      "clarity": [
+        "Runtime reaffirmed as the authoritative source of truth.",
+        "Web surfaces consume exported metadata only."
+      ]
+    },
+    "version": "0.3.0-alpha",
+    "scope": "runtime",
+    "tags": [
+      "version",
+      "architecture",
+      "auth",
+      "tiers",
+      "admin"
+    ]
+  },
+  {
     "id": "2026-02-architecture-clarity",
     "date": "2026-02-01",
     "title": "Architecture and authority clarified",
     "description": "Documented the two-repository architecture with the runtime as sole authority, Desktop Admin as the privileged local control plane, the web dashboard as a read-only consumer, and ongoing path configuration groundwork without altering runtime behavior.",
-    "version": "0.2.3-alpha",
+    "version": "0.3.0-alpha",
     "scope": "runtime",
     "tags": [
       "architecture",
@@ -17,7 +57,7 @@
     "date": "2026-01-01",
     "title": "Alpha metadata refresh",
     "description": "Version metadata promoted to v0.2.2-alpha with build 2025.03 while preserving prior runtime history.",
-    "version": "0.2.3-alpha",
+    "version": "0.3.0-alpha",
     "scope": "runtime",
     "tags": [
       "alpha",
@@ -30,7 +70,7 @@
     "date": "2026-01-15",
     "title": "Runtime resumed",
     "description": "Runtime execution resumed with explicit platform states; Rumble remains PAUSED while YouTube and Twitch move forward.",
-    "version": "0.2.3-alpha",
+    "version": "0.3.0-alpha",
     "scope": "runtime",
     "tags": [
       "resumed",
@@ -43,7 +83,7 @@
     "date": "2025-12-28",
     "title": "Runtime suspended",
     "description": "Runtime development was indefinitely suspended after repeated failures to achieve a stable, deterministic ingestion baseline across external platforms.",
-    "version": "0.2.3-alpha",
+    "version": "0.3.0-alpha",
     "scope": "runtime",
     "tags": [
       "suspended",
@@ -56,7 +96,7 @@
     "date": "2025-12-20",
     "title": "Quota enforcement hardened",
     "description": "Daily quota enforcement was stabilized across platforms, consolidating the QuotaRegistry and keeping snapshot exports aligned for downstream readers.",
-    "version": "0.2.3-alpha",
+    "version": "0.3.0-alpha",
     "scope": "runtime",
     "tags": [
       "quotas",

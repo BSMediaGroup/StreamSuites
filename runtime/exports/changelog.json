@@ -2,14 +2,61 @@
   "meta": {
     "source": "runtime",
     "project": "StreamSuites™",
-    "version": "0.2.3-alpha",
+    "version": "0.3.0-alpha",
     "generated_at": "2026-02-01"
   },
   "entries": [
     {
+      "id": "2026-01-capability-tier-0-3-0",
+      "date": "2026-01-17",
+      "version": "0.3.0-alpha",
+      "scope": "runtime",
+      "title": "Capability tier promoted to 0.3.0-alpha",
+      "summary": "Promoted runtime metadata to 0.3.0-alpha to reflect the new capability tier and clarified architecture, authentication, and admin surfaces.",
+      "details": [
+        "Separated web surfaces into distinct repositories with domain-based OAuth security boundaries.",
+        "Central Auth API supports OAuth providers (Google, GitHub, Discord) and email magic-link login.",
+        "Account model includes roles with session-based authentication.",
+        "Creator vs Admin role enforcement and tier scaffolding for OPEN, GOLD, and PRO.",
+        "Dedicated Chat Replay Launcher repository and WinForms Desktop Admin runtime service control.",
+        "Local orchestration for the Auth API and tunnels while reaffirming runtime as the authoritative source of truth."
+      ],
+      "changes": {
+        "architecture": [
+          "Separated web surfaces into distinct repositories.",
+          "Established domain-based OAuth security boundaries."
+        ],
+        "authentication_and_accounts": [
+          "Central Auth API with OAuth providers (Google, GitHub, Discord).",
+          "Email magic-link login.",
+          "Account model with roles and session-based auth."
+        ],
+        "authorization_and_tiers": [
+          "Creator vs Admin role enforcement.",
+          "Tier scaffolding for OPEN, GOLD, and PRO."
+        ],
+        "tooling_and_admin": [
+          "Dedicated Chat Replay Launcher repository.",
+          "WinForms Desktop Admin runtime service control.",
+          "Local orchestration for Auth API and tunnels."
+        ],
+        "clarity": [
+          "Runtime reaffirmed as the authoritative source of truth.",
+          "Web surfaces consume exported metadata only."
+        ]
+      },
+      "tags": [
+        "version",
+        "architecture",
+        "auth",
+        "tiers",
+        "admin"
+      ]
+    },
+    {
       "id": "2026-02-architecture-clarity",
       "date": "2026-02-01",
-      "version": "0.2.3-alpha",
+      "version": "0.3.0-alpha",
       "scope": "runtime",
       "title": "Architecture and authority clarified",
       "summary": "Documented the authoritative runtime, Desktop Admin control plane, and downstream read-only web dashboard while laying path configuration groundwork.",
@@ -28,7 +75,7 @@
     {
       "id": "2026-01-alpha-version-refresh",
       "date": "2026-01-01",
-      "version": "0.2.3-alpha",
+      "version": "0.3.0-alpha",
       "scope": "runtime",
       "title": "Alpha metadata refresh",
       "summary": "Version metadata promoted to v0.2.2-alpha with build 2025.03 while preserving prior release history.",
@@ -46,7 +93,7 @@
     {
       "id": "2026-01-runtime-resumed",
       "date": "2026-01-15",
-      "version": "0.2.3-alpha",
+      "version": "0.3.0-alpha",
       "scope": "runtime",
       "title": "Runtime development resumed",
       "summary": "Runtime execution resumed with Rumble paused and YouTube/Twitch prioritized for ingestion.",
@@ -64,7 +111,7 @@
     {
       "id": "2025-12-project-suspended",
       "date": "2025-12-28",
-      "version": "0.2.3-alpha",
+      "version": "0.3.0-alpha",
       "scope": "runtime",
       "title": "Runtime development suspended",
       "summary": "Runtime execution and ingestion development has been suspended.",
@@ -82,7 +129,7 @@
     {
       "id": "2025-02-runtime-quotas",
       "date": "2025-12-20",
-      "version": "0.2.3-alpha",
+      "version": "0.3.0-alpha",
       "scope": "runtime",
       "title": "Quota enforcement hardened",
       "summary": "Daily quota enforcement stabilized across platforms.",
