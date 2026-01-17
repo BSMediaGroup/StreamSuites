@@ -7,6 +7,7 @@ import json
 import os
 import secrets
 import sqlite3
+import sys
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -21,14 +22,14 @@ from dotenv import load_dotenv
 # Paths / Environment
 # ==================================================
 
-ROOT = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent
 
 # StreamSuites/runtime/data/accounts.db
-RUNTIME_DIR = ROOT / "runtime" / "data"
+RUNTIME_DIR = BASE_DIR / "runtime" / "data"
 DB_PATH = RUNTIME_DIR / "accounts.db"
 RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
 
-load_dotenv(dotenv_path=ROOT / ".env")
+load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 
 # ==================================================
@@ -92,6 +93,19 @@ ses = boto3.client(
 # Database
 # ==================================================
 
+def validate_db_path():
+    if DB_PATH.exists():
+        with DB_PATH.open("rb") as handle:
+            header = handle.read(16)
+        if not header.startswith(b"SQLite format 3"):
+            message = (
+                "Invalid SQLite database file at "
+                f"{DB_PATH}. Reason: not a SQLite database. "
+                "Suggested remediation: remove or rename the invalid file."
+            )
+            print(message, file=sys.stderr)
+            raise RuntimeError(message)
+
 def db():
     # NOTE: check_same_thread=False isn’t necessary with http.server single-threaded default,
     # but safe if you later swap server class.
@@ -138,6 +152,7 @@ def init_db():
 
         conn.commit()
 
+validate_db_path()
 init_db()
 
 
