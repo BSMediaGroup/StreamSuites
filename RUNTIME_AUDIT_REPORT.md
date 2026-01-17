@@ -46,7 +46,7 @@ A minimally functional runtime for StreamSuites is achieved when:
   counters, and optionally hand actions to the ActionExecutor hook.
 
 ## 5) Runtime ↔ Dashboard gap (file-backed hot reload now optional)
-- Dashboard still reads static JSON (e.g., `StreamSuites-Dashboard/data/runtime_snapshot.json`), but a new optional
+- Dashboard still reads static JSON (e.g., `StreamSuites-Dashboard/docs/shared/state/runtime_snapshot.json`), but a new optional
   `HotReloadWatcher` can re-publish runtime snapshots + telemetry whenever files under `runtime/exports/` change. It is disabled
   by default, bounded by a configurable interval, and driven by `system.hot_reload` in `shared/config/system.json`. 【F:core/hot_reload_watcher.py†L1-L90】【F:runtime/exports/README.md†L9-L21】【F:shared/config/system.json†L2-L22】
 
@@ -73,12 +73,12 @@ Goals:
    while still emitting normalized chat events + NonEmptyChatValidationTrigger actions into runtime_state.
 2) Maintain trigger visibility across YouTube/Twitch/Kick by keeping `NonEmptyChatValidationTrigger` registered and surfacing
    runtime_state counters/telemetry in `runtime/exports/platforms.json` and dashboard consumers (e.g.,
-   StreamSuites-Dashboard/js/platforms/kick.js and twitch.js readers of export snapshots).
+   StreamSuites-Dashboard/docs/js/platforms/kick.js and twitch.js readers of export snapshots).
 3) Preserve Rumble paused: record paused status + paused_reason, guard against missing `rumble_manual_watch_url` or
    `rumble_livestream_api_env_key` without fatal errors, and avoid starting workers.
 4) Keep the optional HotReloadWatcher disabled by default but available via `shared/config/system.json` (`system.hot_reload`):
    monitor `runtime/exports/` (configurable), debounce via bounded intervals, and re-publish runtime_snapshot + telemetry that
-   downstream dashboards read from `runtime/exports/*.json` / StreamSuites-Dashboard/data/*.json. No secrets in logs; no
+   downstream dashboards read from `runtime/exports/*.json` / StreamSuites-Dashboard/docs/shared/state/*.json. No secrets in logs; no
    unbounded polling loops.
 5) Document/Desktop Admin EXE readiness: continue publishing about/roadmap control-plane notes, keep restart-applied config
    hashes intact, and describe file-based + future local IPC/HTTP interaction so the Desktop Admin EXE can manage configs

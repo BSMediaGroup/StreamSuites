@@ -85,13 +85,32 @@ Supported notification categories:
 - Intended for operators with direct runtime access; this authority model is by design,
   not a missing security feature.
 
-## Web Dashboard Relationship
+## Web Surface Relationship (Admin + Public + Creator)
 
-- The web dashboard is **not** in this repository.
-- It consumes runtime-exported state only.
-- It is gated by Discord OAuth (documented elsewhere).
-- It has **no process control**, **no filesystem authority**, and **no write paths**.
+- Web surfaces are **not** in this repository.
+- They consume runtime-exported state only and remain read-only.
+- OAuth-gated surfaces (notably Admin) never gain process control or filesystem access.
 - Runtime remains the **authoritative** executor for all behavior.
+
+## Repository Map
+
+- **StreamSuites (this repo):** Runtime engine + WinForms Desktop Admin + authoritative exports/version
+- **StreamSuites-Dashboard:** Admin web dashboard @ https://admin.streamsuites.app (GitHub Pages from `/docs`)
+- **StreamSuites-Public:** Public site @ https://streamsuites.app (GitHub Pages from repo root)
+- **StreamSuites-Creator:** Creator dashboard @ https://creator.streamsuites.app (GitHub Pages from repo root)
+
+## Domains & OAuth Redirect Surfaces
+
+- **Canonical public base:** https://streamsuites.app
+- **Creator base:** https://creator.streamsuites.app
+- **Admin base:** https://admin.streamsuites.app
+- **Version endpoint (all surfaces):** https://admin.streamsuites.app/version.json
+
+## Exports Contract (High Level)
+
+- `runtime/version.py` → `scripts/update_version.py` → `StreamSuites-Dashboard/docs/version.json`
+- `runtime/exports/` → synced into `StreamSuites-Dashboard/docs/shared/state/`
+- Public/Creator sites remain static consumers unless explicit publishing is added in the future.
 
 ## Versioning Policy
 

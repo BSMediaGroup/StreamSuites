@@ -12,7 +12,9 @@ namespace StreamSuites.DesktopAdmin.Bridge
     {
         private static readonly HashSet<string> AllowedOrigins = new(StringComparer.OrdinalIgnoreCase)
         {
-            "https://bsmediagroup.github.io"
+            "https://admin.streamsuites.app",
+            "https://creator.streamsuites.app",
+            "https://streamsuites.app"
         };
 
         private readonly BridgeState _state;
