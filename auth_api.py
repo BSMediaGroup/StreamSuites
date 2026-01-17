@@ -35,6 +35,10 @@ GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
 GITHUB_REDIRECT_URI = os.getenv("GITHUB_REDIRECT_URI")
 
+DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
+DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
+DISCORD_LOGIN_REDIRECT_URI = os.getenv("DISCORD_LOGIN_REDIRECT_URI")
+
 SESSION_SECRET = os.getenv("STREAMSUITES_SESSION_SECRET")
 ADMIN_EMAILS = {
     e.strip().lower()
@@ -51,6 +55,7 @@ LISTEN_PORT = 8787
 if not all([
     GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI,
     GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_REDIRECT_URI,
+    DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_LOGIN_REDIRECT_URI,
     SESSION_SECRET
 ]):
     raise RuntimeError("Missing required environment variables")
@@ -166,6 +171,31 @@ def github_emails(token):
     r.raise_for_status()
     return r.json()
 
+def discord_exchange(code):
+    r = requests.post(
+        "https://discord.com/api/oauth2/token",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        data={
+            "client_id": DISCORD_CLIENT_ID,
+            "client_secret": DISCORD_CLIENT_SECRET,
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": DISCORD_LOGIN_REDIRECT_URI,
+        },
+        timeout=15,
+    )
+    r.raise_for_status()
+    return r.json()["access_token"]
+
+def discord_profile(token):
+    r = requests.get(
+        "https://discord.com/api/users/@me",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=15,
+    )
+    r.raise_for_status()
+    return r.json()
+
 
 # ==================================================
 # HTTP Handler
@@ -176,23 +206,18 @@ class AuthHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         qs = parse_qs(parsed.query)
 
-        # ------------------------------------------
-        # LOGIN — GOOGLE
-        # ------------------------------------------
         if parsed.path == "/auth/login/google":
             self.handle_login_google(qs)
             return
 
-        # ------------------------------------------
-        # LOGIN — GITHUB
-        # ------------------------------------------
         if parsed.path == "/auth/login/github":
             self.handle_login_github(qs)
             return
 
-        # ------------------------------------------
-        # CALLBACKS
-        # ------------------------------------------
+        if parsed.path == "/auth/login/discord":
+            self.handle_login_discord(qs)
+            return
+
         if parsed.path == "/auth/callback/google":
             self.handle_google_callback(qs)
             return
@@ -201,61 +226,27 @@ class AuthHandler(BaseHTTPRequestHandler):
             self.handle_github_callback(qs)
             return
 
+        if parsed.path == "/auth/discord/login/callback":
+            self.handle_discord_callback(qs)
+            return
+
         self.send_error(404)
 
     # --------------------------------------------------
 
-    def handle_login_google(self, qs):
-        surface = qs.get("surface", ["creator"])[0]
+    def _start_oauth(self, provider, surface, location):
         state = secrets.token_urlsafe(32)
 
         self.send_response(302)
         set_cookie(self, "ss_oauth_state", make_signed_value({
             "state": state,
             "surface": surface,
-            "provider": "google",
+            "provider": provider,
             "iat": int(time.time())
         }), max_age=600)
 
-        self.send_header(
-            "Location",
-            "https://accounts.google.com/o/oauth2/v2/auth?" +
-            urlencode({
-                "client_id": GOOGLE_CLIENT_ID,
-                "redirect_uri": GOOGLE_REDIRECT_URI,
-                "response_type": "code",
-                "scope": "openid email profile",
-                "state": state,
-                "prompt": "select_account",
-            })
-        )
+        self.send_header("Location", location)
         self.end_headers()
-
-    def handle_login_github(self, qs):
-        surface = qs.get("surface", ["creator"])[0]
-        state = secrets.token_urlsafe(32)
-
-        self.send_response(302)
-        set_cookie(self, "ss_oauth_state", make_signed_value({
-            "state": state,
-            "surface": surface,
-            "provider": "github",
-            "iat": int(time.time())
-        }), max_age=600)
-
-        self.send_header(
-            "Location",
-            "https://github.com/login/oauth/authorize?" +
-            urlencode({
-                "client_id": GITHUB_CLIENT_ID,
-                "redirect_uri": GITHUB_REDIRECT_URI,
-                "state": state,
-                "scope": "read:user user:email",
-            })
-        )
-        self.end_headers()
-
-    # --------------------------------------------------
 
     def _load_state(self, returned_state, provider):
         raw = get_cookie(self, "ss_oauth_state")
@@ -264,10 +255,10 @@ class AuthHandler(BaseHTTPRequestHandler):
             raise ValueError("Invalid OAuth state")
         return data["surface"]
 
-    def _finalize_login(self, email, name, provider, provider_id, surface):
-        role = "admin" if email in ADMIN_EMAILS else "creator"
+    def _finalize_login(self, email, name, provider, provider_id, surface, extra=None):
+        role = "admin" if email and email in ADMIN_EMAILS else "creator"
 
-        session = make_signed_value({
+        session = {
             "email": email,
             "name": name,
             "role": role,
@@ -275,10 +266,13 @@ class AuthHandler(BaseHTTPRequestHandler):
             "provider": provider,
             "provider_id": provider_id,
             "iat": int(time.time())
-        })
+        }
+
+        if extra:
+            session.update(extra)
 
         self.send_response(302)
-        set_cookie(self, "streamsuites_session", session, max_age=60 * 60 * 24 * 7)
+        set_cookie(self, "streamsuites_session", make_signed_value(session), max_age=60 * 60 * 24 * 7)
         set_cookie(self, "ss_oauth_state", "deleted", max_age=0)
 
         self.send_header(
@@ -289,17 +283,58 @@ class AuthHandler(BaseHTTPRequestHandler):
 
     # --------------------------------------------------
 
+    def handle_login_google(self, qs):
+        surface = qs.get("surface", ["creator"])[0]
+        self._start_oauth(
+            "google",
+            surface,
+            "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
+                "client_id": GOOGLE_CLIENT_ID,
+                "redirect_uri": GOOGLE_REDIRECT_URI,
+                "response_type": "code",
+                "scope": "openid email profile",
+                "prompt": "select_account",
+            })
+        )
+
+    def handle_login_github(self, qs):
+        surface = qs.get("surface", ["creator"])[0]
+        self._start_oauth(
+            "github",
+            surface,
+            "https://github.com/login/oauth/authorize?" + urlencode({
+                "client_id": GITHUB_CLIENT_ID,
+                "redirect_uri": GITHUB_REDIRECT_URI,
+                "scope": "read:user user:email",
+            })
+        )
+
+    def handle_login_discord(self, qs):
+        surface = qs.get("surface", ["creator"])[0]
+        self._start_oauth(
+            "discord",
+            surface,
+            "https://discord.com/oauth2/authorize?" + urlencode({
+                "client_id": DISCORD_CLIENT_ID,
+                "redirect_uri": DISCORD_LOGIN_REDIRECT_URI,
+                "response_type": "code",
+                "scope": "identify email",
+                "prompt": "consent",
+            })
+        )
+
+    # --------------------------------------------------
+
     def handle_google_callback(self, qs):
         code = qs.get("code", [None])[0]
         state = qs.get("state", [None])[0]
-
         surface = self._load_state(state, "google")
 
         tokens = google_exchange(code)
         profile = google_profile(tokens["id_token"])
 
         self._finalize_login(
-            email=profile["email"].lower(),
+            email=profile.get("email", "").lower(),
             name=profile.get("name", ""),
             provider="google",
             provider_id=profile["sub"],
@@ -309,13 +344,11 @@ class AuthHandler(BaseHTTPRequestHandler):
     def handle_github_callback(self, qs):
         code = qs.get("code", [None])[0]
         state = qs.get("state", [None])[0]
-
         surface = self._load_state(state, "github")
 
         token = github_exchange(code)
         user = github_profile(token)
         emails = github_emails(token)
-
         primary = next(e for e in emails if e["primary"] and e["verified"])
 
         self._finalize_login(
@@ -324,6 +357,27 @@ class AuthHandler(BaseHTTPRequestHandler):
             provider="github",
             provider_id=str(user["id"]),
             surface=surface
+        )
+
+    def handle_discord_callback(self, qs):
+        code = qs.get("code", [None])[0]
+        state = qs.get("state", [None])[0]
+        surface = self._load_state(state, "discord")
+
+        token = discord_exchange(code)
+        user = discord_profile(token)
+
+        self._finalize_login(
+            email=(user.get("email") or "").lower() or None,
+            name=user.get("username"),
+            provider="discord",
+            provider_id=user["id"],
+            surface=surface,
+            extra={
+                "discord_id": user["id"],
+                "discord_username": user["username"],
+                "discord_verified": user.get("verified", False),
+            }
         )
 
 
