@@ -242,6 +242,21 @@ StreamSuites/
 │   │   ├── Program.cs
 │   │   ├── StreamSuites.DesktopAdmin.csproj
 │   │   ├── StreamSuites.DesktopAdmin.csproj.user
+│   │   ├── runtime-processes.json
+│   │   ├── Runtime/
+│   │   │   ├── Processes/
+│   │   │   │   ├── RuntimeProcessArgs.cs
+│   │   │   │   ├── RuntimeProcessConfig.cs
+│   │   │   │   ├── RuntimeProcessConfigService.cs
+│   │   │   │   ├── RuntimeProcessDefinition.cs
+│   │   │   │   ├── RuntimeProcessInstance.cs
+│   │   │   │   ├── RuntimeProcessLogEntry.cs
+│   │   │   │   ├── RuntimeProcessManager.cs
+│   │   │   │   └── RuntimeProcessStatus.cs
+│   │   │   └── Services/
+│   │   │       ├── AuthApiServiceController.cs
+│   │   │       ├── CloudflareTunnelServiceController.cs
+│   │   │       └── RuntimeServiceController.cs
 │   │   └── assets/
 │   │       ├── discord-0.svg
 │   │       ├── discord-muted.svg
@@ -641,6 +656,53 @@ and configurable refresh cadences.
 When both processes are active, the desktop admin presents live platform and
 telemetry status sourced from the runtime exports while keeping the runtime the
 sole authority for state changes.
+
+### Runtime process consoles (inline logs)
+
+The Desktop Admin includes a **Runtimes** page for launching and monitoring
+local runtime processes with inline log streaming (stdout/stderr). This is a
+log viewer with lifecycle controls, **not** an interactive terminal.
+
+**Config file locations (first match wins):**
+
+1. `%LOCALAPPDATA%\\StreamSuites\\runtime-processes.json`
+2. `desktop-admin/StreamSuites.DesktopAdmin/runtime-processes.json` (next to
+   the app executable; used as the dev fallback in this repo)
+
+**Schema (`runtime-processes.json`):**
+
+```json
+{
+  "stop_all_on_exit": false,
+  "processes": [
+    {
+      "id": "runtime",
+      "display_name": "StreamSuites Runtime",
+      "working_dir": "..\\\\..\\\\..\\\\runtime",
+      "exe": "python",
+      "args": ["-m", "core.app"],
+      "env": { "STREAMSUITES_ENV": "dev" },
+      "auto_start": false,
+      "show_in_ui": true,
+      "start_in_external_terminal_by_default": false
+    }
+  ]
+}
+```
+
+**Adding a new runtime:**
+- Add a new object to the `processes` array.
+- Use a stable `id` (used for tab keys and log file naming).
+- Use `args` as either a string or an array; arrays are passed as discrete
+  arguments.
+- Relative `working_dir` values resolve from the Desktop Admin executable
+  directory.
+
+**Known limitations:**
+- Inline consoles are **log viewers only** (stdout/stderr). Interactive input
+  requires `Open Terminal`.
+- External terminal launches are not log-captured by the inline viewer.
+- Logs are capped in-memory (default 10,000 lines; adjustable per runtime tab).
 
 ### Rumble chat ingest modes
 

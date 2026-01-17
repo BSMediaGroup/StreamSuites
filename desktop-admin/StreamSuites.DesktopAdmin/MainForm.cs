@@ -1,5 +1,6 @@
 using StreamSuites.DesktopAdmin.Bridge;
 using StreamSuites.DesktopAdmin.Core;
+using StreamSuites.DesktopAdmin.Runtime.Processes;
 using StreamSuites.DesktopAdmin.Runtime.Services;
 using StreamSuites.DesktopAdmin.RuntimeBridge;
 using StreamSuites.DesktopAdmin.Models;
@@ -12,6 +13,7 @@ using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -83,6 +85,19 @@ namespace StreamSuites.DesktopAdmin
         private Button _bridgeHealthButton;
         private Label _bridgeHeaderStatus;
         private TabPage _tabBridge;
+        private TabPage _tabRuntimes;
+
+        private readonly RuntimeProcessManager _runtimeProcessManager;
+        private readonly RuntimeProcessConfigService _runtimeProcessConfigService;
+        private RuntimeProcessConfig _runtimeProcessConfig = new RuntimeProcessConfig();
+        private readonly Dictionary<string, RuntimeProcessTabState> _runtimeTabStates
+            = new Dictionary<string, RuntimeProcessTabState>(StringComparer.OrdinalIgnoreCase);
+        private ListBox _runtimeListBox;
+        private TabControl _runtimeTabControl;
+        private Label _runtimeConfigPathLabel;
+        private System.Windows.Forms.Timer _runtimeLogFlushTimer;
+        private System.Windows.Forms.Timer _runtimeUptimeTimer;
+        private System.Windows.Forms.Timer _runtimeFilterTimer;
 
         private const int SnapshotStaleThresholdSeconds = 20;
         private const string LiveChatUrl = "http://localhost:8210/livechat/index.html";
@@ -92,6 +107,13 @@ namespace StreamSuites.DesktopAdmin
         private const string ServiceStartModeSettingKey = "ServiceAutoStartMode";
         private const string AuthApiAutoRestartSettingKey = "AuthApiAutoRestartEnabled";
         private const string CloudflareAutoRestartSettingKey = "CloudflareAutoRestartEnabled";
+        private const int DefaultRuntimeLogCap = 10000;
+        private const int RuntimeLogFlushIntervalMs = 200;
+        private const int RuntimeFilterDebounceMs = 300;
+        private static readonly Color RuntimeStatusStoppedColor = Color.DimGray;
+        private static readonly Color RuntimeStatusStartingColor = Color.Goldenrod;
+        private static readonly Color RuntimeStatusRunningColor = Color.ForestGreen;
+        private static readonly Color RuntimeStatusExitedColor = Color.Firebrick;
 
         // Tray menu (STEP L)
         private ContextMenuStrip _trayMenu;
@@ -228,6 +250,42 @@ namespace StreamSuites.DesktopAdmin
             public object RestartSync { get; } = new object();
         }
 
+        private sealed class RuntimeProcessTabState
+        {
+            public RuntimeProcessDefinition Definition { get; init; }
+            public TabPage Tab { get; init; }
+            public Panel StatusDot { get; init; }
+            public Label StatusLabel { get; init; }
+            public Label UptimeLabel { get; init; }
+            public Label PidLabel { get; init; }
+            public Button StartButton { get; init; }
+            public Button StopButton { get; init; }
+            public Button RestartButton { get; init; }
+            public Button OpenTerminalButton { get; init; }
+            public Button SaveLogButton { get; init; }
+            public Button ClearLogButton { get; init; }
+            public CheckBox AutoScrollToggle { get; init; }
+            public TextBox FilterBox { get; init; }
+            public NumericUpDown LogCapControl { get; init; }
+            public RichTextBox LogBox { get; init; }
+            public List<RuntimeProcessLogEntry> PendingEntries { get; } = new List<RuntimeProcessLogEntry>();
+            public object PendingSync { get; } = new object();
+            public bool FilterDirty { get; set; }
+            public string FilterText { get; set; } = string.Empty;
+        }
+
+        private sealed class RuntimeListItem
+        {
+            public RuntimeListItem(RuntimeProcessDefinition definition)
+            {
+                Definition = definition;
+            }
+
+            public RuntimeProcessDefinition Definition { get; }
+
+            public override string ToString() => Definition.DisplayLabel;
+        }
+
         public MainForm()
         {
             InitializeComponent();
@@ -300,6 +358,11 @@ namespace StreamSuites.DesktopAdmin
             _bridgeStateChangedHandler = (_, __) => UpdateBridgeUi();
             _bridgeState.StateChanged += _bridgeStateChangedHandler;
 
+            _runtimeProcessConfigService = new RuntimeProcessConfigService();
+            _runtimeProcessManager = new RuntimeProcessManager(DefaultRuntimeLogCap);
+            _runtimeProcessManager.StatusChanged += RuntimeProcessManager_StatusChanged;
+            _runtimeProcessManager.LogLine += RuntimeProcessManager_LogLine;
+
             _authApiController = new AuthApiServiceController();
             _cloudflareTunnelController = new CloudflareTunnelServiceController();
             InitializeServiceControls();
@@ -332,6 +395,7 @@ namespace StreamSuites.DesktopAdmin
             InitializePlatformGrid();
             InitializeInspectorPanel();
             InitializeBridgeTab();
+            InitializeRuntimesTab();
             InitializeMenu();
             InitializeJobsTab();
             InitializeTelemetryTab();
@@ -376,6 +440,24 @@ namespace StreamSuites.DesktopAdmin
             _sinceRefreshTimer.Tick += (_, __) =>
                 UpdateLastRefreshCounter();
 
+            _runtimeLogFlushTimer = new System.Windows.Forms.Timer
+            {
+                Interval = RuntimeLogFlushIntervalMs
+            };
+            _runtimeLogFlushTimer.Tick += (_, __) => FlushRuntimeLogUpdates();
+
+            _runtimeUptimeTimer = new System.Windows.Forms.Timer
+            {
+                Interval = 1000
+            };
+            _runtimeUptimeTimer.Tick += (_, __) => UpdateRuntimeUptime();
+
+            _runtimeFilterTimer = new System.Windows.Forms.Timer
+            {
+                Interval = RuntimeFilterDebounceMs
+            };
+            _runtimeFilterTimer.Tick += (_, __) => ApplyRuntimeFilters();
+
             RefreshSnapshotPathStatus();
             RefreshRuntimeVersionInfo();
 
@@ -385,7 +467,11 @@ namespace StreamSuites.DesktopAdmin
                 await RefreshSnapshotAsync();
                 _refreshTimer.Start();
                 _sinceRefreshTimer.Start();
+                _runtimeLogFlushTimer.Start();
+                _runtimeUptimeTimer.Start();
+                _runtimeFilterTimer.Start();
                 await ApplyPersistedServiceIntentsAsync();
+                await StartAutoRuntimeProcessesAsync();
             };
 
             FormClosing += MainForm_FormClosing;
@@ -615,6 +701,385 @@ namespace StreamSuites.DesktopAdmin
                 Apply();
         }
 
+        private async Task StartRuntimeProcessAsync(string id, bool respectExternalDefault)
+        {
+            if (!_runtimeTabStates.TryGetValue(id, out var tabState))
+                return;
+
+            if (respectExternalDefault && tabState.Definition.StartInExternalTerminalByDefault)
+            {
+                OpenRuntimeProcessTerminal(tabState.Definition);
+                return;
+            }
+
+            await _runtimeProcessManager.StartAsync(id);
+        }
+
+        private async Task StopRuntimeProcessAsync(string id)
+        {
+            await _runtimeProcessManager.StopAsync(id);
+        }
+
+        private async Task RestartRuntimeProcessAsync(string id)
+        {
+            await _runtimeProcessManager.RestartAsync(id);
+        }
+
+        private void RuntimeProcessManager_StatusChanged(string id, RuntimeProcessStatus status)
+        {
+            void Apply()
+            {
+                if (!_runtimeTabStates.TryGetValue(id, out var tabState))
+                    return;
+
+                UpdateRuntimeStatus(tabState, status);
+                UpdateRuntimeButtons(tabState, status);
+            }
+
+            if (IsHandleCreated && InvokeRequired)
+                BeginInvoke(new Action(Apply));
+            else if (!IsDisposed && !Disposing)
+                Apply();
+        }
+
+        private void RuntimeProcessManager_LogLine(string id, RuntimeProcessLogEntry entry)
+        {
+            if (!_runtimeTabStates.TryGetValue(id, out var tabState))
+                return;
+
+            lock (tabState.PendingSync)
+            {
+                tabState.PendingEntries.Add(entry);
+            }
+        }
+
+        private void FlushRuntimeLogUpdates()
+        {
+            foreach (var tabState in _runtimeTabStates.Values)
+            {
+                if (tabState.FilterDirty)
+                    continue;
+
+                List<RuntimeProcessLogEntry> pending;
+                lock (tabState.PendingSync)
+                {
+                    if (tabState.PendingEntries.Count == 0)
+                        continue;
+
+                    pending = new List<RuntimeProcessLogEntry>(tabState.PendingEntries);
+                    tabState.PendingEntries.Clear();
+                }
+
+                AppendRuntimeLogEntries(tabState, pending);
+
+                var instance = _runtimeProcessManager.GetInstance(tabState.Definition.Id);
+                if (instance != null &&
+                    tabState.LogBox.Lines.Length > instance.LogCap + 50)
+                {
+                    tabState.FilterDirty = true;
+                }
+            }
+        }
+
+        private void ApplyRuntimeFilters()
+        {
+            foreach (var tabState in _runtimeTabStates.Values)
+            {
+                if (!tabState.FilterDirty)
+                    continue;
+
+                RenderRuntimeLogFromBuffer(tabState);
+                lock (tabState.PendingSync)
+                {
+                    tabState.PendingEntries.Clear();
+                }
+                tabState.FilterDirty = false;
+            }
+        }
+
+        private void AppendRuntimeLogEntries(
+            RuntimeProcessTabState tabState,
+            IEnumerable<RuntimeProcessLogEntry> entries)
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            var filterText = tabState.FilterText;
+            var builder = new StringBuilder();
+
+            foreach (var entry in entries)
+            {
+                if (!IsRuntimeLogMatch(entry, filterText))
+                    continue;
+
+                builder.Append(entry);
+                builder.Append(Environment.NewLine);
+            }
+
+            if (builder.Length == 0)
+                return;
+
+            void Apply()
+            {
+                tabState.LogBox.AppendText(builder.ToString());
+                if (tabState.AutoScrollToggle.Checked)
+                {
+                    tabState.LogBox.SelectionStart = tabState.LogBox.TextLength;
+                    tabState.LogBox.ScrollToCaret();
+                }
+            }
+
+            if (IsHandleCreated && InvokeRequired)
+                BeginInvoke(new Action(Apply));
+            else if (!IsDisposed && !Disposing)
+                Apply();
+        }
+
+        private void RenderRuntimeLogFromBuffer(RuntimeProcessTabState tabState)
+        {
+            var entries = _runtimeProcessManager.GetLogSnapshot(tabState.Definition.Id);
+            var filterText = tabState.FilterText;
+            var builder = new StringBuilder();
+
+            foreach (var entry in entries)
+            {
+                if (!IsRuntimeLogMatch(entry, filterText))
+                    continue;
+
+                builder.Append(entry);
+                builder.Append(Environment.NewLine);
+            }
+
+            void Apply()
+            {
+                tabState.LogBox.Clear();
+                tabState.LogBox.Text = builder.ToString();
+                if (tabState.AutoScrollToggle.Checked)
+                {
+                    tabState.LogBox.SelectionStart = tabState.LogBox.TextLength;
+                    tabState.LogBox.ScrollToCaret();
+                }
+            }
+
+            if (IsHandleCreated && InvokeRequired)
+                BeginInvoke(new Action(Apply));
+            else if (!IsDisposed && !Disposing)
+                Apply();
+        }
+
+        private static bool IsRuntimeLogMatch(RuntimeProcessLogEntry entry, string filter)
+        {
+            if (string.IsNullOrWhiteSpace(filter))
+                return true;
+
+            return entry.Message?.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0
+                || entry.Stream?.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void UpdateRuntimeStatus(RuntimeProcessTabState tabState, RuntimeProcessStatus status)
+        {
+            var instance = _runtimeProcessManager.GetInstance(tabState.Definition.Id);
+            var pid = instance?.Process?.HasExited == false
+                ? instance?.Process?.Id.ToString(CultureInfo.InvariantCulture)
+                : "—";
+            var exitCode = instance?.LastExitCode;
+            var exitSuffix = exitCode.HasValue ? $" (code {exitCode.Value})" : string.Empty;
+
+            tabState.PidLabel.Text = $"PID: {pid}";
+            tabState.StatusLabel.Text = status switch
+            {
+                RuntimeProcessStatus.Running => "Running",
+                RuntimeProcessStatus.Starting => "Starting",
+                RuntimeProcessStatus.Exited => $"Exited{exitSuffix}",
+                RuntimeProcessStatus.Error => $"Error{exitSuffix}",
+                _ => "Stopped"
+            };
+
+            tabState.StatusDot.BackColor = status switch
+            {
+                RuntimeProcessStatus.Running => RuntimeStatusRunningColor,
+                RuntimeProcessStatus.Starting => RuntimeStatusStartingColor,
+                RuntimeProcessStatus.Exited => RuntimeStatusExitedColor,
+                RuntimeProcessStatus.Error => RuntimeStatusExitedColor,
+                _ => RuntimeStatusStoppedColor
+            };
+        }
+
+        private void UpdateRuntimeButtons(RuntimeProcessTabState tabState, RuntimeProcessStatus status)
+        {
+            var canStart = status == RuntimeProcessStatus.Stopped
+                || status == RuntimeProcessStatus.Exited
+                || status == RuntimeProcessStatus.Error;
+            var canStop = status == RuntimeProcessStatus.Running
+                || status == RuntimeProcessStatus.Starting;
+
+            tabState.StartButton.Enabled = canStart;
+            tabState.StopButton.Enabled = canStop;
+            tabState.RestartButton.Enabled = status == RuntimeProcessStatus.Running;
+        }
+
+        private void UpdateRuntimeUptime()
+        {
+            foreach (var tabState in _runtimeTabStates.Values)
+            {
+                var instance = _runtimeProcessManager.GetInstance(tabState.Definition.Id);
+                if (instance == null)
+                    continue;
+
+                if (instance.Status == RuntimeProcessStatus.Running &&
+                    instance.StartTimeUtc.HasValue)
+                {
+                    var uptime = DateTime.UtcNow - instance.StartTimeUtc.Value;
+                    tabState.UptimeLabel.Text = $"Uptime: {FormatDuration(uptime)}";
+                }
+                else
+                {
+                    tabState.UptimeLabel.Text = "Uptime: —";
+                }
+            }
+        }
+
+        private static string FormatDuration(TimeSpan duration)
+        {
+            if (duration.TotalHours >= 1)
+                return $"{(int)duration.TotalHours:D2}:{duration.Minutes:D2}:{duration.Seconds:D2}";
+
+            return $"{duration.Minutes:D2}:{duration.Seconds:D2}";
+        }
+
+        private void SaveRuntimeLog(string id)
+        {
+            var entries = _runtimeProcessManager.GetLogSnapshot(id);
+            if (entries.Count == 0)
+            {
+                MessageBox.Show(this, "No log lines captured yet.", "Save Log");
+                return;
+            }
+
+            using var dialog = new SaveFileDialog
+            {
+                Filter = "Log Files (*.log)|*.log|Text Files (*.txt)|*.txt|All Files (*.*)|*.*",
+                FileName = $"{id}-log.txt"
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            try
+            {
+                File.WriteAllLines(
+                    dialog.FileName,
+                    entries.Select(entry =>
+                        $"{entry.TimestampUtc:O} [{entry.Stream}] {entry.Message}"),
+                    Encoding.UTF8);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    this,
+                    $"Failed to save log file. {ex.Message}",
+                    "Save Log",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
+        private void ClearRuntimeLog(string id)
+        {
+            _runtimeProcessManager.ClearLogs(id);
+            if (_runtimeTabStates.TryGetValue(id, out var tabState))
+            {
+                tabState.LogBox.Clear();
+                lock (tabState.PendingSync)
+                {
+                    tabState.PendingEntries.Clear();
+                }
+            }
+        }
+
+        private void OpenRuntimeProcessTerminal(RuntimeProcessDefinition definition)
+        {
+            var workingDir = definition.WorkingDirectory;
+            if (!string.IsNullOrWhiteSpace(workingDir) && !Path.IsPathRooted(workingDir))
+            {
+                workingDir = Path.GetFullPath(
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, workingDir));
+            }
+
+            var envPrefix = string.Empty;
+            if (definition.EnvironmentVariables != null &&
+                definition.EnvironmentVariables.Count > 0)
+            {
+                var builder = new StringBuilder();
+                foreach (var entry in definition.EnvironmentVariables)
+                {
+                    builder.Append("set ");
+                    builder.Append(entry.Key);
+                    builder.Append('=');
+                    builder.Append(entry.Value);
+                    builder.Append(" && ");
+                }
+                envPrefix = builder.ToString();
+            }
+
+            var args = definition.Args?.HasList == true
+                ? string.Join(" ", definition.Args.Arguments.Select(QuoteCommandArgument))
+                : definition.Args?.Raw ?? string.Empty;
+
+            var command = $"{envPrefix}{definition.Executable} {args}".Trim();
+
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = $"/k {command}",
+                    WorkingDirectory = string.IsNullOrWhiteSpace(workingDir)
+                        ? AppDomain.CurrentDomain.BaseDirectory
+                        : workingDir,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    this,
+                    $"Unable to open terminal. {ex.Message}",
+                    "Open Terminal",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+        }
+
+        private static string QuoteCommandArgument(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return "\"\"";
+
+            if (value.IndexOfAny(new[] { ' ', '"', '\\' }) == -1)
+                return value;
+
+            var escaped = value.Replace("\"", "\\\"");
+            return $"\"{escaped}\"";
+        }
+
+        private async Task StartAutoRuntimeProcessesAsync()
+        {
+            foreach (var definition in _runtimeProcessConfig.Processes)
+            {
+                if (!definition.AutoStart)
+                    continue;
+
+                if (definition.StartInExternalTerminalByDefault)
+                {
+                    OpenRuntimeProcessTerminal(definition);
+                    continue;
+                }
+
+                await _runtimeProcessManager.StartAsync(definition.Id);
+            }
+        }
+
         private void InitializeMenu()
         {
             _menuMain = new MenuStrip
@@ -654,6 +1119,7 @@ namespace StreamSuites.DesktopAdmin
             var menuNavigate = new ToolStripMenuItem("Navigate");
             menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Overview", tabRuntime));
             menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Bridge / Connectivity", _tabBridge));
+            menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Runtimes", _tabRuntimes));
             menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Creators", tabCreators));
             menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Chat Triggers", _tabChatTriggers));
             menuNavigate.DropDownItems.Add(BuildNavigationMenuItem("Jobs", tabJobs));
@@ -749,10 +1215,12 @@ namespace StreamSuites.DesktopAdmin
             _tabUpdates = new TabPage("Updates") { Padding = new Padding(8) };
             _tabAbout = new TabPage("About") { Padding = new Padding(8) };
             _tabBridge = new TabPage("Bridge / Connectivity") { Padding = new Padding(8) };
+            _tabRuntimes = new TabPage("Runtimes") { Padding = new Padding(8) };
 
             tabMain.TabPages.Clear();
             tabMain.TabPages.Add(tabRuntime);
             tabMain.TabPages.Add(_tabBridge);
+            tabMain.TabPages.Add(_tabRuntimes);
             tabMain.TabPages.Add(tabCreators);
             tabMain.TabPages.Add(_tabChatTriggers);
             tabMain.TabPages.Add(tabJobs);
@@ -963,6 +1431,280 @@ namespace StreamSuites.DesktopAdmin
             _bridgeToggleButton.Click += async (_, __) => await ToggleBridgeServerAsync();
             _bridgeHealthButton.Click += (_, __) => OpenBridgeHealthCheck();
             UpdateBridgeUi();
+        }
+
+        private void InitializeRuntimesTab()
+        {
+            if (_tabRuntimes == null)
+                return;
+
+            var splitContainer = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Vertical,
+                SplitterDistance = 240,
+                Panel1MinSize = 200,
+                Panel2MinSize = 400
+            };
+
+            var listLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                Padding = new Padding(8)
+            };
+            listLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            listLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            listLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var listHeader = new Label
+            {
+                Text = "Configured Runtimes",
+                AutoSize = true,
+                Font = new Font(Font, FontStyle.Bold)
+            };
+
+            _runtimeListBox = new ListBox
+            {
+                Dock = DockStyle.Fill
+            };
+            _runtimeListBox.SelectedIndexChanged += (_, __) =>
+            {
+                if (_runtimeListBox.SelectedItem is RuntimeListItem item &&
+                    _runtimeTabStates.TryGetValue(item.Definition.Id, out var tabState))
+                {
+                    _runtimeTabControl.SelectedTab = tabState.Tab;
+                }
+            };
+
+            _runtimeConfigPathLabel = new Label
+            {
+                AutoSize = true,
+                ForeColor = Color.DimGray
+            };
+
+            listLayout.Controls.Add(listHeader, 0, 0);
+            listLayout.Controls.Add(_runtimeListBox, 0, 1);
+            listLayout.Controls.Add(_runtimeConfigPathLabel, 0, 2);
+
+            splitContainer.Panel1.Controls.Add(listLayout);
+
+            _runtimeTabControl = new TabControl
+            {
+                Dock = DockStyle.Fill
+            };
+
+            splitContainer.Panel2.Controls.Add(_runtimeTabControl);
+
+            _tabRuntimes.Controls.Clear();
+            _tabRuntimes.Controls.Add(splitContainer);
+
+            LoadRuntimeProcessConfig();
+        }
+
+        private void LoadRuntimeProcessConfig()
+        {
+            _runtimeProcessConfig = _runtimeProcessConfigService.Load();
+            _runtimeConfigPathLabel.Text =
+                $"Config: {_runtimeProcessConfigService.DescribeConfigLocation()}";
+
+            _runtimeProcessManager.LoadDefinitions(_runtimeProcessConfig.Processes);
+
+            _runtimeTabStates.Clear();
+            _runtimeTabControl.TabPages.Clear();
+            _runtimeListBox.Items.Clear();
+
+            foreach (var definition in _runtimeProcessConfig.Processes
+                .Where(process => process.ShowInUi))
+            {
+                var tabState = BuildRuntimeProcessTab(definition);
+                _runtimeTabStates[definition.Id] = tabState;
+                _runtimeTabControl.TabPages.Add(tabState.Tab);
+                _runtimeListBox.Items.Add(new RuntimeListItem(definition));
+            }
+
+            if (_runtimeListBox.Items.Count > 0)
+            {
+                _runtimeListBox.SelectedIndex = 0;
+            }
+        }
+
+        private RuntimeProcessTabState BuildRuntimeProcessTab(RuntimeProcessDefinition definition)
+        {
+            var tab = new TabPage(definition.DisplayLabel)
+            {
+                Padding = new Padding(8)
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3
+            };
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+            var headerRow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                WrapContents = true
+            };
+
+            var startButton = new Button { Text = "Start" };
+            var stopButton = new Button { Text = "Stop" };
+            var restartButton = new Button { Text = "Restart" };
+            var openTerminalButton = new Button { Text = "Open Terminal" };
+            var saveLogButton = new Button { Text = "Save Log" };
+            var clearLogButton = new Button { Text = "Clear" };
+
+            var autoScrollToggle = new CheckBox
+            {
+                Text = "Auto-scroll",
+                Checked = true,
+                AutoSize = true,
+                Margin = new Padding(12, 6, 0, 0)
+            };
+
+            var filterLabel = new Label
+            {
+                Text = "Filter:",
+                AutoSize = true,
+                Margin = new Padding(12, 6, 0, 0)
+            };
+            var filterBox = new TextBox
+            {
+                Width = 220
+            };
+
+            var logCapLabel = new Label
+            {
+                Text = "Log cap:",
+                AutoSize = true,
+                Margin = new Padding(12, 6, 0, 0)
+            };
+            var logCapControl = new NumericUpDown
+            {
+                Minimum = 100,
+                Maximum = 200000,
+                Value = DefaultRuntimeLogCap,
+                Width = 90
+            };
+
+            headerRow.Controls.Add(startButton);
+            headerRow.Controls.Add(stopButton);
+            headerRow.Controls.Add(restartButton);
+            headerRow.Controls.Add(openTerminalButton);
+            headerRow.Controls.Add(saveLogButton);
+            headerRow.Controls.Add(clearLogButton);
+            headerRow.Controls.Add(autoScrollToggle);
+            headerRow.Controls.Add(filterLabel);
+            headerRow.Controls.Add(filterBox);
+            headerRow.Controls.Add(logCapLabel);
+            headerRow.Controls.Add(logCapControl);
+
+            var statusRow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                WrapContents = true
+            };
+
+            var statusDot = new Panel
+            {
+                Width = 12,
+                Height = 12,
+                BackColor = RuntimeStatusStoppedColor,
+                Margin = new Padding(4, 8, 0, 0)
+            };
+            var statusLabel = new Label
+            {
+                Text = "Stopped",
+                AutoSize = true,
+                Margin = new Padding(6, 6, 0, 0)
+            };
+            var uptimeLabel = new Label
+            {
+                Text = "Uptime: —",
+                AutoSize = true,
+                Margin = new Padding(16, 6, 0, 0)
+            };
+            var pidLabel = new Label
+            {
+                Text = "PID: —",
+                AutoSize = true,
+                Margin = new Padding(16, 6, 0, 0)
+            };
+
+            statusRow.Controls.Add(statusDot);
+            statusRow.Controls.Add(statusLabel);
+            statusRow.Controls.Add(uptimeLabel);
+            statusRow.Controls.Add(pidLabel);
+
+            var logBox = new RichTextBox
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                Font = new Font("Consolas", 9f),
+                HideSelection = false,
+                WordWrap = false,
+                ScrollBars = RichTextBoxScrollBars.Vertical
+            };
+
+            var logMenu = new ContextMenuStrip();
+            logMenu.Items.Add(new ToolStripMenuItem("Copy", null, (_, __) => logBox.Copy()));
+            logMenu.Items.Add(new ToolStripMenuItem("Select All", null, (_, __) => logBox.SelectAll()));
+            logBox.ContextMenuStrip = logMenu;
+
+            layout.Controls.Add(headerRow, 0, 0);
+            layout.Controls.Add(statusRow, 0, 1);
+            layout.Controls.Add(logBox, 0, 2);
+
+            tab.Controls.Add(layout);
+
+            var tabState = new RuntimeProcessTabState
+            {
+                Definition = definition,
+                Tab = tab,
+                StatusDot = statusDot,
+                StatusLabel = statusLabel,
+                UptimeLabel = uptimeLabel,
+                PidLabel = pidLabel,
+                StartButton = startButton,
+                StopButton = stopButton,
+                RestartButton = restartButton,
+                OpenTerminalButton = openTerminalButton,
+                SaveLogButton = saveLogButton,
+                ClearLogButton = clearLogButton,
+                AutoScrollToggle = autoScrollToggle,
+                FilterBox = filterBox,
+                LogCapControl = logCapControl,
+                LogBox = logBox
+            };
+
+            startButton.Click += async (_, __) => await StartRuntimeProcessAsync(definition.Id, false);
+            stopButton.Click += async (_, __) => await StopRuntimeProcessAsync(definition.Id);
+            restartButton.Click += async (_, __) => await RestartRuntimeProcessAsync(definition.Id);
+            openTerminalButton.Click += (_, __) => OpenRuntimeProcessTerminal(definition);
+            saveLogButton.Click += (_, __) => SaveRuntimeLog(definition.Id);
+            clearLogButton.Click += (_, __) => ClearRuntimeLog(definition.Id);
+            filterBox.TextChanged += (_, __) =>
+            {
+                tabState.FilterText = filterBox.Text;
+                tabState.FilterDirty = true;
+            };
+            logCapControl.ValueChanged += (_, __) =>
+            {
+                _runtimeProcessManager.UpdateLogCap(definition.Id, (int)logCapControl.Value);
+                tabState.FilterDirty = true;
+            };
+
+            UpdateRuntimeButtons(tabState, RuntimeProcessStatus.Stopped);
+
+            return tabState;
         }
 
         private void InitializeChatTriggersTab()
@@ -2638,6 +3380,10 @@ namespace StreamSuites.DesktopAdmin
 
             PersistServiceIntentSnapshot();
             CancelServiceRestarts();
+            if (_runtimeProcessConfig?.StopAllOnExit == true)
+            {
+                await _runtimeProcessManager.StopAllAsync();
+            }
             ShutdownServiceControllers();
             await _runtimeController.StopRuntimeAsync(CancellationToken.None);
             await StopBridgeServerAsync();
