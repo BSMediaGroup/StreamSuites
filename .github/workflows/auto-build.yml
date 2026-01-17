@@ -52,6 +52,14 @@ jobs:
           python-version: "3.11"
 
       # -----------------------------
+      # Network diagnostics (DEBUG)
+      # -----------------------------
+      - name: Network diagnostics
+        run: |
+          nslookup github.com
+          curl -I https://github.com || true
+
+      # -----------------------------
       # Calculate next build number
       # -----------------------------
       - name: Calculate next build number
@@ -136,7 +144,6 @@ jobs:
 
           echo "Push failed after 5 attempts"
           exit 1
-
 
       # -----------------------------
       # Sync runtime snapshots into dashboard
