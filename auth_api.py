@@ -205,11 +205,11 @@ def get_cookie(handler, name):
             return part.split("=", 1)[1]
     return None
 
-def set_cookie(handler, name, value, max_age=3600):
-    handler.send_header(
-        "Set-Cookie",
-        f"{name}={value}; Max-Age={max_age}; HttpOnly; Secure; SameSite=Lax; Path=/"
-    )
+def set_cookie(handler, name, value, max_age=3600, domain=None, samesite="Lax"):
+    cookie = f"{name}={value}; Max-Age={max_age}; HttpOnly; Secure; SameSite={samesite}; Path=/"
+    if domain:
+        cookie = f"{cookie}; Domain={domain}"
+    handler.send_header("Set-Cookie", cookie)
 
 def send_json(handler, status, payload):
     body = json.dumps(payload).encode("utf-8")
@@ -456,6 +456,19 @@ class AuthHandler(BaseHTTPRequestHandler):
 
         try:
             # -----------------------------
+            # Generic login entry endpoint
+            # -----------------------------
+            if parsed.path == "/auth/login":
+                redirect = qs.get("redirect", [None])[0]
+                surface = "creator"
+                if redirect and "admin.streamsuites.app" in redirect:
+                    surface = "admin"
+                self.send_response(302)
+                self.send_header("Location", f"/auth/google?surface={surface}")
+                self.end_headers()
+                return
+
+            # -----------------------------
             # OAuth login endpoints
             # -----------------------------
             if parsed.path == "/auth/login/google":
@@ -545,7 +558,14 @@ class AuthHandler(BaseHTTPRequestHandler):
         surface = session.get("surface") or "creator"
 
         self.send_response(302)
-        set_cookie(self, "streamsuites_session", make_signed_value(session), max_age=60 * 60 * 24 * 7)
+        set_cookie(
+            self,
+            "streamsuites_session",
+            make_signed_value(session),
+            max_age=60 * 60 * 24 * 7,
+            domain=".streamsuites.app",
+            samesite="None",
+        )
         set_cookie(self, "ss_oauth_state", "deleted", max_age=0)
 
         # Admin always wins, but surface can force admin UI for testing
@@ -814,7 +834,14 @@ class AuthHandler(BaseHTTPRequestHandler):
         )
 
         self.send_response(302)
-        set_cookie(self, "streamsuites_session", make_signed_value(session), max_age=60 * 60 * 24 * 7)
+        set_cookie(
+            self,
+            "streamsuites_session",
+            make_signed_value(session),
+            max_age=60 * 60 * 24 * 7,
+            domain=".streamsuites.app",
+            samesite="None",
+        )
         set_cookie(self, "ss_email_surface", "deleted", max_age=0)
 
         target = ADMIN_RETURN if session.get("role") == "admin" or surface == "admin" else CREATOR_RETURN
@@ -836,7 +863,14 @@ class AuthHandler(BaseHTTPRequestHandler):
     def handle_logout(self):
         self.send_response(204)
         add_cors_headers(self)
-        set_cookie(self, "streamsuites_session", "deleted", max_age=0)
+        set_cookie(
+            self,
+            "streamsuites_session",
+            "deleted",
+            max_age=0,
+            domain=".streamsuites.app",
+            samesite="None",
+        )
         self.end_headers()
 
 
