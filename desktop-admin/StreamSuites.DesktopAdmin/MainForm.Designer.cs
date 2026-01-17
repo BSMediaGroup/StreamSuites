@@ -41,10 +41,32 @@ namespace StreamSuites.DesktopAdmin
         // Placeholder tabs
         private TabPage tabCreators;
         private TabPage tabDataSignals;
+        private TabPage tabServices;
         private TabPage tabSettings;
         private TabPage tabJobs;
         private TabPage tabTelemetry;
         private TabPage tabPaths;
+
+        // Services tab
+        private TableLayoutPanel tableServices;
+        private GroupBox groupAuthApi;
+        private GroupBox groupCloudflare;
+        private TableLayoutPanel tableAuthApi;
+        private TableLayoutPanel tableCloudflare;
+        private TableLayoutPanel tableAuthApiHeader;
+        private TableLayoutPanel tableCloudflareHeader;
+        private FlowLayoutPanel flowAuthApiActions;
+        private FlowLayoutPanel flowCloudflareActions;
+        private Label lblAuthApiStatus;
+        private Label lblCloudflareStatus;
+        private Button btnAuthApiStart;
+        private Button btnAuthApiStop;
+        private Button btnAuthApiRestart;
+        private Button btnCloudflareStart;
+        private Button btnCloudflareStop;
+        private Button btnCloudflareRestart;
+        private RichTextBox rtbAuthApiLog;
+        private RichTextBox rtbCloudflareLog;
 
         // Snapshot path editor
         private Label lblSnapshotPathTitle;
@@ -101,10 +123,31 @@ namespace StreamSuites.DesktopAdmin
             tabRuntime = new TabPage();
             tabCreators = new TabPage();
             tabDataSignals = new TabPage();
+            tabServices = new TabPage();
             tabSettings = new TabPage();
             tabJobs = new TabPage();
             tabTelemetry = new TabPage();
             tabPaths = new TabPage();
+
+            tableServices = new TableLayoutPanel();
+            groupAuthApi = new GroupBox();
+            groupCloudflare = new GroupBox();
+            tableAuthApi = new TableLayoutPanel();
+            tableCloudflare = new TableLayoutPanel();
+            tableAuthApiHeader = new TableLayoutPanel();
+            tableCloudflareHeader = new TableLayoutPanel();
+            flowAuthApiActions = new FlowLayoutPanel();
+            flowCloudflareActions = new FlowLayoutPanel();
+            lblAuthApiStatus = new Label();
+            lblCloudflareStatus = new Label();
+            btnAuthApiStart = new Button();
+            btnAuthApiStop = new Button();
+            btnAuthApiRestart = new Button();
+            btnCloudflareStart = new Button();
+            btnCloudflareStop = new Button();
+            btnCloudflareRestart = new Button();
+            rtbAuthApiLog = new RichTextBox();
+            rtbCloudflareLog = new RichTextBox();
 
             splitRuntime = new SplitContainer();
             panelRuntimeTable = new Panel();
@@ -153,6 +196,7 @@ namespace StreamSuites.DesktopAdmin
 
             tabCreators.Text = "Creators";
             tabDataSignals.Text = "Data & Signals";
+            tabServices.Text = "Services";
             tabJobs.Text = "Jobs";
             tabTelemetry.Text = "Telemetry";
             tabSettings.Text = "Settings";
@@ -163,6 +207,7 @@ namespace StreamSuites.DesktopAdmin
             tabMain.TabPages.Add(tabCreators);
             tabMain.TabPages.Add(tabJobs);
             tabMain.TabPages.Add(tabDataSignals);
+            tabMain.TabPages.Add(tabServices);
             tabMain.TabPages.Add(tabTelemetry);
             tabMain.TabPages.Add(tabSettings);
             tabMain.TabPages.Add(tabPaths);
@@ -216,6 +261,105 @@ namespace StreamSuites.DesktopAdmin
             panelRuntimeRight.Dock = DockStyle.Fill;
             panelRuntimeRight.Padding = new Padding(8);
             panelRuntimeRight.BackColor = SystemColors.ControlLight;
+
+            // Services tab controls
+            tabServices.Padding = new Padding(8);
+            tabServices.Controls.Add(tableServices);
+
+            tableServices.Dock = DockStyle.Fill;
+            tableServices.ColumnCount = 1;
+            tableServices.RowCount = 2;
+            tableServices.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tableServices.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+            tableServices.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+            tableServices.Controls.Add(groupAuthApi, 0, 0);
+            tableServices.Controls.Add(groupCloudflare, 0, 1);
+
+            groupAuthApi.Text = "Auth API";
+            groupAuthApi.Dock = DockStyle.Fill;
+            groupAuthApi.Padding = new Padding(8);
+            groupAuthApi.Controls.Add(tableAuthApi);
+
+            groupCloudflare.Text = "Cloudflare Tunnel";
+            groupCloudflare.Dock = DockStyle.Fill;
+            groupCloudflare.Padding = new Padding(8);
+            groupCloudflare.Controls.Add(tableCloudflare);
+
+            tableAuthApi.Dock = DockStyle.Fill;
+            tableAuthApi.ColumnCount = 1;
+            tableAuthApi.RowCount = 2;
+            tableAuthApi.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            tableAuthApi.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            tableAuthApi.Controls.Add(tableAuthApiHeader, 0, 0);
+            tableAuthApi.Controls.Add(rtbAuthApiLog, 0, 1);
+
+            tableCloudflare.Dock = DockStyle.Fill;
+            tableCloudflare.ColumnCount = 1;
+            tableCloudflare.RowCount = 2;
+            tableCloudflare.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            tableCloudflare.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            tableCloudflare.Controls.Add(tableCloudflareHeader, 0, 0);
+            tableCloudflare.Controls.Add(rtbCloudflareLog, 0, 1);
+
+            tableAuthApiHeader.Dock = DockStyle.Top;
+            tableAuthApiHeader.ColumnCount = 2;
+            tableAuthApiHeader.AutoSize = true;
+            tableAuthApiHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            tableAuthApiHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            tableAuthApiHeader.Controls.Add(lblAuthApiStatus, 0, 0);
+            tableAuthApiHeader.Controls.Add(flowAuthApiActions, 1, 0);
+
+            tableCloudflareHeader.Dock = DockStyle.Top;
+            tableCloudflareHeader.ColumnCount = 2;
+            tableCloudflareHeader.AutoSize = true;
+            tableCloudflareHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            tableCloudflareHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            tableCloudflareHeader.Controls.Add(lblCloudflareStatus, 0, 0);
+            tableCloudflareHeader.Controls.Add(flowCloudflareActions, 1, 0);
+
+            lblAuthApiStatus.AutoSize = true;
+            lblAuthApiStatus.Text = "● Stopped";
+            lblAuthApiStatus.ForeColor = SystemColors.GrayText;
+            lblAuthApiStatus.Dock = DockStyle.Left;
+
+            lblCloudflareStatus.AutoSize = true;
+            lblCloudflareStatus.Text = "● Stopped";
+            lblCloudflareStatus.ForeColor = SystemColors.GrayText;
+            lblCloudflareStatus.Dock = DockStyle.Left;
+
+            flowAuthApiActions.Dock = DockStyle.Fill;
+            flowAuthApiActions.FlowDirection = FlowDirection.LeftToRight;
+            flowAuthApiActions.AutoSize = true;
+            flowAuthApiActions.WrapContents = false;
+            flowAuthApiActions.Controls.Add(btnAuthApiStart);
+            flowAuthApiActions.Controls.Add(btnAuthApiStop);
+            flowAuthApiActions.Controls.Add(btnAuthApiRestart);
+
+            flowCloudflareActions.Dock = DockStyle.Fill;
+            flowCloudflareActions.FlowDirection = FlowDirection.LeftToRight;
+            flowCloudflareActions.AutoSize = true;
+            flowCloudflareActions.WrapContents = false;
+            flowCloudflareActions.Controls.Add(btnCloudflareStart);
+            flowCloudflareActions.Controls.Add(btnCloudflareStop);
+            flowCloudflareActions.Controls.Add(btnCloudflareRestart);
+
+            btnAuthApiStart.Text = "Start";
+            btnAuthApiStop.Text = "Stop";
+            btnAuthApiRestart.Text = "Restart";
+
+            btnCloudflareStart.Text = "Start";
+            btnCloudflareStop.Text = "Stop";
+            btnCloudflareRestart.Text = "Restart";
+
+            rtbAuthApiLog.Dock = DockStyle.Fill;
+            rtbAuthApiLog.ReadOnly = true;
+            rtbAuthApiLog.BackColor = SystemColors.Window;
+            rtbAuthApiLog.HideSelection = false;
+
+            rtbCloudflareLog.Dock = DockStyle.Fill;
+            rtbCloudflareLog.ReadOnly = true;
+            rtbCloudflareLog.BackColor = SystemColors.Window;
+            rtbCloudflareLog.HideSelection = false;
 
             // Paths tab controls
             lblSnapshotPathTitle = new Label

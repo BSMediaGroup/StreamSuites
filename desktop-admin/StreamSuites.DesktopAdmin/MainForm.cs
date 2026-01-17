@@ -1,5 +1,6 @@
 using StreamSuites.DesktopAdmin.Bridge;
 using StreamSuites.DesktopAdmin.Core;
+using StreamSuites.DesktopAdmin.Runtime.Services;
 using StreamSuites.DesktopAdmin.RuntimeBridge;
 using StreamSuites.DesktopAdmin.Models;
 using System.Collections.Generic;
@@ -31,6 +32,7 @@ namespace StreamSuites.DesktopAdmin
         private bool _bridgeUiDetached;
         private bool _shutdownRequested;
         private bool _shutdownInProgress;
+        private bool _servicesShutdownCompleted;
         private AppShutdownSource _shutdownSource = AppShutdownSource.Unknown;
 
         private readonly PathConfigService _pathConfigService;
@@ -87,6 +89,11 @@ namespace StreamSuites.DesktopAdmin
         private ToolStripStatusLabel _statusHealthDot;
 
         private MenuStrip _menuMain;
+
+        private readonly AuthApiServiceController _authApiController;
+        private readonly CloudflareTunnelServiceController _cloudflareTunnelController;
+        private ServiceUi _authApiUi;
+        private ServiceUi _cloudflareUi;
 
         private DataGridView _jobsGrid;
         private Label _jobsSummary;
@@ -163,6 +170,41 @@ namespace StreamSuites.DesktopAdmin
         private readonly Dictionary<string, PlatformTabControls> _platformTabControls
             = new(StringComparer.OrdinalIgnoreCase);
 
+        private enum ServiceStatus
+        {
+            Stopped,
+            Running,
+            Error
+        }
+
+        private sealed class ServiceUi
+        {
+            public ServiceUi(
+                RuntimeServiceController controller,
+                Label statusLabel,
+                Button startButton,
+                Button stopButton,
+                Button restartButton,
+                RichTextBox logBox)
+            {
+                Controller = controller;
+                StatusLabel = statusLabel;
+                StartButton = startButton;
+                StopButton = stopButton;
+                RestartButton = restartButton;
+                LogBox = logBox;
+            }
+
+            public RuntimeServiceController Controller { get; }
+            public Label StatusLabel { get; }
+            public Button StartButton { get; }
+            public Button StopButton { get; }
+            public Button RestartButton { get; }
+            public RichTextBox LogBox { get; }
+            public ServiceStatus Status { get; set; }
+            public bool Busy { get; set; }
+        }
+
         public MainForm()
         {
             InitializeComponent();
@@ -230,6 +272,10 @@ namespace StreamSuites.DesktopAdmin
             _bridgeServer = new BridgeServer(_bridgeState, _runtimeController, 8787, LogBridge);
             _bridgeStateChangedHandler = (_, __) => UpdateBridgeUi();
             _bridgeState.StateChanged += _bridgeStateChangedHandler;
+
+            _authApiController = new AuthApiServiceController();
+            _cloudflareTunnelController = new CloudflareTunnelServiceController();
+            InitializeServiceControls();
 
             _pathConfigService = new PathConfigService();
             _pathConfiguration = _pathConfigService.Load();
@@ -310,10 +356,194 @@ namespace StreamSuites.DesktopAdmin
                 await StartBridgeServerAsync();
                 await RefreshSnapshotAsync();
                 _refreshTimer.Start();
-            _sinceRefreshTimer.Start();
-        };
+                _sinceRefreshTimer.Start();
+            };
 
             FormClosing += MainForm_FormClosing;
+        }
+
+        private void InitializeServiceControls()
+        {
+            _authApiUi = new ServiceUi(
+                _authApiController,
+                lblAuthApiStatus,
+                btnAuthApiStart,
+                btnAuthApiStop,
+                btnAuthApiRestart,
+                rtbAuthApiLog);
+
+            _cloudflareUi = new ServiceUi(
+                _cloudflareTunnelController,
+                lblCloudflareStatus,
+                btnCloudflareStart,
+                btnCloudflareStop,
+                btnCloudflareRestart,
+                rtbCloudflareLog);
+
+            WireServiceEvents(_authApiUi);
+            WireServiceEvents(_cloudflareUi);
+
+            btnAuthApiStart.Click += (_, __) => StartService(_authApiUi);
+            btnAuthApiStop.Click += (_, __) => StopService(_authApiUi);
+            btnAuthApiRestart.Click += (_, __) => RestartService(_authApiUi);
+
+            btnCloudflareStart.Click += (_, __) => StartService(_cloudflareUi);
+            btnCloudflareStop.Click += (_, __) => StopService(_cloudflareUi);
+            btnCloudflareRestart.Click += (_, __) => RestartService(_cloudflareUi);
+
+            SetServiceStatus(_authApiUi, ServiceStatus.Stopped);
+            SetServiceStatus(_cloudflareUi, ServiceStatus.Stopped);
+            UpdateServiceButtons(_authApiUi);
+            UpdateServiceButtons(_cloudflareUi);
+        }
+
+        private void WireServiceEvents(ServiceUi ui)
+        {
+            ui.Controller.StdOutReceived += message =>
+                AppendServiceLog(ui, message, isError: false);
+            ui.Controller.StdErrReceived += message =>
+                AppendServiceLog(ui, message, isError: true);
+            ui.Controller.ProcessExited += exitCode =>
+                HandleServiceExited(ui, exitCode);
+        }
+
+        private void StartService(ServiceUi ui)
+        {
+            ExecuteServiceAction(ui, "Start", () => ui.Controller.Start());
+        }
+
+        private void StopService(ServiceUi ui)
+        {
+            ExecuteServiceAction(ui, "Stop", () => ui.Controller.Stop());
+        }
+
+        private void RestartService(ServiceUi ui)
+        {
+            ExecuteServiceAction(ui, "Restart", () => ui.Controller.Restart());
+        }
+
+        private void ExecuteServiceAction(
+            ServiceUi ui,
+            string actionName,
+            Func<bool> action)
+        {
+            if (ui.Busy)
+                return;
+
+            ui.Busy = true;
+            UpdateServiceButtons(ui);
+
+            try
+            {
+                var changed = action();
+
+                if (!changed)
+                {
+                    AppendServiceLog(
+                        ui,
+                        $"{actionName} ignored (service is already " +
+                        $"{(ui.Controller.IsRunning ? "running" : "stopped")}).",
+                        isError: false);
+                }
+
+                SetServiceStatus(
+                    ui,
+                    ui.Controller.IsRunning
+                        ? ServiceStatus.Running
+                        : ServiceStatus.Stopped);
+            }
+            catch (Exception ex)
+            {
+                AppendServiceLog(ui, $"{actionName} failed: {ex.Message}", isError: true);
+                SetServiceStatus(ui, ServiceStatus.Error);
+            }
+            finally
+            {
+                ui.Busy = false;
+                UpdateServiceButtons(ui);
+            }
+        }
+
+        private void HandleServiceExited(ServiceUi ui, int exitCode)
+        {
+            var status = exitCode == 0 ? ServiceStatus.Stopped : ServiceStatus.Error;
+            AppendServiceLog(
+                ui,
+                $"Process exited with code {exitCode}.",
+                isError: exitCode != 0);
+            SetServiceStatus(ui, status);
+            UpdateServiceButtons(ui);
+        }
+
+        private void SetServiceStatus(ServiceUi ui, ServiceStatus status)
+        {
+            ui.Status = status;
+
+            void Apply()
+            {
+                ui.StatusLabel.Text = status switch
+                {
+                    ServiceStatus.Running => "● Running",
+                    ServiceStatus.Error => "● Error",
+                    _ => "● Stopped"
+                };
+
+                ui.StatusLabel.ForeColor = status switch
+                {
+                    ServiceStatus.Running => Color.DarkGreen,
+                    ServiceStatus.Error => Color.DarkRed,
+                    _ => SystemColors.GrayText
+                };
+            }
+
+            if (IsHandleCreated && InvokeRequired)
+                BeginInvoke(new Action(Apply));
+            else if (!IsDisposed && !Disposing)
+                Apply();
+        }
+
+        private void UpdateServiceButtons(ServiceUi ui)
+        {
+            void Apply()
+            {
+                var running = ui.Controller.IsRunning;
+                ui.StartButton.Enabled = !ui.Busy && !running;
+                ui.StopButton.Enabled = !ui.Busy && running;
+                ui.RestartButton.Enabled = !ui.Busy && running;
+            }
+
+            if (IsHandleCreated && InvokeRequired)
+                BeginInvoke(new Action(Apply));
+            else if (!IsDisposed && !Disposing)
+                Apply();
+        }
+
+        private void AppendServiceLog(ServiceUi ui, string message, bool isError)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                return;
+
+            if (IsDisposed || Disposing)
+                return;
+
+            var timestamp = DateTime.Now.ToString("HH:mm:ss");
+            var prefix = $"[{timestamp}] [{ui.Controller.Name}] ";
+            var line = $"{prefix}{message}{Environment.NewLine}";
+
+            void Apply()
+            {
+                var box = ui.LogBox;
+                box.SelectionStart = box.TextLength;
+                box.SelectionColor = isError ? Color.DarkOrange : box.ForeColor;
+                box.AppendText(line);
+                box.SelectionColor = box.ForeColor;
+                box.ScrollToCaret();
+            }
+
+            if (IsHandleCreated && InvokeRequired)
+                BeginInvoke(new Action(Apply));
+            else
+                Apply();
         }
 
         private void InitializeMenu()
@@ -2337,8 +2567,44 @@ namespace StreamSuites.DesktopAdmin
             _shutdownInProgress = true;
             DetachBridgeUi();
 
+            ShutdownServiceControllers();
             await _runtimeController.StopRuntimeAsync(CancellationToken.None);
             await StopBridgeServerAsync();
+        }
+
+        private void ShutdownServiceControllers()
+        {
+            if (_servicesShutdownCompleted)
+                return;
+
+            _servicesShutdownCompleted = true;
+
+            StopServiceOnShutdown(_authApiUi);
+            StopServiceOnShutdown(_cloudflareUi);
+
+            _authApiController.Dispose();
+            _cloudflareTunnelController.Dispose();
+        }
+
+        private void StopServiceOnShutdown(ServiceUi ui)
+        {
+            if (ui == null)
+                return;
+
+            try
+            {
+                if (ui.Controller.IsRunning)
+                {
+                    ui.Controller.Stop();
+                    SetServiceStatus(ui, ServiceStatus.Stopped);
+                    UpdateServiceButtons(ui);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendServiceLog(ui, $"Shutdown stop failed: {ex.Message}", isError: true);
+                SetServiceStatus(ui, ServiceStatus.Error);
+            }
         }
 
         private void OpenBridgeHealthCheck()
