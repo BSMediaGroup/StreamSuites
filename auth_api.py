@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 
 
 # ==================================================
-# Load environment (.env next to this file)
+# Load environment
 # ==================================================
 
 ROOT = Path(__file__).resolve().parent
@@ -27,17 +27,14 @@ load_dotenv(dotenv_path=ROOT / ".env")
 # Config
 # ==================================================
 
-# Google
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
 
-# GitHub
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
 GITHUB_REDIRECT_URI = os.getenv("GITHUB_REDIRECT_URI")
 
-# StreamSuites
 SESSION_SECRET = os.getenv("STREAMSUITES_SESSION_SECRET")
 ADMIN_EMAILS = {
     e.strip().lower()
@@ -51,13 +48,11 @@ ADMIN_RETURN = "https://admin.streamsuites.app/auth/success.html"
 LISTEN_HOST = "0.0.0.0"
 LISTEN_PORT = 8787
 
-required = [
+if not all([
     GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI,
     GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_REDIRECT_URI,
     SESSION_SECRET
-]
-
-if not all(required):
+]):
     raise RuntimeError("Missing required environment variables")
 
 
@@ -72,8 +67,7 @@ def _b64u_dec(s: str) -> bytes:
     return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 
 def sign_blob(blob: bytes) -> str:
-    sig = hmac.new(SESSION_SECRET.encode(), blob, hashlib.sha256).digest()
-    return _b64u(sig)
+    return _b64u(hmac.new(SESSION_SECRET.encode(), blob, hashlib.sha256).digest())
 
 def make_signed_value(payload: dict) -> str:
     raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
@@ -109,11 +103,6 @@ def set_cookie(handler, name, value, max_age=3600):
         "Set-Cookie",
         f"{name}={value}; Max-Age={max_age}; HttpOnly; Secure; SameSite=Lax; Path=/"
     )
-
-def redirect(handler, location):
-    handler.send_response(302)
-    handler.send_header("Location", location)
-    handler.end_headers()
 
 
 # ==================================================
@@ -188,83 +177,83 @@ class AuthHandler(BaseHTTPRequestHandler):
         qs = parse_qs(parsed.query)
 
         # ------------------------------------------
-        # Health
-        # ------------------------------------------
-        if parsed.path == "/health":
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'{"status":"ok"}')
-            return
-
-        # ------------------------------------------
         # LOGIN — GOOGLE
         # ------------------------------------------
         if parsed.path == "/auth/login/google":
-            surface = qs.get("surface", ["creator"])[0]
-            state = secrets.token_urlsafe(32)
-
-            self.send_response(302)
-            set_cookie(self, "ss_oauth_state", make_signed_value({
-                "state": state,
-                "surface": surface,
-                "provider": "google",
-                "iat": int(time.time())
-            }), max_age=600)
-
-            redirect(self,
-                "https://accounts.google.com/o/oauth2/v2/auth?" +
-                urlencode({
-                    "client_id": GOOGLE_CLIENT_ID,
-                    "redirect_uri": GOOGLE_REDIRECT_URI,
-                    "response_type": "code",
-                    "scope": "openid email profile",
-                    "state": state,
-                    "prompt": "select_account",
-                })
-            )
+            self.handle_login_google(qs)
             return
 
         # ------------------------------------------
         # LOGIN — GITHUB
         # ------------------------------------------
         if parsed.path == "/auth/login/github":
-            surface = qs.get("surface", ["creator"])[0]
-            state = secrets.token_urlsafe(32)
-
-            self.send_response(302)
-            set_cookie(self, "ss_oauth_state", make_signed_value({
-                "state": state,
-                "surface": surface,
-                "provider": "github",
-                "iat": int(time.time())
-            }), max_age=600)
-
-            redirect(self,
-                "https://github.com/login/oauth/authorize?" +
-                urlencode({
-                    "client_id": GITHUB_CLIENT_ID,
-                    "redirect_uri": GITHUB_REDIRECT_URI,
-                    "state": state,
-                    "scope": "read:user user:email",
-                })
-            )
+            self.handle_login_github(qs)
             return
 
         # ------------------------------------------
-        # CALLBACK — GOOGLE
+        # CALLBACKS
         # ------------------------------------------
         if parsed.path == "/auth/callback/google":
             self.handle_google_callback(qs)
             return
 
-        # ------------------------------------------
-        # CALLBACK — GITHUB
-        # ------------------------------------------
         if parsed.path == "/auth/callback/github":
             self.handle_github_callback(qs)
             return
 
         self.send_error(404)
+
+    # --------------------------------------------------
+
+    def handle_login_google(self, qs):
+        surface = qs.get("surface", ["creator"])[0]
+        state = secrets.token_urlsafe(32)
+
+        self.send_response(302)
+        set_cookie(self, "ss_oauth_state", make_signed_value({
+            "state": state,
+            "surface": surface,
+            "provider": "google",
+            "iat": int(time.time())
+        }), max_age=600)
+
+        self.send_header(
+            "Location",
+            "https://accounts.google.com/o/oauth2/v2/auth?" +
+            urlencode({
+                "client_id": GOOGLE_CLIENT_ID,
+                "redirect_uri": GOOGLE_REDIRECT_URI,
+                "response_type": "code",
+                "scope": "openid email profile",
+                "state": state,
+                "prompt": "select_account",
+            })
+        )
+        self.end_headers()
+
+    def handle_login_github(self, qs):
+        surface = qs.get("surface", ["creator"])[0]
+        state = secrets.token_urlsafe(32)
+
+        self.send_response(302)
+        set_cookie(self, "ss_oauth_state", make_signed_value({
+            "state": state,
+            "surface": surface,
+            "provider": "github",
+            "iat": int(time.time())
+        }), max_age=600)
+
+        self.send_header(
+            "Location",
+            "https://github.com/login/oauth/authorize?" +
+            urlencode({
+                "client_id": GITHUB_CLIENT_ID,
+                "redirect_uri": GITHUB_REDIRECT_URI,
+                "state": state,
+                "scope": "read:user user:email",
+            })
+        )
+        self.end_headers()
 
     # --------------------------------------------------
 
@@ -292,8 +281,10 @@ class AuthHandler(BaseHTTPRequestHandler):
         set_cookie(self, "streamsuites_session", session, max_age=60 * 60 * 24 * 7)
         set_cookie(self, "ss_oauth_state", "deleted", max_age=0)
 
-        target = ADMIN_RETURN if role == "admin" or surface == "admin" else CREATOR_RETURN
-        self.send_header("Location", target)
+        self.send_header(
+            "Location",
+            ADMIN_RETURN if role == "admin" or surface == "admin" else CREATOR_RETURN
+        )
         self.end_headers()
 
     # --------------------------------------------------
