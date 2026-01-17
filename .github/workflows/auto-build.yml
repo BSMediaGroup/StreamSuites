@@ -116,13 +116,27 @@ jobs:
           git pull --rebase origin main
 
       # -----------------------------
-      # Push runtime changes
+      # Push runtime changes (with retry + backoff)
       # -----------------------------
       - name: Push runtime changes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git push https://x-access-token:${GITHUB_TOKEN}@github.com/BSMediaGroup/StreamSuites.git
+          set -e
+
+          for attempt in 1 2 3 4 5; do
+            echo "Push attempt $attempt..."
+            if git push https://x-access-token:${GITHUB_TOKEN}@github.com/BSMediaGroup/StreamSuites.git; then
+              echo "Push succeeded"
+              exit 0
+            fi
+            echo "Push failed — retrying in $((attempt * 10)) seconds..."
+            sleep $((attempt * 10))
+          done
+
+          echo "Push failed after 5 attempts"
+          exit 1
+
 
       # -----------------------------
       # Sync runtime snapshots into dashboard
