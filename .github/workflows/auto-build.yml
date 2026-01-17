@@ -108,6 +108,14 @@ jobs:
             git commit -m "chore(runtime): bump build to ${{ steps.build.outputs.next_build }} [auto-build]"
 
       # -----------------------------
+      # Rebase onto latest main BEFORE push (CRITICAL)
+      # -----------------------------
+      - name: Rebase onto latest main
+        run: |
+          git fetch origin
+          git pull --rebase origin main
+
+      # -----------------------------
       # Push runtime changes
       # -----------------------------
       - name: Push runtime changes
