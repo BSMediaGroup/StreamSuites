@@ -13,6 +13,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -34,6 +35,11 @@ namespace StreamSuites.DesktopAdmin
         private bool _shutdownInProgress;
         private bool _servicesShutdownCompleted;
         private AppShutdownSource _shutdownSource = AppShutdownSource.Unknown;
+        private readonly ServiceIntentStore _serviceIntentStore;
+        private readonly ServiceStartMode _serviceStartMode;
+        private ServiceIntentSnapshot _serviceIntentSnapshot = new ServiceIntentSnapshot();
+        private bool _startupIntentsApplied;
+        private readonly CancellationTokenSource _serviceRestartToken = new CancellationTokenSource();
 
         private readonly PathConfigService _pathConfigService;
         private PathConfiguration _pathConfiguration;
@@ -80,6 +86,12 @@ namespace StreamSuites.DesktopAdmin
 
         private const int SnapshotStaleThresholdSeconds = 20;
         private const string LiveChatUrl = "http://localhost:8210/livechat/index.html";
+        private const int ServiceRestartDelaySeconds = 5;
+        private const int ServiceRestartMaxAttempts = 3;
+        private static readonly TimeSpan ServiceRestartWindow = TimeSpan.FromMinutes(5);
+        private const string ServiceStartModeSettingKey = "ServiceAutoStartMode";
+        private const string AuthApiAutoRestartSettingKey = "AuthApiAutoRestartEnabled";
+        private const string CloudflareAutoRestartSettingKey = "CloudflareAutoRestartEnabled";
 
         // Tray menu (STEP L)
         private ContextMenuStrip _trayMenu;
@@ -177,6 +189,12 @@ namespace StreamSuites.DesktopAdmin
             Error
         }
 
+        private enum ServiceStartMode
+        {
+            Prompt,
+            AutoStart
+        }
+
         private sealed class ServiceUi
         {
             public ServiceUi(
@@ -203,6 +221,11 @@ namespace StreamSuites.DesktopAdmin
             public RichTextBox LogBox { get; }
             public ServiceStatus Status { get; set; }
             public bool Busy { get; set; }
+            public bool AutoRestartEnabled { get; set; }
+            public int RestartAttempts { get; set; }
+            public DateTime? LastRestartAttemptUtc { get; set; }
+            public CancellationTokenSource? RestartCancellation { get; set; }
+            public object RestartSync { get; } = new object();
         }
 
         public MainForm()
@@ -225,6 +248,10 @@ namespace StreamSuites.DesktopAdmin
             MinimumSize = new Size(900, 650);
             AutoScaleMode = AutoScaleMode.Dpi;
             Text = "StreamSuites Administrator Dashboard";
+
+            _serviceIntentStore = new ServiceIntentStore(BuildServiceIntentPath());
+            _serviceStartMode = ResolveServiceStartMode();
+            RegisterShutdownHandlers();
 
             try
             {
@@ -276,6 +303,7 @@ namespace StreamSuites.DesktopAdmin
             _authApiController = new AuthApiServiceController();
             _cloudflareTunnelController = new CloudflareTunnelServiceController();
             InitializeServiceControls();
+            _serviceIntentSnapshot = _serviceIntentStore.Load();
 
             _pathConfigService = new PathConfigService();
             _pathConfiguration = _pathConfigService.Load();
@@ -357,6 +385,7 @@ namespace StreamSuites.DesktopAdmin
                 await RefreshSnapshotAsync();
                 _refreshTimer.Start();
                 _sinceRefreshTimer.Start();
+                await ApplyPersistedServiceIntentsAsync();
             };
 
             FormClosing += MainForm_FormClosing;
@@ -379,6 +408,11 @@ namespace StreamSuites.DesktopAdmin
                 btnCloudflareStop,
                 btnCloudflareRestart,
                 rtbCloudflareLog);
+
+            _authApiUi.AutoRestartEnabled =
+                ReadBoolSetting(AuthApiAutoRestartSettingKey, defaultValue: false);
+            _cloudflareUi.AutoRestartEnabled =
+                ReadBoolSetting(CloudflareAutoRestartSettingKey, defaultValue: false);
 
             WireServiceEvents(_authApiUi);
             WireServiceEvents(_cloudflareUi);
@@ -409,6 +443,22 @@ namespace StreamSuites.DesktopAdmin
 
         private void StartService(ServiceUi ui)
         {
+            if (ui.Controller.IsRunning)
+            {
+                AppendServiceLog(ui, "Start blocked (service is already running).", isError: true);
+                UpdateServiceButtons(ui);
+                return;
+            }
+
+            if (IsDuplicateProcessDetected(ui.Controller))
+            {
+                AppendServiceLog(
+                    ui,
+                    "Start blocked (another process appears to be running).",
+                    isError: true);
+                return;
+            }
+
             ExecuteServiceAction(ui, "Start", () => ui.Controller.Start());
         }
 
@@ -451,6 +501,11 @@ namespace StreamSuites.DesktopAdmin
                     ui.Controller.IsRunning
                         ? ServiceStatus.Running
                         : ServiceStatus.Stopped);
+
+                if (ui.Controller.IsRunning)
+                {
+                    ResetServiceRestartState(ui);
+                }
             }
             catch (Exception ex)
             {
@@ -466,13 +521,27 @@ namespace StreamSuites.DesktopAdmin
 
         private void HandleServiceExited(ServiceUi ui, int exitCode)
         {
-            var status = exitCode == 0 ? ServiceStatus.Stopped : ServiceStatus.Error;
-            AppendServiceLog(
-                ui,
-                $"Process exited with code {exitCode}.",
-                isError: exitCode != 0);
-            SetServiceStatus(ui, status);
-            UpdateServiceButtons(ui);
+            try
+            {
+                var isUnexpected = exitCode != 0 && !_shutdownInProgress && !_servicesShutdownCompleted;
+                var status = exitCode == 0 ? ServiceStatus.Stopped : ServiceStatus.Error;
+                var message = isUnexpected
+                    ? $"Crash detected (exit code {exitCode})."
+                    : $"Process exited with code {exitCode}.";
+
+                AppendServiceLog(ui, message, isError: exitCode != 0);
+                SetServiceStatus(ui, status);
+                UpdateServiceButtons(ui);
+
+                if (isUnexpected)
+                {
+                    ScheduleServiceRestart(ui);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendServiceLog(ui, $"Exit handling failed: {ex.Message}", isError: true);
+            }
         }
 
         private void SetServiceStatus(ServiceUi ui, ServiceStatus status)
@@ -2567,6 +2636,8 @@ namespace StreamSuites.DesktopAdmin
             _shutdownInProgress = true;
             DetachBridgeUi();
 
+            PersistServiceIntentSnapshot();
+            CancelServiceRestarts();
             ShutdownServiceControllers();
             await _runtimeController.StopRuntimeAsync(CancellationToken.None);
             await StopBridgeServerAsync();
@@ -2640,6 +2711,332 @@ namespace StreamSuites.DesktopAdmin
                 _shutdownSource = AppShutdownSource.WindowClose;
 
             await ShutdownApplicationAsync(_shutdownSource);
+        }
+
+        private void RegisterShutdownHandlers()
+        {
+            Application.ApplicationExit += (_, __) =>
+                HandleEmergencyShutdown(AppShutdownSource.ApplicationExit, null);
+            Application.ThreadException += (_, args) =>
+                HandleEmergencyShutdown(AppShutdownSource.UnhandledException, args.Exception);
+            AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            {
+                HandleEmergencyShutdown(
+                    AppShutdownSource.UnhandledException,
+                    args.ExceptionObject as Exception);
+            };
+        }
+
+        private void HandleEmergencyShutdown(AppShutdownSource source, Exception? exception)
+        {
+            if (_shutdownInProgress || _servicesShutdownCompleted)
+                return;
+
+            _shutdownInProgress = true;
+            _shutdownSource = source;
+
+            if (exception != null)
+            {
+                LogBridge($"[Shutdown] Unhandled exception: {exception.Message}");
+            }
+
+            try
+            {
+                PersistServiceIntentSnapshot();
+                CancelServiceRestarts();
+                ShutdownServiceControllers();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Shutdown] Emergency shutdown failed: {ex.Message}");
+            }
+        }
+
+        private void CancelServiceRestarts()
+        {
+            _serviceRestartToken.Cancel();
+            CancelServiceRestart(_authApiUi);
+            CancelServiceRestart(_cloudflareUi);
+        }
+
+        private void CancelServiceRestart(ServiceUi ui)
+        {
+            if (ui == null)
+                return;
+
+            lock (ui.RestartSync)
+            {
+                CancelServiceRestartNoLock(ui);
+            }
+        }
+
+        private static void CancelServiceRestartNoLock(ServiceUi ui)
+        {
+            if (ui.RestartCancellation == null)
+                return;
+
+            ui.RestartCancellation.Cancel();
+            ui.RestartCancellation.Dispose();
+            ui.RestartCancellation = null;
+        }
+
+        private void ResetServiceRestartState(ServiceUi ui)
+        {
+            lock (ui.RestartSync)
+            {
+                ui.RestartAttempts = 0;
+                ui.LastRestartAttemptUtc = null;
+                CancelServiceRestartNoLock(ui);
+            }
+        }
+
+        private void ScheduleServiceRestart(ServiceUi ui)
+        {
+            if (!ui.AutoRestartEnabled)
+                return;
+
+            lock (ui.RestartSync)
+            {
+                if (_shutdownInProgress || _servicesShutdownCompleted)
+                    return;
+
+                var now = DateTime.UtcNow;
+                if (ui.LastRestartAttemptUtc == null ||
+                    now - ui.LastRestartAttemptUtc.Value > ServiceRestartWindow)
+                {
+                    ui.RestartAttempts = 0;
+                }
+
+                if (ui.RestartAttempts >= ServiceRestartMaxAttempts)
+                {
+                    AppendServiceLog(
+                        ui,
+                        $"Auto-restart halted after {ServiceRestartMaxAttempts} failed attempts.",
+                        isError: true);
+                    ui.AutoRestartEnabled = false;
+                    return;
+                }
+
+                ui.RestartAttempts++;
+                ui.LastRestartAttemptUtc = now;
+                CancelServiceRestartNoLock(ui);
+                ui.RestartCancellation =
+                    CancellationTokenSource.CreateLinkedTokenSource(_serviceRestartToken.Token);
+
+                AppendServiceLog(
+                    ui,
+                    $"Auto-restart scheduled in {ServiceRestartDelaySeconds}s (attempt {ui.RestartAttempts}/{ServiceRestartMaxAttempts}).",
+                    isError: false);
+
+                var token = ui.RestartCancellation.Token;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(ServiceRestartDelaySeconds), token);
+                        if (token.IsCancellationRequested)
+                            return;
+
+                        SafeInvoke(() => StartService(ui));
+                    }
+                    catch (TaskCanceledException)
+                    {
+                        // ignore
+                    }
+                    catch (Exception ex)
+                    {
+                        AppendServiceLog(ui, $"Auto-restart failed: {ex.Message}", isError: true);
+                    }
+                });
+            }
+        }
+
+        private void SafeInvoke(Action action)
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            if (IsHandleCreated && InvokeRequired)
+                BeginInvoke(action);
+            else
+                action();
+        }
+
+        private bool IsDuplicateProcessDetected(RuntimeServiceController controller)
+        {
+            var processName = Path.GetFileNameWithoutExtension(controller.Command);
+            if (string.IsNullOrWhiteSpace(processName))
+                return false;
+
+            try
+            {
+                var matches = Process.GetProcessesByName(processName);
+                return matches.Any();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Service] Duplicate check failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        private async Task ApplyPersistedServiceIntentsAsync()
+        {
+            if (_startupIntentsApplied)
+                return;
+
+            _startupIntentsApplied = true;
+            var intents = _serviceIntentSnapshot.Services
+                .ToDictionary(entry => entry.ServiceId, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var ui in GetServiceUis())
+            {
+                if (!intents.TryGetValue(ui.Controller.Name, out var entry))
+                    continue;
+
+                if (!entry.WasRunning)
+                    continue;
+
+                if (_serviceStartMode == ServiceStartMode.AutoStart)
+                {
+                    StartService(ui);
+                    continue;
+                }
+
+                var prompt = $"Start {ui.Controller.Name}? It was running when the app closed.";
+                var result = MessageBox.Show(
+                    this,
+                    prompt,
+                    "Start Services",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+
+                if (result == DialogResult.Yes)
+                {
+                    StartService(ui);
+                }
+            }
+
+            await Task.CompletedTask;
+        }
+
+        private IEnumerable<ServiceUi> GetServiceUis()
+        {
+            if (_authApiUi != null)
+                yield return _authApiUi;
+            if (_cloudflareUi != null)
+                yield return _cloudflareUi;
+        }
+
+        private void PersistServiceIntentSnapshot()
+        {
+            var snapshot = new ServiceIntentSnapshot
+            {
+                Services = GetServiceUis()
+                    .Select(ui => new ServiceIntentEntry
+                    {
+                        ServiceId = ui.Controller.Name,
+                        WasRunning = ui.Controller.IsRunning
+                    })
+                    .ToList()
+            };
+
+            _serviceIntentSnapshot = snapshot;
+            _serviceIntentStore.Save(snapshot);
+        }
+
+        private static string BuildServiceIntentPath()
+        {
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            return Path.Combine(localAppData, "StreamSuites", "service-intent.json");
+        }
+
+        private static bool ReadBoolSetting(string key, bool defaultValue)
+        {
+            var value = ConfigurationManager.AppSettings[key];
+            return bool.TryParse(value, out var parsed) ? parsed : defaultValue;
+        }
+
+        private static ServiceStartMode ResolveServiceStartMode()
+        {
+            var value = ConfigurationManager.AppSettings[ServiceStartModeSettingKey];
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return ServiceStartMode.Prompt;
+            }
+
+            return value.Trim().Equals("auto", StringComparison.OrdinalIgnoreCase)
+                || value.Trim().Equals("autostart", StringComparison.OrdinalIgnoreCase)
+                || value.Trim().Equals("true", StringComparison.OrdinalIgnoreCase)
+                ? ServiceStartMode.AutoStart
+                : ServiceStartMode.Prompt;
+        }
+
+        private sealed class ServiceIntentEntry
+        {
+            [JsonPropertyName("service_id")]
+            public string ServiceId { get; set; } = string.Empty;
+
+            [JsonPropertyName("was_running")]
+            public bool WasRunning { get; set; }
+        }
+
+        private sealed class ServiceIntentSnapshot
+        {
+            [JsonPropertyName("services")]
+            public List<ServiceIntentEntry> Services { get; set; } = new List<ServiceIntentEntry>();
+        }
+
+        private sealed class ServiceIntentStore
+        {
+            private readonly string _path;
+
+            public ServiceIntentStore(string path)
+            {
+                _path = path;
+            }
+
+            public ServiceIntentSnapshot Load()
+            {
+                try
+                {
+                    if (!File.Exists(_path))
+                    {
+                        return new ServiceIntentSnapshot();
+                    }
+
+                    var json = File.ReadAllText(_path);
+                    var snapshot = JsonSerializer.Deserialize<ServiceIntentSnapshot>(json);
+                    return snapshot ?? new ServiceIntentSnapshot();
+                }
+                catch
+                {
+                    return new ServiceIntentSnapshot();
+                }
+            }
+
+            public void Save(ServiceIntentSnapshot snapshot)
+            {
+                try
+                {
+                    var directory = Path.GetDirectoryName(_path);
+                    if (!string.IsNullOrWhiteSpace(directory))
+                    {
+                        Directory.CreateDirectory(directory);
+                    }
+
+                    var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions
+                    {
+                        WriteIndented = true
+                    });
+
+                    File.WriteAllText(_path, json);
+                }
+                catch
+                {
+                    // best-effort persistence
+                }
+            }
         }
 
         private void DetachBridgeUi()
