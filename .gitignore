@@ -99,3 +99,4 @@ run_*.bat
 # ====================================
 !test_rumble_api.py
 temp_api_test.py
+runtime/data/accounts.db.invalid
