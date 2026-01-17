@@ -234,9 +234,7 @@ class AuthHandler(BaseHTTPRequestHandler):
 
     # --------------------------------------------------
 
-    def _start_oauth(self, provider, surface, location):
-        state = secrets.token_urlsafe(32)
-
+    def _start_oauth(self, provider, surface, location, state):
         self.send_response(302)
         set_cookie(self, "ss_oauth_state", make_signed_value({
             "state": state,
@@ -285,6 +283,8 @@ class AuthHandler(BaseHTTPRequestHandler):
 
     def handle_login_google(self, qs):
         surface = qs.get("surface", ["creator"])[0]
+        state = secrets.token_urlsafe(32)
+
         self._start_oauth(
             "google",
             surface,
@@ -294,11 +294,15 @@ class AuthHandler(BaseHTTPRequestHandler):
                 "response_type": "code",
                 "scope": "openid email profile",
                 "prompt": "select_account",
-            })
+                "state": state,
+            }),
+            state
         )
 
     def handle_login_github(self, qs):
         surface = qs.get("surface", ["creator"])[0]
+        state = secrets.token_urlsafe(32)
+
         self._start_oauth(
             "github",
             surface,
@@ -306,11 +310,15 @@ class AuthHandler(BaseHTTPRequestHandler):
                 "client_id": GITHUB_CLIENT_ID,
                 "redirect_uri": GITHUB_REDIRECT_URI,
                 "scope": "read:user user:email",
-            })
+                "state": state,
+            }),
+            state
         )
 
     def handle_login_discord(self, qs):
         surface = qs.get("surface", ["creator"])[0]
+        state = secrets.token_urlsafe(32)
+
         self._start_oauth(
             "discord",
             surface,
@@ -320,7 +328,9 @@ class AuthHandler(BaseHTTPRequestHandler):
                 "response_type": "code",
                 "scope": "identify email",
                 "prompt": "consent",
-            })
+                "state": state,
+            }),
+            state
         )
 
     # --------------------------------------------------
