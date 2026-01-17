@@ -375,8 +375,8 @@ async def dashboard(
 ):
     await interaction.response.send_message(
         embed=info_embed(
-            "StreamSuites Dashboard",
-            "[Open the dashboard](https://dashboard.streamsuites.app)",
+            "StreamSuites Admin Dashboard",
+            "[Open the admin dashboard](https://admin.streamsuites.app)",
         ),
         ephemeral=False,
     )
