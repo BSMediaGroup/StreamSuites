@@ -7,6 +7,7 @@ import json
 import os
 import secrets
 import sqlite3
+import socket
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -61,7 +62,7 @@ ADMIN_EMAILS = {
 CREATOR_RETURN = "https://creator.streamsuites.app/auth/success.html"
 ADMIN_RETURN = "https://admin.streamsuites.app/auth/success.html"
 
-LISTEN_HOST = "0.0.0.0"
+LISTEN_HOST = "::"
 LISTEN_PORT = 8787
 
 # Explicit checks (fail fast)
@@ -797,9 +798,20 @@ class AuthHandler(BaseHTTPRequestHandler):
 # Run
 # ==================================================
 
+class DualStackServer(HTTPServer):
+    address_family = socket.AF_INET6
+
+    def server_bind(self):
+        try:
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        except Exception:
+            pass
+        super().server_bind()
+
 def run():
-    server = HTTPServer((LISTEN_HOST, LISTEN_PORT), AuthHandler)
+    server = DualStackServer((LISTEN_HOST, LISTEN_PORT), AuthHandler)
     print(f"StreamSuites Auth API running on {LISTEN_HOST}:{LISTEN_PORT}")
+    print(f"Auth API listening on [{LISTEN_HOST}]:{LISTEN_PORT} (dual-stack)")
     server.serve_forever()
 
 if __name__ == "__main__":
