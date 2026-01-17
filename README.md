@@ -9,11 +9,11 @@ Dashboards and overlays consume exported artifacts only and remain read-only unt
 ## Runtime Positioning
 
 - **Project status:** Late Alpha (`0.2.3-alpha`). The runtime is stable enough for export generation and local inspection, but active runtime ↔ UI coupling is still under construction.
-- **Runtime authority:** This repository is the authoritative home of the StreamSuites Runtime Engine. All execution, state, telemetry, exports, and lifecycle control originate here.
-- **Dashboard separation:** All dashboard UIs live in separate repositories and consume runtime-exported artifacts only. No dashboard initiates runtime execution or mutates runtime state.
+- **Runtime authority:** This repository is the authoritative home of the StreamSuites Runtime Engine. All execution, state, telemetry, exports, lifecycle control, and the Auth API originate here.
+- **Dashboard separation:** All web surfaces live in separate repositories and consume runtime-exported artifacts only. No web surface initiates runtime execution or mutates runtime state.
 - **What is live:** Export generation, schemas, runtime metadata, versioning, and historical scaffolding. Existing exports remain authoritative for inspection.
 - **What is not live yet:** Live chat ingestion, socket wiring, OBS overlay feeds, browser extension hydration, and real-time UI synchronization remain preview-only and are not wired to the runtime.
-- **Ownership boundary:** The runtime guards data-plane correctness and lifecycle control. Dashboards, overlays, and extensions must remain read-only and avoid mutation paths.
+- **Ownership boundary:** The runtime guards data-plane correctness and lifecycle control. Web surfaces, overlays, and extensions must remain read-only and avoid mutation paths.
 
 StreamSuites is a modular, multi-platform livestream automation system.  
 It is the **single canonical runtime source** for orchestrating streaming data-plane workers and control-plane automation across platforms such as Discord, YouTube, Twitch, Twitter/X, and Rumble.
@@ -40,7 +40,10 @@ Tallies are tracked as a **first-class runtime concept** alongside polls and cli
   - state and telemetry
   - export generation
   - changelogs and version metadata
+  - the Auth API and session validation
 - All control-plane and data-plane sources originate here.
+- The runtime does **not** serve web UI. Public, Creator, and Admin web surfaces
+  are hosted in separate repositories and domains.
 - Dashboards, overlays, and extensions are **downstream consumers only**.
 
 ## Discord Integration Overview
@@ -85,32 +88,52 @@ Supported notification categories:
 - Intended for operators with direct runtime access; this authority model is by design,
   not a missing security feature.
 
+## Authentication & Authorization (Runtime-Owned)
+
+- Auth API endpoints live in this runtime repository and remain the single source of truth.
+- OAuth redirects land on surface-specific domains (`streamsuites.app`,
+  `creator.streamsuites.app`, `admin.streamsuites.app`) to preserve security
+  boundaries between audiences.
+- Roles and tiers (OPEN / GOLD / PRO) are enforced after authentication by the
+  runtime, with surface-specific gating layered on top.
+- The runtime owns accounts, roles, tiers, permissions, and session validation.
+  Web surfaces consume these decisions and never define their own authority.
+
 ## Web Surface Relationship (Admin + Public + Creator)
 
 - Web surfaces are **not** in this repository.
 - They consume runtime-exported state only and remain read-only.
+- The WinForms Desktop Admin (in this repo) is **not** replaced by the web
+  surfaces and continues to operate alongside them.
 - OAuth-gated surfaces (notably Admin) never gain process control or filesystem access.
 - Runtime remains the **authoritative** executor for all behavior.
 
+Historical note: multiple Pages-based surfaces were previously hosted from a
+single dashboard repository. That model has been replaced by distinct
+repositories and domains per audience (Public, Creator, Admin) while keeping
+the runtime as the central authority.
+
 ## Repository Map
 
-- **StreamSuites (this repo):** Runtime engine + WinForms Desktop Admin + authoritative exports/version
-- **StreamSuites-Dashboard:** Admin web dashboard @ https://admin.streamsuites.app (GitHub Pages from `/docs`)
-- **StreamSuites-Public:** Public site @ https://streamsuites.app (GitHub Pages from repo root)
-- **StreamSuites-Creator:** Creator dashboard @ https://creator.streamsuites.app (GitHub Pages from repo root)
+- **StreamSuites (this repo):** Runtime engine + Auth API + WinForms Desktop Admin +
+  authoritative exports/version
+- **StreamSuites-Public:** Public web surface @ https://streamsuites.app (GitHub Pages from repo root)
+- **StreamSuites-Creator:** Creator web surface @ https://creator.streamsuites.app (GitHub Pages from repo root)
+- **StreamSuites-Dashboard:** Admin web surface @ https://admin.streamsuites.app (GitHub Pages from `/docs`)
 
 ## Domains & OAuth Redirect Surfaces
 
 - **Canonical public base:** https://streamsuites.app
 - **Creator base:** https://creator.streamsuites.app
 - **Admin base:** https://admin.streamsuites.app
+- **OAuth boundary:** each domain is a separate OAuth redirect surface.
 - **Version endpoint (all surfaces):** https://admin.streamsuites.app/version.json
 
 ## Exports Contract (High Level)
 
 - `runtime/version.py` → `scripts/update_version.py` → `StreamSuites-Dashboard/docs/version.json`
 - `runtime/exports/` → synced into `StreamSuites-Dashboard/docs/shared/state/`
-- Public/Creator sites remain static consumers unless explicit publishing is added in the future.
+- Public/Creator/Admin sites remain static consumers unless explicit publishing is added in the future.
 
 ## Versioning Policy
 
@@ -128,13 +151,13 @@ Build changes imply refreshed artifacts.
 
 - **Runtime:** Source of truth for version and build metadata.
 - **WinForms Desktop Admin:** Reads and displays runtime version/build directly.
-- **Web Dashboard:** Reads version/build from exported JSON and never defines its own values.
+- **Web surfaces:** Read version/build from exported JSON and never define their own values.
 
 ## Path & State Flow
 
 - `runtime/exports/runtime_snapshot.json` is the authoritative runtime snapshot.
 - The WinForms Desktop Admin reads snapshots directly from disk.
-- The web dashboard reads published/exported JSON artifacts only.
+- Web surfaces read published/exported JSON artifacts only.
 - Paths may be configured locally via admin tooling to align snapshot locations with operator needs.
 
 The project emphasizes:
@@ -710,12 +733,13 @@ send reliability is preserved even when ingest requirements change:
 ## Runtime data, signals, and exports (Data & Signals readiness)
 
 The runtime is the **authoritative data source**, **signal processor**, and
-**export generator** for the Data & Signals dashboard. It owns raw events and
-controls how they are shaped for consumption while keeping dashboard access
-strictly read-only. Snapshot files under `runtime/exports/`, `runtime/signals/`,
-and `runtime/admin/` are deterministic, timestamped JSON documents that can be
-mirrored into the dashboard repository or any static host. The dashboard never
-mutates runtime state; it only reads the published snapshots.
+**export generator** for the Data & Signals admin surface
+(StreamSuites-Dashboard). It owns raw events and controls how they are shaped
+for consumption while keeping admin access strictly read-only. Snapshot files
+under `runtime/exports/`, `runtime/signals/`, and `runtime/admin/` are
+deterministic, timestamped JSON documents that can be mirrored into the admin
+surface repository or any static host. Public and Creator surfaces are separate
+consumers and never mutate runtime state.
 
 - **Authoritative data source**: runtime workers own the canonical state for
   clips, polls, tallies, scoreboards, creators, and quotas.
@@ -746,8 +770,8 @@ mutates runtime state; it only reads the published snapshots.
 
 ### Data & Signals integration contract
 
-- Dashboard consumption is **read-only**. Snapshots are written by the runtime
-  and optionally mirrored into the dashboard `docs/data/` root or another
+- Admin surface consumption is **read-only**. Snapshots are written by the runtime
+  and optionally mirrored into the admin surface `docs/data/` root or another
   hosting path.
 - Snapshots include a `meta` block with timestamps, source identifiers, and
   visibility tags (`public`, `dashboard-only`, `internal-only`) so the
@@ -867,14 +891,14 @@ the background with bounded concurrency. Core properties:
   state generation (jobs, triggers, quotas) under `shared/state/` and publish
   via `DashboardStatePublisher`. Quota enforcement and cadence loops live only
   in the runtime.
-- **Dashboard consumption**: the dashboard is read-only; it reads published
-  state snapshots (jobs, runtime status, quotas) and never mutates runtime
-  state. Overrides are handled through query parameters and static hosting
-  roots without changing runtime behavior.
+- **Admin dashboard consumption**: the admin dashboard is read-only; it reads
+  published state snapshots (jobs, runtime status, quotas) and never mutates
+  runtime state. Overrides are handled through query parameters and static
+  hosting roots without changing runtime behavior.
 
-## Dashboard state publishing
+## Admin dashboard state publishing
 
-The Discord control-plane runtime emits live snapshots for the dashboard under
+The Discord control-plane runtime emits live snapshots for the admin dashboard under
 `shared/state/discord/runtime.json` (runtime + heartbeat state) and
 `shared/state/jobs.json` (job queue/timestamps). The streaming runtime exports
 `shared/state/runtime_snapshot.json` via `core/state_exporter.py`, reflecting
@@ -890,9 +914,9 @@ script is available for cron or CI runs when the runtime is not active:
 python scripts/publish_state.py --target ../StreamSuites-Dashboard/docs
 ```
 
-### Dashboard lookup order
+### Admin dashboard lookup order
 
-The dashboard now resolves state roots in the following order:
+The admin dashboard now resolves state roots in the following order:
 
 1) `stateRoot` query parameter (persisted to `localStorage` as
    `streamsuites.stateRootOverride` for future loads)
