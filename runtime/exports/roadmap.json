@@ -3,9 +3,30 @@
     "project": "StreamSuites™",
     "scope": "runtime-roadmap",
     "version": "0.3.0-alpha",
-    "generated_at": "2026-02-01"
+    "generated_at": "2026-01-18"
   },
   "entries": [
+    {
+      "id": "auth-api-core",
+      "title": "Central authentication and account API",
+      "status": "complete",
+      "progress": 100,
+      "description": "Central Auth API is live and authoritative for accounts, sessions, roles, and tier scaffolding. Supports Google, GitHub, Discord OAuth and email magic-link login with secure cookie-based sessions."
+    },
+    {
+      "id": "account-model-roles-tiers",
+      "title": "Account model with roles and tiers",
+      "status": "complete",
+      "progress": 100,
+      "description": "Unified account model implemented with one account per email, multi-provider linking, role enforcement (creator/admin), and tier scaffolding (OPEN/GOLD/PRO) for future authorization."
+    },
+    {
+      "id": "multi-repo-web-separation",
+      "title": "Multi-repo, multi-domain web surface separation",
+      "status": "complete",
+      "progress": 100,
+      "description": "Public, Creator, and Admin web surfaces are fully separated into distinct repositories and domains, with domains acting as OAuth security boundaries and runtime remaining authoritative."
+    },
     {
       "id": "quota-enforcement",
       "title": "Quota enforcement",
@@ -66,8 +87,8 @@
       "id": "shutdown-ordering",
       "title": "Shutdown ordering across runtimes",
       "status": "active",
-      "progress": 50,
-      "description": "Runtime shutdown sequencing is being tightened to avoid orphaned workers and ensure exports flush safely; cross-platform validation is underway."
+      "progress": 65,
+      "description": "Runtime shutdown sequencing has been tightened alongside Desktop Admin service controls to avoid orphaned workers and ensure exports flush safely."
     },
     {
       "id": "twitch-youtube-validation",
@@ -115,14 +136,14 @@
       "id": "operator-tooling",
       "title": "Operator tooling",
       "status": "active",
-      "progress": 30,
-      "description": "WinForms Desktop Admin now ships locally with filesystem access and runtime start/stop controls; operator tooling is moving toward becoming the primary admin surface with continued hardening in progress."
+      "progress": 75,
+      "description": "WinForms Desktop Admin now functions as a local operator control plane with start/stop/restart controls, crash detection, log streaming, persistence, and safety hardening."
     },
     {
       "id": "path-configuration-groundwork",
       "title": "Path configuration groundwork",
       "status": "active",
-      "progress": 35,
+      "progress": 40,
       "description": "Local path management is being wired through Desktop Admin to keep runtime snapshots and exports configurable on-disk while preserving read-only downstream consumption."
     },
     {
@@ -194,13 +215,6 @@
       "status": "planned",
       "progress": 5,
       "description": "Architecture reserved for a future Pilled ingest-only client; placeholders exist but no runtime wiring is active."
-    },
-    {
-      "id": "desktop-admin-control-plane",
-      "title": "Desktop Admin control surface",
-      "status": "planned",
-      "progress": 30,
-      "description": "Local Desktop Admin EXE will read runtime exports/config with restart-safe write boundaries; admin contract now defines read/write/restart touch points for upcoming desktop apps."
     }
   ]
 }
