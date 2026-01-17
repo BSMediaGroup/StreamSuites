@@ -6,6 +6,7 @@
     "scope": "exports-manifest"
   },
   "exports": [
+    {"file": "version.json", "visibility": "public", "description": "Runtime-derived version/build metadata for downstream surfaces"},
     {"file": "clips.json", "visibility": "public", "description": "Published clips with deterministic fields"},
     {"file": "polls.json", "visibility": "public", "description": "Closed polls and their aggregated votes"},
     {"file": "tallies.json", "visibility": "public", "description": "Running tally counters for streams"},
