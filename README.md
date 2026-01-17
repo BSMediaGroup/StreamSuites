@@ -27,6 +27,9 @@ Tallies are tracked as a **first-class runtime concept** alongside polls and cli
 - **Versioning model:** Semantic Versioning with pre-release identifiers (`-alpha`, `-beta`) to signal maturity. Pre-release versions do not guarantee API or schema stability.
 - **Build identifiers:** Build values stamp regenerated artifacts, exports, documentation, and binaries for traceability. Build changes may occur without feature changes.
 - **Authoritative source:** This repository defines the authoritative version and build metadata for StreamSuites.
+- **Runtime authority:** Runtime is the single source of truth for VERSION and BUILD.
+- **Web consumption:** All web surfaces must consume `runtime/exports/version.json`.
+- **No downstream overrides:** Web repositories must never define their own version numbers.
 - **Runtime/UI separation:** Dashboards (including the web dashboard) do not execute runtime logic and are not coupled to runtime lifecycles.
 - **Export-driven surfaces:** Runtime publishes state exclusively via file-based exports (JSON snapshots, manifests, and static HTML replay templates).
 - **Licensing:** Proprietary. Redistribution or reuse outside authorized channels is not permitted.
@@ -132,6 +135,7 @@ the runtime as the central authority.
 
 ## Exports Contract (High Level)
 
+- `runtime/version.py` → `scripts/update_version.py` → `runtime/exports/version.json` (consumed by all web surfaces)
 - `runtime/version.py` → `scripts/update_version.py` → `StreamSuites-Dashboard/docs/version.json`
 - `runtime/exports/` → synced into `StreamSuites-Dashboard/docs/shared/state/`
 - Public/Creator/Admin sites remain static consumers unless explicit publishing is added in the future.
@@ -152,7 +156,7 @@ Build changes imply refreshed artifacts.
 
 - **Runtime:** Source of truth for version and build metadata.
 - **WinForms Desktop Admin:** Reads and displays runtime version/build directly.
-- **Web surfaces:** Read version/build from exported JSON and never define their own values.
+- **Web surfaces:** Read version/build from `runtime/exports/version.json` and never define their own values.
 
 ## Path & State Flow
 
@@ -368,6 +372,7 @@ StreamSuites/
 │   │   ├── runtime_snapshot.json
 │   │   ├── scoreboards.json
 │   │   ├── tallies.json
+│   │   ├── version.json
 │   │   └── telemetry/
 │   │       ├── errors.json
 │   │       ├── events.json

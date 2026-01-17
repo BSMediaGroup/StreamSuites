@@ -11,8 +11,10 @@ execution dependencies on dashboard assets.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -91,6 +93,36 @@ def update_runtime_version_py(version: str, build: str | None) -> bool:
         return True
 
     return False
+
+
+def load_runtime_version_module():
+    module_path = ROOT / "runtime" / "version.py"
+    spec = importlib.util.spec_from_file_location(
+        "streamsuites_runtime_version",
+        module_path,
+    )
+
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Unable to load runtime version module.")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def update_runtime_version_export() -> bool:
+    version_module = load_runtime_version_module()
+    export_path = ROOT / "runtime" / "exports" / "version.json"
+    generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    payload = {
+        "project": "StreamSuites™",
+        "version": version_module.VERSION,
+        "build": version_module.BUILD,
+        "generated_at": generated_at,
+        "source": "runtime",
+    }
+    _write_json(export_path, payload)
+    return True
 
 
 def update_changelog_sources(version: str) -> bool:
@@ -189,6 +221,7 @@ def main() -> int:
     changed = False
 
     changed |= update_runtime_version_py(version, args.build)
+    changed |= update_runtime_version_export()
     changed |= update_changelog_sources(version)
     changed |= update_dashboard_version_manifest(
         version,
