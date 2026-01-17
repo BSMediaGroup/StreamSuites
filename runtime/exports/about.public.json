@@ -1,12 +1,12 @@
 {
   "scope": "public",
   "surface": "about",
-  "version": "v0.2.2-alpha",
+  "version": "v0.3.0-alpha",
   "build": "2025.03",
   "last_updated": "2026-01-01",
   "owner": "Daniel Clancy",
   "copyright": "© 2026 Brainstream Media Group",
-  "notice": "Version: v0.2.2-alpha  •  Build: 2025.03  •  Last updated: 2026-01-01  •  Owner: Daniel Clancy  •  Copyright: © 2026 Brainstream Media Group",
+  "notice": "Version: v0.3.0-alpha  •  Build: 2025.03  •  Last updated: 2026-01-01  •  Owner: Daniel Clancy  •  Copyright: © 2026 Brainstream Media Group",
   "platform_status": [
     {"platform": "youtube", "status": "active", "notes": "Polling chat ingestion with trigger evaluation"},
     {"platform": "twitch", "status": "active", "notes": "IRC ingestion with validation trigger"},
