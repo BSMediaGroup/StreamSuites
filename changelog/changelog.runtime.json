@@ -30,7 +30,7 @@
       ]
     },
     "scope": "runtime",
-    "version": "0.3.0-alpha"
+    "version": "0.2.3-alpha"
   },
   {
     "id": "2026-02-architecture-clarity",
@@ -38,7 +38,7 @@
     "title": "Architecture and authority clarified",
     "description": "Documented the two-repository architecture with the runtime as the sole authority, WinForms Desktop Admin as the privileged local control plane, the web dashboard as a read-only downstream consumer, and ongoing path configuration groundwork without changing runtime execution behavior.",
     "scope": "runtime",
-    "version": "0.3.0-alpha"
+    "version": "0.2.3-alpha"
   },
   {
     "id": "2026-01-alpha-version-refresh",
@@ -46,7 +46,7 @@
     "title": "Alpha metadata refresh",
     "description": "Version metadata promoted to v0.2.2-alpha with build 2025.03 while preserving the existing runtime changelog history.",
     "scope": "runtime",
-    "version": "0.3.0-alpha"
+    "version": "0.2.3-alpha"
   },
   {
     "id": "2025-12-project-suspended",
@@ -54,7 +54,7 @@
     "title": "Project suspended",
     "description": "StreamSuites runtime development was indefinitely suspended due to unresolved external platform instability and non-deterministic ingestion behavior.",
     "scope": "runtime",
-    "version": "0.3.0-alpha"
+    "version": "0.2.3-alpha"
   },
   {
     "id": "2026-01-chat-replay-scaffold",
@@ -62,7 +62,7 @@
     "title": "Chat replay scaffolding exported",
     "description": "Introduced the chat_replay service with export-safe HTML window and OBS overlay surfaces backed by the schema-defined replay message model; all surfaces remain static, mock-data driven, and non-interactive until runtime ingestion is wired.",
     "scope": "runtime",
-    "version": "0.3.0-alpha"
+    "version": "0.2.3-alpha"
   },
   {
     "id": "2025-02-runtime-quotas",
@@ -70,6 +70,6 @@
     "title": "Quota enforcement hardened",
     "description": "Daily quota enforcement was stabilized across platforms, consolidating the QuotaRegistry and keeping snapshot exports aligned for downstream readers.",
     "scope": "runtime",
-    "version": "0.3.0-alpha"
+    "version": "0.2.3-alpha"
   }
 ]
