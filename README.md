@@ -120,6 +120,7 @@ the runtime as the central authority.
 - **StreamSuites-Public:** Public web surface @ https://streamsuites.app (GitHub Pages from repo root)
 - **StreamSuites-Creator:** Creator web surface @ https://creator.streamsuites.app (GitHub Pages from repo root)
 - **StreamSuites-Dashboard:** Admin web surface @ https://admin.streamsuites.app (GitHub Pages from `/docs`)
+- **StreamSuites-LiveChat-Launcher:** Chromium + Firefox launcher extension
 
 ## Domains & OAuth Redirect Surfaces
 
