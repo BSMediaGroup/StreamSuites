@@ -98,3 +98,4 @@ run_*.bat
 # Test / Local Utilities
 # ====================================
 !test_rumble_api.py
+temp_api_test.py
