@@ -211,15 +211,7 @@ def set_cookie(handler, name, value, max_age=3600, domain=None, samesite="Lax"):
         cookie = f"{cookie}; Domain={domain}"
     handler.send_header("Set-Cookie", cookie)
 
-def send_json(handler, status, payload):
-    body = json.dumps(payload).encode("utf-8")
-    handler.send_response(status)
-    handler.send_header("Content-Type", "application/json; charset=utf-8")
-    handler.send_header("Content-Length", str(len(body)))
-    handler.end_headers()
-    handler.wfile.write(body)
-
-def add_cors_headers(handler):
+def apply_cors(handler):
     origin = handler.headers.get("Origin")
     if origin and origin in ALLOWED_CORS_ORIGINS:
         handler.send_header("Access-Control-Allow-Origin", origin)
@@ -227,10 +219,10 @@ def add_cors_headers(handler):
         handler.send_header("Access-Control-Allow-Headers", "Content-Type")
         handler.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 
-def send_json_with_cors(handler, status, payload):
+def send_json(handler, status, payload):
     body = json.dumps(payload).encode("utf-8")
     handler.send_response(status)
-    add_cors_headers(handler)
+    apply_cors(handler)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
@@ -430,7 +422,7 @@ class AuthHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         # CORS preflight (no auth, no cookies)
         self.send_response(204)
-        add_cors_headers(self)
+        apply_cors(self)
         self.end_headers()
 
     def do_POST(self):
@@ -748,14 +740,14 @@ class AuthHandler(BaseHTTPRequestHandler):
     def handle_email_signup(self):
         data, error = read_json_body(self)
         if error:
-            send_json_with_cors(self, 400, {"error": error})
+            send_json(self, 400, {"error": error})
             return
 
         email = (data.get("email", "") or "").lower().strip()
         surface = (data.get("surface", "creator") or "creator").strip()
 
         if not email:
-            send_json_with_cors(self, 400, {"error": "Missing email"})
+            send_json(self, 400, {"error": "Missing email"})
             return
 
         token = secrets.token_urlsafe(32)
@@ -772,14 +764,14 @@ class AuthHandler(BaseHTTPRequestHandler):
         try:
             send_magic_link(email, token)
         except Exception:
-            send_json_with_cors(self, 502, {"error": "Failed to send email"})
+            send_json(self, 502, {"error": "Failed to send email"})
             return
 
         # Note: surface is carried via token record? We keep it simple:
         # surface is re-derived from query param at verify time if present.
         # For now we store surface in a signed cookie so verification has it.
         self.send_response(204)
-        add_cors_headers(self)
+        apply_cors(self)
         set_cookie(self, "ss_email_surface", make_signed_value({
             "surface": surface,
             "iat": int(time.time()),
@@ -856,13 +848,13 @@ class AuthHandler(BaseHTTPRequestHandler):
         raw = get_cookie(self, "streamsuites_session")
         session = parse_signed_value(raw or "")
         if not session:
-            send_json_with_cors(self, 401, {"error": "Unauthorized"})
+            send_json(self, 401, {"error": "Unauthorized"})
             return
-        send_json_with_cors(self, 200, session)
+        send_json(self, 200, session)
 
     def handle_logout(self):
         self.send_response(204)
-        add_cors_headers(self)
+        apply_cors(self)
         set_cookie(
             self,
             "streamsuites_session",
