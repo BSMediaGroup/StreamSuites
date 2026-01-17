@@ -9,28 +9,35 @@ import secrets
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from urllib.parse import urlencode, urlparse, parse_qs, quote
+from urllib.parse import urlencode, urlparse, parse_qs
 
 import requests
 from dotenv import load_dotenv
 
 
-# --------------------------------------------------
-# Load .env (ALWAYS from this script's folder)
-# --------------------------------------------------
+# ==================================================
+# Load environment (.env next to this file)
+# ==================================================
 
 ROOT = Path(__file__).resolve().parent
 load_dotenv(dotenv_path=ROOT / ".env")
 
 
-# --------------------------------------------------
+# ==================================================
 # Config
-# --------------------------------------------------
+# ==================================================
 
+# Google
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
 
+# GitHub
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
+GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
+GITHUB_REDIRECT_URI = os.getenv("GITHUB_REDIRECT_URI")
+
+# StreamSuites
 SESSION_SECRET = os.getenv("STREAMSUITES_SESSION_SECRET")
 ADMIN_EMAILS = {
     e.strip().lower()
@@ -38,86 +45,83 @@ ADMIN_EMAILS = {
     if e.strip()
 }
 
-# Where users land after auth
 CREATOR_RETURN = "https://creator.streamsuites.app/auth/success.html"
 ADMIN_RETURN = "https://admin.streamsuites.app/auth/success.html"
 
-# Local listen port (must match your cloudflared config)
 LISTEN_HOST = "0.0.0.0"
 LISTEN_PORT = 8787
 
-if not all([GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, SESSION_SECRET]):
-    raise RuntimeError(
-        "Missing required env vars: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, STREAMSUITES_SESSION_SECRET"
-    )
+required = [
+    GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI,
+    GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_REDIRECT_URI,
+    SESSION_SECRET
+]
+
+if not all(required):
+    raise RuntimeError("Missing required environment variables")
 
 
-# --------------------------------------------------
+# ==================================================
 # Signing helpers
-# --------------------------------------------------
+# ==================================================
 
 def _b64u(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).decode("utf-8").rstrip("=")
+    return base64.urlsafe_b64encode(data).decode().rstrip("=")
 
 def _b64u_dec(s: str) -> bytes:
-    pad = "=" * (-len(s) % 4)
-    return base64.urlsafe_b64decode(s + pad)
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 
 def sign_blob(blob: bytes) -> str:
-    sig = hmac.new(SESSION_SECRET.encode("utf-8"), blob, hashlib.sha256).digest()
+    sig = hmac.new(SESSION_SECRET.encode(), blob, hashlib.sha256).digest()
     return _b64u(sig)
 
 def make_signed_value(payload: dict) -> str:
-    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    sig = sign_blob(raw)
-    return _b64u(raw) + "." + sig
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    return _b64u(raw) + "." + sign_blob(raw)
 
 def parse_signed_value(value: str) -> dict | None:
     try:
         raw_b64, sig = value.split(".", 1)
         raw = _b64u_dec(raw_b64)
-        expected = sign_blob(raw)
-        if not hmac.compare_digest(sig, expected):
+        if not hmac.compare_digest(sig, sign_blob(raw)):
             return None
-        return json.loads(raw.decode("utf-8"))
+        return json.loads(raw)
     except Exception:
         return None
 
 
-# --------------------------------------------------
+# ==================================================
 # Cookie helpers
-# --------------------------------------------------
+# ==================================================
 
-def get_cookie(handler: BaseHTTPRequestHandler, name: str) -> str | None:
+def get_cookie(handler, name):
     cookie = handler.headers.get("Cookie")
     if not cookie:
         return None
-    parts = [p.strip() for p in cookie.split(";")]
-    for p in parts:
-        if p.startswith(name + "="):
-            return p.split("=", 1)[1]
+    for part in cookie.split(";"):
+        part = part.strip()
+        if part.startswith(name + "="):
+            return part.split("=", 1)[1]
     return None
 
-def set_cookie(handler: BaseHTTPRequestHandler, name: str, value: str, *, max_age: int = 3600) -> None:
-    # Secure cookie: works on https api domain via Cloudflare
+def set_cookie(handler, name, value, max_age=3600):
     handler.send_header(
         "Set-Cookie",
-        f"{name}={value}; Max-Age={max_age}; HttpOnly; Secure; SameSite=Lax; Path=/",
+        f"{name}={value}; Max-Age={max_age}; HttpOnly; Secure; SameSite=Lax; Path=/"
     )
 
-
-def redirect(handler: BaseHTTPRequestHandler, location: str) -> None:
+def redirect(handler, location):
     handler.send_response(302)
     handler.send_header("Location", location)
     handler.end_headers()
 
 
-# --------------------------------------------------
+# ==================================================
 # OAuth helpers
-# --------------------------------------------------
+# ==================================================
 
-def google_exchange_code(code: str) -> dict:
-    resp = requests.post(
+def google_exchange(code):
+    r = requests.post(
         "https://oauth2.googleapis.com/token",
         data={
             "client_id": GOOGLE_CLIENT_ID,
@@ -128,168 +132,218 @@ def google_exchange_code(code: str) -> dict:
         },
         timeout=15,
     )
-    resp.raise_for_status()
-    return resp.json()
+    r.raise_for_status()
+    return r.json()
 
-def google_tokeninfo(id_token: str) -> dict:
-    # Quick validation (issuer/audience/expiry/signature handled by Google)
-    resp = requests.get(
+def google_profile(id_token):
+    r = requests.get(
         "https://oauth2.googleapis.com/tokeninfo",
         params={"id_token": id_token},
         timeout=15,
     )
-    resp.raise_for_status()
-    return resp.json()
+    r.raise_for_status()
+    return r.json()
+
+def github_exchange(code):
+    r = requests.post(
+        "https://github.com/login/oauth/access_token",
+        headers={"Accept": "application/json"},
+        data={
+            "client_id": GITHUB_CLIENT_ID,
+            "client_secret": GITHUB_CLIENT_SECRET,
+            "code": code,
+            "redirect_uri": GITHUB_REDIRECT_URI,
+        },
+        timeout=15,
+    )
+    r.raise_for_status()
+    return r.json()["access_token"]
+
+def github_profile(token):
+    r = requests.get(
+        "https://api.github.com/user",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=15,
+    )
+    r.raise_for_status()
+    return r.json()
+
+def github_emails(token):
+    r = requests.get(
+        "https://api.github.com/user/emails",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=15,
+    )
+    r.raise_for_status()
+    return r.json()
 
 
-# --------------------------------------------------
+# ==================================================
 # HTTP Handler
-# --------------------------------------------------
+# ==================================================
 
 class AuthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        try:
-            parsed = urlparse(self.path)
+        parsed = urlparse(self.path)
+        qs = parse_qs(parsed.query)
 
-            # Health check
-            if parsed.path == "/health":
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(b'{"status":"ok","service":"streamsuites-auth"}')
-                return
+        # ------------------------------------------
+        # Health
+        # ------------------------------------------
+        if parsed.path == "/health":
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok"}')
+            return
 
-            # ------------------------------------------
-            # /auth/login/google
-            # ------------------------------------------
-            if parsed.path == "/auth/login/google":
-                # Optional surface hint, so we can redirect to creator/admin UI correctly
-                qs = parse_qs(parsed.query)
-                surface = (qs.get("surface", ["creator"])[0] or "creator").lower()
-                if surface not in ("creator", "admin"):
-                    surface = "creator"
+        # ------------------------------------------
+        # LOGIN — GOOGLE
+        # ------------------------------------------
+        if parsed.path == "/auth/login/google":
+            surface = qs.get("surface", ["creator"])[0]
+            state = secrets.token_urlsafe(32)
 
-                state = secrets.token_urlsafe(32)
+            self.send_response(302)
+            set_cookie(self, "ss_oauth_state", make_signed_value({
+                "state": state,
+                "surface": surface,
+                "provider": "google",
+                "iat": int(time.time())
+            }), max_age=600)
 
-                # Store state in a signed cookie (prevents CSRF)
-                state_cookie = make_signed_value({
-                    "state": state,
-                    "surface": surface,
-                    "iat": int(time.time())
-                })
-
-                self.send_response(302)
-                set_cookie(self, "ss_oauth_state", state_cookie, max_age=600)
-
-                params = {
+            redirect(self,
+                "https://accounts.google.com/o/oauth2/v2/auth?" +
+                urlencode({
                     "client_id": GOOGLE_CLIENT_ID,
                     "redirect_uri": GOOGLE_REDIRECT_URI,
                     "response_type": "code",
                     "scope": "openid email profile",
                     "state": state,
-                    "access_type": "online",
                     "prompt": "select_account",
-                }
-
-                url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
-                self.send_header("Location", url)
-                self.end_headers()
-                return
-
-            # ------------------------------------------
-            # /auth/callback/google
-            # ------------------------------------------
-            if parsed.path == "/auth/callback/google":
-                qs = parse_qs(parsed.query)
-                code = qs.get("code", [None])[0]
-                returned_state = qs.get("state", [None])[0]
-
-                if not code or not returned_state:
-                    self.send_error(400, "Missing code or state")
-                    return
-
-                state_cookie_raw = get_cookie(self, "ss_oauth_state")
-                if not state_cookie_raw:
-                    self.send_error(400, "Missing state cookie")
-                    return
-
-                state_payload = parse_signed_value(state_cookie_raw)
-                if not state_payload:
-                    self.send_error(400, "Invalid state cookie")
-                    return
-
-                if state_payload.get("state") != returned_state:
-                    self.send_error(400, "State mismatch")
-                    return
-
-                surface = state_payload.get("surface", "creator")
-
-                tokens = google_exchange_code(code)
-                id_token = tokens.get("id_token")
-                if not id_token:
-                    self.send_error(500, "Missing id_token from Google")
-                    return
-
-                profile = google_tokeninfo(id_token)
-
-                email = (profile.get("email") or "").lower()
-                sub = profile.get("sub")
-                name = profile.get("name") or ""
-
-                if not email or not sub:
-                    self.send_error(500, "Google profile missing email/sub")
-                    return
-
-                role = "admin" if email in ADMIN_EMAILS else "creator"
-
-                # Create signed StreamSuites session cookie (no DB yet)
-                session = make_signed_value({
-                    "email": email,
-                    "name": name,
-                    "role": role,
-                    "tier": "OPEN",
-                    "provider": "google",
-                    "provider_id": sub,
-                    "iat": int(time.time())
                 })
+            )
+            return
 
-                self.send_response(302)
-                set_cookie(self, "streamsuites_session", session, max_age=60 * 60 * 24 * 7)
+        # ------------------------------------------
+        # LOGIN — GITHUB
+        # ------------------------------------------
+        if parsed.path == "/auth/login/github":
+            surface = qs.get("surface", ["creator"])[0]
+            state = secrets.token_urlsafe(32)
 
-                # Clear oauth state cookie
-                set_cookie(self, "ss_oauth_state", "deleted", max_age=0)
+            self.send_response(302)
+            set_cookie(self, "ss_oauth_state", make_signed_value({
+                "state": state,
+                "surface": surface,
+                "provider": "github",
+                "iat": int(time.time())
+            }), max_age=600)
 
-                # Redirect to the correct surface success page
-                if role == "admin" or surface == "admin":
-                    self.send_header("Location", ADMIN_RETURN)
-                else:
-                    self.send_header("Location", CREATOR_RETURN)
-                self.end_headers()
-                return
+            redirect(self,
+                "https://github.com/login/oauth/authorize?" +
+                urlencode({
+                    "client_id": GITHUB_CLIENT_ID,
+                    "redirect_uri": GITHUB_REDIRECT_URI,
+                    "state": state,
+                    "scope": "read:user user:email",
+                })
+            )
+            return
 
-            self.send_error(404)
+        # ------------------------------------------
+        # CALLBACK — GOOGLE
+        # ------------------------------------------
+        if parsed.path == "/auth/callback/google":
+            self.handle_google_callback(qs)
+            return
 
-        except requests.HTTPError as e:
-            # Return readable errors instead of crashing/EOF
-            self.send_response(500)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            body = {"error": "HTTPError", "details": str(e)}
-            self.wfile.write(json.dumps(body).encode("utf-8"))
+        # ------------------------------------------
+        # CALLBACK — GITHUB
+        # ------------------------------------------
+        if parsed.path == "/auth/callback/github":
+            self.handle_github_callback(qs)
+            return
 
-        except Exception as e:
-            self.send_response(500)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            body = {"error": "ServerError", "details": str(e)}
-            self.wfile.write(json.dumps(body).encode("utf-8"))
+        self.send_error(404)
 
+    # --------------------------------------------------
+
+    def _load_state(self, returned_state, provider):
+        raw = get_cookie(self, "ss_oauth_state")
+        data = parse_signed_value(raw or "")
+        if not data or data.get("state") != returned_state or data.get("provider") != provider:
+            raise ValueError("Invalid OAuth state")
+        return data["surface"]
+
+    def _finalize_login(self, email, name, provider, provider_id, surface):
+        role = "admin" if email in ADMIN_EMAILS else "creator"
+
+        session = make_signed_value({
+            "email": email,
+            "name": name,
+            "role": role,
+            "tier": "OPEN",
+            "provider": provider,
+            "provider_id": provider_id,
+            "iat": int(time.time())
+        })
+
+        self.send_response(302)
+        set_cookie(self, "streamsuites_session", session, max_age=60 * 60 * 24 * 7)
+        set_cookie(self, "ss_oauth_state", "deleted", max_age=0)
+
+        target = ADMIN_RETURN if role == "admin" or surface == "admin" else CREATOR_RETURN
+        self.send_header("Location", target)
+        self.end_headers()
+
+    # --------------------------------------------------
+
+    def handle_google_callback(self, qs):
+        code = qs.get("code", [None])[0]
+        state = qs.get("state", [None])[0]
+
+        surface = self._load_state(state, "google")
+
+        tokens = google_exchange(code)
+        profile = google_profile(tokens["id_token"])
+
+        self._finalize_login(
+            email=profile["email"].lower(),
+            name=profile.get("name", ""),
+            provider="google",
+            provider_id=profile["sub"],
+            surface=surface
+        )
+
+    def handle_github_callback(self, qs):
+        code = qs.get("code", [None])[0]
+        state = qs.get("state", [None])[0]
+
+        surface = self._load_state(state, "github")
+
+        token = github_exchange(code)
+        user = github_profile(token)
+        emails = github_emails(token)
+
+        primary = next(e for e in emails if e["primary"] and e["verified"])
+
+        self._finalize_login(
+            email=primary["email"].lower(),
+            name=user.get("name") or user.get("login"),
+            provider="github",
+            provider_id=str(user["id"]),
+            surface=surface
+        )
+
+
+# ==================================================
+# Run
+# ==================================================
 
 def run():
     server = HTTPServer((LISTEN_HOST, LISTEN_PORT), AuthHandler)
-    print(f"StreamSuites Auth API running on http://{LISTEN_HOST}:{LISTEN_PORT}")
+    print(f"StreamSuites Auth API running on {LISTEN_HOST}:{LISTEN_PORT}")
     server.serve_forever()
-
 
 if __name__ == "__main__":
     run()
