@@ -65,6 +65,12 @@ ADMIN_RETURN = "https://admin.streamsuites.app/auth/success.html"
 LISTEN_HOST = "::"
 LISTEN_PORT = 8787
 
+ALLOWED_CORS_ORIGINS = {
+    "https://streamsuites.app",
+    "https://creator.streamsuites.app",
+    "https://admin.streamsuites.app",
+}
+
 # Explicit checks (fail fast)
 _required = [
     SESSION_SECRET,
@@ -208,6 +214,23 @@ def set_cookie(handler, name, value, max_age=3600):
 def send_json(handler, status, payload):
     body = json.dumps(payload).encode("utf-8")
     handler.send_response(status)
+    handler.send_header("Content-Type", "application/json; charset=utf-8")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+def add_cors_headers(handler):
+    origin = handler.headers.get("Origin")
+    if origin and origin in ALLOWED_CORS_ORIGINS:
+        handler.send_header("Access-Control-Allow-Origin", origin)
+        handler.send_header("Access-Control-Allow-Credentials", "true")
+        handler.send_header("Access-Control-Allow-Headers", "Content-Type")
+        handler.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
+def send_json_with_cors(handler, status, payload):
+    body = json.dumps(payload).encode("utf-8")
+    handler.send_response(status)
+    add_cors_headers(handler)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
@@ -404,6 +427,12 @@ def send_magic_link(email: str, token: str):
 # ==================================================
 
 class AuthHandler(BaseHTTPRequestHandler):
+    def do_OPTIONS(self):
+        # CORS preflight (no auth, no cookies)
+        self.send_response(204)
+        add_cors_headers(self)
+        self.end_headers()
+
     def do_POST(self):
         parsed = urlparse(self.path)
 
@@ -438,6 +467,21 @@ class AuthHandler(BaseHTTPRequestHandler):
                 return
 
             if parsed.path == "/auth/login/discord":
+                self.handle_login_discord(qs)
+                return
+
+            # -----------------------------
+            # Legacy OAuth login endpoints
+            # -----------------------------
+            if parsed.path == "/auth/google":
+                self.handle_login_google(qs)
+                return
+
+            if parsed.path == "/auth/github":
+                self.handle_login_github(qs)
+                return
+
+            if parsed.path == "/auth/discord":
                 self.handle_login_discord(qs)
                 return
 
@@ -684,14 +728,14 @@ class AuthHandler(BaseHTTPRequestHandler):
     def handle_email_signup(self):
         data, error = read_json_body(self)
         if error:
-            send_json(self, 400, {"error": error})
+            send_json_with_cors(self, 400, {"error": error})
             return
 
         email = (data.get("email", "") or "").lower().strip()
         surface = (data.get("surface", "creator") or "creator").strip()
 
         if not email:
-            send_json(self, 400, {"error": "Missing email"})
+            send_json_with_cors(self, 400, {"error": "Missing email"})
             return
 
         token = secrets.token_urlsafe(32)
@@ -708,13 +752,14 @@ class AuthHandler(BaseHTTPRequestHandler):
         try:
             send_magic_link(email, token)
         except Exception:
-            send_json(self, 502, {"error": "Failed to send email"})
+            send_json_with_cors(self, 502, {"error": "Failed to send email"})
             return
 
         # Note: surface is carried via token record? We keep it simple:
         # surface is re-derived from query param at verify time if present.
         # For now we store surface in a signed cookie so verification has it.
         self.send_response(204)
+        add_cors_headers(self)
         set_cookie(self, "ss_email_surface", make_signed_value({
             "surface": surface,
             "iat": int(time.time()),
@@ -784,12 +829,13 @@ class AuthHandler(BaseHTTPRequestHandler):
         raw = get_cookie(self, "streamsuites_session")
         session = parse_signed_value(raw or "")
         if not session:
-            send_json(self, 401, {"error": "Unauthorized"})
+            send_json_with_cors(self, 401, {"error": "Unauthorized"})
             return
-        send_json(self, 200, session)
+        send_json_with_cors(self, 200, session)
 
     def handle_logout(self):
         self.send_response(204)
+        add_cors_headers(self)
         set_cookie(self, "streamsuites_session", "deleted", max_age=0)
         self.end_headers()
 
