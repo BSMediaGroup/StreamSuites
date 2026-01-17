@@ -1442,10 +1442,29 @@ namespace StreamSuites.DesktopAdmin
             {
                 Dock = DockStyle.Fill,
                 Orientation = Orientation.Vertical,
-                SplitterDistance = 240,
                 Panel1MinSize = 200,
                 Panel2MinSize = 400
             };
+            var desiredSplitterDistance = 240;
+            var splitterDistanceApplied = false;
+
+            void ApplySplitterDistance()
+            {
+                if (splitterDistanceApplied)
+                    return;
+
+                var min = splitContainer.Panel1MinSize;
+                var max = splitContainer.Width - splitContainer.Panel2MinSize;
+
+                if (max < min)
+                    return;
+
+                splitContainer.SplitterDistance = Math.Clamp(desiredSplitterDistance, min, max);
+                splitterDistanceApplied = true;
+            }
+
+            splitContainer.HandleCreated += (_, __) => ApplySplitterDistance();
+            splitContainer.Layout += (_, __) => ApplySplitterDistance();
 
             var listLayout = new TableLayoutPanel
             {
