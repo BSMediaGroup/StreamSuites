@@ -6906,7 +6906,9 @@ namespace StreamSuites.DesktopAdmin
             MenuExit,
             TrayExit,
             WindowClose,
-            BridgeCommand
+            BridgeCommand,
+            ApplicationExit,
+            UnhandledException
         }
 
         private class TelemetryRateRow
