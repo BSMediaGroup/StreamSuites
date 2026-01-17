@@ -34,17 +34,19 @@ jobs:
 
       - name: Sync Runtime Snapshots
         run: |
-          mkdir -p dashboard/docs/shared/state
+          echo "Runtime exports version.json contents:"
+          cat runtime/exports/version.json
+          mkdir -p dashboard/docs/runtime/exports
           rsync -av --delete \
             runtime/exports/ \
-            dashboard/docs/shared/state/
+            dashboard/docs/runtime/exports/
 
       - name: Commit and Push Changes
         run: |
           cd dashboard
           git config user.name "StreamSuites Runtime Bot"
           git config user.email "actions@github.com"
-          git add docs/shared/state
+          git add docs/runtime/exports
           git diff --cached --quiet || \
             git commit -m "chore: sync runtime snapshots"
           git push
