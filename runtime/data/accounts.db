@@ -1,0 +1,16 @@
+accounts
+--------
+id
+email
+password_hash
+email_verified
+role
+tier
+created_at
+
+email_verifications
+-------------------
+token
+account_id
+expires_at
+used
