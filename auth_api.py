@@ -189,6 +189,23 @@ def set_cookie(handler, name, value, max_age=3600):
         f"{name}={value}; Max-Age={max_age}; HttpOnly; Secure; SameSite=Lax; Path=/"
     )
 
+def send_json(handler, status, payload):
+    body = json.dumps(payload).encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json; charset=utf-8")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+def read_json_body(handler):
+    length = int(handler.headers.get("Content-Length", 0))
+    if length <= 0:
+        return None, "Missing body"
+    try:
+        return json.loads(handler.rfile.read(length)), None
+    except Exception:
+        return None, "Invalid JSON"
+
 
 # ==================================================
 # Account helpers (SQLite)
@@ -374,8 +391,16 @@ class AuthHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
 
-        if parsed.path == "/auth/signup/email":
-            self.handle_email_signup()
+        try:
+            if parsed.path == "/auth/signup/email":
+                self.handle_email_signup()
+                return
+
+            if parsed.path == "/auth/logout":
+                self.handle_logout()
+                return
+        except Exception:
+            send_json(self, 500, {"error": "Internal server error"})
             return
 
         self.send_error(404)
@@ -384,41 +409,49 @@ class AuthHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         qs = parse_qs(parsed.query)
 
-        # -----------------------------
-        # OAuth login endpoints
-        # -----------------------------
-        if parsed.path == "/auth/login/google":
-            self.handle_login_google(qs)
-            return
+        try:
+            # -----------------------------
+            # OAuth login endpoints
+            # -----------------------------
+            if parsed.path == "/auth/login/google":
+                self.handle_login_google(qs)
+                return
 
-        if parsed.path == "/auth/login/github":
-            self.handle_login_github(qs)
-            return
+            if parsed.path == "/auth/login/github":
+                self.handle_login_github(qs)
+                return
 
-        if parsed.path == "/auth/login/discord":
-            self.handle_login_discord(qs)
-            return
+            if parsed.path == "/auth/login/discord":
+                self.handle_login_discord(qs)
+                return
 
-        # -----------------------------
-        # OAuth callback endpoints
-        # -----------------------------
-        if parsed.path == "/auth/callback/google":
-            self.handle_google_callback(qs)
-            return
+            # -----------------------------
+            # OAuth callback endpoints
+            # -----------------------------
+            if parsed.path == "/auth/callback/google":
+                self.handle_google_callback(qs)
+                return
 
-        if parsed.path == "/auth/callback/github":
-            self.handle_github_callback(qs)
-            return
+            if parsed.path == "/auth/callback/github":
+                self.handle_github_callback(qs)
+                return
 
-        if parsed.path == "/auth/discord/login/callback":
-            self.handle_discord_callback(qs)
-            return
+            if parsed.path == "/auth/discord/login/callback":
+                self.handle_discord_callback(qs)
+                return
 
-        # -----------------------------
-        # Magic-link verification
-        # -----------------------------
-        if parsed.path == "/auth/verify/email":
-            self.handle_email_verify(qs)
+            # -----------------------------
+            # Magic-link verification
+            # -----------------------------
+            if parsed.path == "/auth/verify/email":
+                self.handle_email_verify(qs)
+                return
+
+            if parsed.path == "/auth/session":
+                self.handle_session()
+                return
+        except Exception:
+            send_json(self, 500, {"error": "Internal server error"})
             return
 
         self.send_error(404)
@@ -633,22 +666,16 @@ class AuthHandler(BaseHTTPRequestHandler):
     # --------------------------------------------------
 
     def handle_email_signup(self):
-        length = int(self.headers.get("Content-Length", 0))
-        if length <= 0:
-            self.send_error(400, "Missing body")
-            return
-
-        try:
-            data = json.loads(self.rfile.read(length))
-        except Exception:
-            self.send_error(400, "Invalid JSON")
+        data, error = read_json_body(self)
+        if error:
+            send_json(self, 400, {"error": error})
             return
 
         email = (data.get("email", "") or "").lower().strip()
         surface = (data.get("surface", "creator") or "creator").strip()
 
         if not email:
-            self.send_error(400, "Missing email")
+            send_json(self, 400, {"error": "Missing email"})
             return
 
         token = secrets.token_urlsafe(32)
@@ -662,6 +689,12 @@ class AuthHandler(BaseHTTPRequestHandler):
             )
             conn.commit()
 
+        try:
+            send_magic_link(email, token)
+        except Exception:
+            send_json(self, 502, {"error": "Failed to send email"})
+            return
+
         # Note: surface is carried via token record? We keep it simple:
         # surface is re-derived from query param at verify time if present.
         # For now we store surface in a signed cookie so verification has it.
@@ -671,14 +704,6 @@ class AuthHandler(BaseHTTPRequestHandler):
             "iat": int(time.time()),
         }), max_age=900)
         self.end_headers()
-
-        # Send email AFTER responding to reduce perceived latency.
-        # (If SES fails, user can retry.)
-        try:
-            send_magic_link(email, token)
-        except Exception:
-            # Nothing else we can do; user will retry.
-            pass
 
     def handle_email_verify(self, qs):
         token = qs.get("token", [None])[0]
@@ -733,6 +758,23 @@ class AuthHandler(BaseHTTPRequestHandler):
 
         target = ADMIN_RETURN if session.get("role") == "admin" or surface == "admin" else CREATOR_RETURN
         self.send_header("Location", target)
+        self.end_headers()
+
+    # --------------------------------------------------
+    # Session / Logout
+    # --------------------------------------------------
+
+    def handle_session(self):
+        raw = get_cookie(self, "streamsuites_session")
+        session = parse_signed_value(raw or "")
+        if not session:
+            send_json(self, 401, {"error": "Unauthorized"})
+            return
+        send_json(self, 200, session)
+
+    def handle_logout(self):
+        self.send_response(204)
+        set_cookie(self, "streamsuites_session", "deleted", max_age=0)
         self.end_headers()
 
 
